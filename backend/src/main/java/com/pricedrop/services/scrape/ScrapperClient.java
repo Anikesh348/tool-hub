@@ -18,8 +18,7 @@ public class ScrapperClient {
     public ScrapperClient(WebClient client) {
         this.client = client;
         Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-        String defaultUrl = dotenv.get("SCRAPPER_URL", "");
-        this.scrapperUrl = System.getenv().getOrDefault("SCRAPPER_URL", defaultUrl);
+        this.scrapperUrl = dotenv.get("SCRAPPER_URL", "");
     }
 
     public Future<JsonObject> getScrappedProductDetails(Product product) {

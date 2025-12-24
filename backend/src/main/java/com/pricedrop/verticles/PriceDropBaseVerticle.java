@@ -74,6 +74,12 @@ public class PriceDropBaseVerticle extends AbstractVerticle {
                     router.post("/api/protected/leetcode/update-notes")
                             .handler(new UpdateQuestionNotes(mongoDBClient)::handle);
                     router.post("/api/protected/leetcode/delete").handler(new DeleteQuestion(mongoDBClient)::handle);
+                    
+                    // Deploy PriceCheckSchedulerVerticle
+                    vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
+                            .onSuccess(deploymentId -> log.info("PriceCheckSchedulerVerticle deployed with ID: {}", deploymentId))
+                            .onFailure(fail -> log.error("Failed to deploy PriceCheckSchedulerVerticle: {}", fail.getMessage()));
+                    
                     vertx.createHttpServer()
                             .requestHandler(router)
                             .listen(8080)
