@@ -21,10 +21,10 @@ services:
       - "8080:8080"
     restart: always
 
-  scraper-v2:
+  scraper-beautifulsoup:
     build:
-      context: ./scraper-v2
-    container_name: scraper-v2
+      context: ./scraper-beautifulsoup
+    container_name: scraper-beautifulsoup
     ports:
-      - "8000:8000"  
+      - "8001:8001"
     restart: always
