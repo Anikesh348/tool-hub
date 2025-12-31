@@ -11,5 +11,5 @@
     </root>
 
     <!-- Example: Set DEBUG for your package -->
-    <logger name="com.pricedrop" level="DEBUG" />
+    <logger name="com.toolhub" level="DEBUG" />
 </configuration>
