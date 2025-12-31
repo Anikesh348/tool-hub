@@ -1,0 +1,19 @@
+const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
+
+export const CinePilotService = {
+  chat: (message: string) => {
+    return {
+      url: `${BASE_URL}/api/protected/admin/tools/moviehub/chat/completions`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify({
+          message,
+        }),
+      },
+    };
+  },
+};

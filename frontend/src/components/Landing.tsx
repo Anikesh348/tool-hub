@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { CinePilotLauncher } from "./CineBotLauncher";
+import { CinePilotChat } from "./CineBot";
 
 export const Landing = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, isAuthLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<"track" | "leetcode" | null>(null);
+  const { user } = useAuth();
+  const [showCinePilot, setShowCinePilot] = useState(false);
 
   useEffect(() => {
     if (location.pathname.startsWith("/leetcode")) setActiveTab("leetcode");
@@ -149,6 +153,14 @@ export const Landing = () => {
           </div>
         </div>
       </div>
+      {user?.role === "ADMIN" && (
+        <>
+          <CinePilotLauncher onClick={() => setShowCinePilot(true)} />
+          {showCinePilot && (
+            <CinePilotChat onClose={() => setShowCinePilot(false)} />
+          )}
+        </>
+      )}
     </div>
   );
 };

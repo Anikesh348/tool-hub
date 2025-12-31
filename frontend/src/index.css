@@ -138,3 +138,19 @@ html:not(.dark) * {
   scrollbar-color: rgba(59, 130, 246, 0.5) transparent;
   scrollbar-width: thin;
 }
+
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.25s ease-out;
+}

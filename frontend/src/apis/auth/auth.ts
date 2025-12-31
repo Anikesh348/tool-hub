@@ -5,6 +5,7 @@ export interface User {
   password: string;
   userId: string;
   profilePicture: string | undefined;
+  role: string;
 }
 export const AuthService = {
   baseLogin: (email: string, password: string) => ({
