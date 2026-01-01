@@ -79,7 +79,6 @@ public class AddMediaIntentStrategy implements IntentStrategy {
                                     intentResponse.setMessage(addContentRes.cause().getMessage());
                                 }
                                 context.setCompleted(true);
-                                context.setMediaState(new MediaState());
                                 intentResponsePromise.complete(intentResponse);
                             });
                 } else {

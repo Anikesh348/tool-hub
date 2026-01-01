@@ -4,6 +4,7 @@ import { useApiFetcher } from "../hooks/useApiFetcher";
 import { Loader } from "./Loader";
 import { CinePilotTemplates } from "./CinePilotTemplates";
 import { CINE_PILOT_TEMPLATES } from "./CinePilotTemplate";
+import { error } from "console";
 
 interface Props {
   onClose: () => void;
@@ -12,12 +13,13 @@ interface Props {
 export const CinePilotChat: React.FC<Props> = ({ onClose }) => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
+    { role: "user" | "assistant"; content: string; type?: "error" }[]
   >([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { loading, data, fetchData } = useApiFetcher();
+  const { loading, data, error, fetchData } = useApiFetcher();
+  const conversationIdRef = useRef<string>(crypto.randomUUID());
 
   const sendMessage = () => {
     if (!input.trim() || loading) return;
@@ -27,22 +29,41 @@ export const CinePilotChat: React.FC<Props> = ({ onClose }) => {
 
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
 
-    const { url, options } = CinePilotService.chat(userMessage);
+    const { url, options } = CinePilotService.chat(
+      userMessage,
+      conversationIdRef.current
+    );
+
     fetchData(url, options);
   };
 
   useEffect(() => {
-    if (data?.status === 200 && data?.body) {
+    if (!data) return;
+
+    if (data.status >= 200 && data.status < 300 && data.body) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content:
-            data.body.message || "✅ Request accepted. Automation in progress.",
+            data.body.response ||
+            "✅ Request accepted. Automation in progress.",
+        },
+      ]);
+    } else if (data.status >= 400) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          type: "error",
+          content:
+            data.body?.error ||
+            error ||
+            "Something went wrong. Please try again.",
         },
       ]);
     }
-  }, [data]);
+  }, [data, error]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -90,13 +111,25 @@ export const CinePilotChat: React.FC<Props> = ({ onClose }) => {
           {messages.map((m, idx) => (
             <div
               key={idx}
-              className={`max-w-[80%] px-3 py-2 rounded-xl text-sm whitespace-pre-wrap ${
-                m.role === "user"
-                  ? "ml-auto bg-blue-600 text-white"
-                  : "mr-auto bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
+              className={`flex ${
+                m.role === "user" ? "justify-end" : "justify-start"
               }`}
             >
-              {m.content}
+              <div
+                className={`
+    inline-block max-w-[80%]
+    px-3 py-1.5 rounded-xl text-sm leading-snug
+    ${
+      m.type === "error"
+        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+        : m.role === "user"
+        ? "bg-blue-600 text-white"
+        : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
+    }
+  `}
+              >
+                {m.content}
+              </div>
             </div>
           ))}
 

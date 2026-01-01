@@ -35,6 +35,7 @@ public class ShowDownloadClient {
                     .put("name", "SeasonSearch")
                     .put("seasonNumber", seasonNumber)
                     .put("seriesId", seriesId);
+            log.info("calling: {} with request: {}", downloadSeriesUrl, request);
             webClient.postAbs(downloadSeriesUrl)
                     .putHeader("Authorization", "Bearer " + apiKey)
                     .sendJsonObject(request)

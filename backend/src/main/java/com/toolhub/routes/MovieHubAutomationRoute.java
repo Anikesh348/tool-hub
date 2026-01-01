@@ -46,7 +46,8 @@ public class MovieHubAutomationRoute {
                 List.of(new OpenAiClient(webClient, openAiUrl, openAiApiKey)));
         AiClient aiClient = aiClientFactory.getClient(aiModel);
         AddMediaControllerFactory addMediaControllerFactory = new AddMediaControllerFactory(List.of(
-                new AddMovieController(webClient, radarrBaseUrl, radarrApiKey), new AddShowController(webClient, sonarrBaseUrl, sonarrApiKey)
+                new AddMovieController(webClient, radarrBaseUrl, radarrApiKey),
+                new AddShowController(webClient, sonarrBaseUrl, sonarrApiKey, vertx)
         ));
         IntentStrategyFactory intentStrategyFactory = new IntentStrategyFactory(
                 List.of(new AddMediaIntentStrategy(aiClient, conversationContextMap, addMediaControllerFactory)));

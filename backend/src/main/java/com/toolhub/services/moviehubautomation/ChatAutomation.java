@@ -1,6 +1,5 @@
 package com.toolhub.services.moviehubautomation;
 
-import com.toolhub.Utils.*;
 import com.toolhub.models.moviehubautomation.ConversationContext;
 import com.toolhub.models.moviehubautomation.UserChatInput;
 import com.toolhub.services.moviehubautomation.intentparser.IntentStrategyFactory;
@@ -46,7 +45,9 @@ public class ChatAutomation {
                         buildResponse(context, 500, createErrorResponse(fail.getMessage()));
                     });
         } catch (Exception e) {
-            buildResponse(context, 500, createErrorResponse(e.getCause().getMessage()));
+            String errorMessage =
+                    e.getMessage() != null ? e.getMessage() : "Internal server error";
+            buildResponse(context, 500, createErrorResponse(errorMessage));
         }
     }
 }
