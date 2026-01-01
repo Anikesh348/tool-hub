@@ -142,5 +142,38 @@ public class Templates {
                     "User input:\n" +
                     "{USER_INPUT}";
 
+    public static final String SUMMARY_PROMPT_TEMPLATE =
+            "You are generating a user-facing response for a media automation system.\n\n" +
+
+                    "You are given:\n" +
+                    "1. The FINAL media state (what the user requested)\n" +
+                    "2. The BACKEND RESULT (what actually happened)\n\n" +
+
+                    "RULES:\n" +
+                    "- Use ONLY the information provided.\n" +
+                    "- Do NOT invent or assume details.\n" +
+                    "- Do NOT mention internal systems, APIs, or technical steps.\n" +
+                    "- Do NOT ask follow-up questions.\n" +
+                    "- Keep the response concise, friendly, and natural.\n\n" +
+
+                    "OUTPUT SCHEMA (MANDATORY):\n" +
+                    "{\n" +
+                    "  \"summary\": string\n" +
+                    "}\n\n" +
+
+                    "MEDIA STATE:\n" +
+                    "mediaType: {MEDIA_TYPE}\n" +
+                    "title: {TITLE}\n" +
+                    "season: {SEASON}\n" +
+                    "quality: {QUALITY}\n\n" +
+
+                    "BACKEND RESULT:\n" +
+                    "{BACKEND_RESPONSE}\n\n" +
+
+                    "Generate the final JSON response now. " +
+                    "STOP after the final closing brace.";
+
 
 }
+
+

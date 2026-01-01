@@ -12,6 +12,15 @@ public class LLMResponse {
     Payload payload;
     String clarification;
     Intent intent;
+    String summary;
+
+    public String getSummary() {
+        return summary;
+    }
+
+    public void setSummary(String summary) {
+        this.summary = summary;
+    }
 
     public Payload getPayload() {
         return payload;

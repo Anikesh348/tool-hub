@@ -13,7 +13,8 @@ public class OpenAiMessageFactory {
 
     private static final Map<Intent, BaseOpenAiMessageBuilder> INTENT_TO_MESSAGE_BUILDER = Map.of(
             Intent.ADD_MEDIA, new AddMediaMessageBuilder(),
-            Intent.UNKNOWN, new GetIntentMessageBuilder());
+            Intent.UNKNOWN, new GetIntentMessageBuilder(),
+            Intent.SUMMARIZE, new GetSummariseMessageBuilder());
 
     public static BaseOpenAiMessageBuilder build(Intent intent) {
         log.info("Building message builder for intent: {}", intent);

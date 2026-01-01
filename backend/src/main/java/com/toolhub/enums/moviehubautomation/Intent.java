@@ -5,6 +5,7 @@ public enum Intent {
     CHECK_DOWNLOAD_STATUS,
     LIST_DOWNLOADS,
     CONTROL_DOWNLOAD,
-    UNKNOWN
+    UNKNOWN,
+    SUMMARIZE
 }
 

@@ -13,7 +13,7 @@ public class OpenAiRequestBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiRequestBuilder.class);
 
-    public static JsonObject buildPayload(MediaState mediaState, String userInput, Intent intent) {
+    public static JsonObject buildPayload(MediaState mediaState, String input, Intent intent) {
         log.info("Building OpenAI request payload for intent={}", intent);
 
         JsonObject request = new JsonObject()
@@ -23,7 +23,7 @@ public class OpenAiRequestBuilder {
         JsonArray messages = new JsonArray()
                 .add(systemMessage())
                 .add(OpenAiMessageFactory.build(intent)
-                        .buildMessage(mediaState, userInput));
+                        .buildMessage(mediaState, input));
 
         log.info("Built OpenAI request with model=gpt-4o-mini, messages count={}", messages.size());
         return request.put("messages", messages);
