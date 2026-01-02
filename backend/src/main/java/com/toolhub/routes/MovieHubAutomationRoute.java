@@ -33,8 +33,7 @@ public class MovieHubAutomationRoute {
         this.conversationContextMap = new HashMap<>();
     }
 
-    public void register(Router mainRouter, Vertx vertx) {
-        Router subRoute = Router.router(vertx);
+    public void register(Router adminRouter, Vertx vertx) {
         String openAiUrl = dotenv.get("OPEN_AI_URL");
         String openAiApiKey = dotenv.get("OPEN_AI_API_KEY");
         String radarrBaseUrl = dotenv.get("RADARR_API_URL");
@@ -51,11 +50,10 @@ public class MovieHubAutomationRoute {
         ));
         IntentStrategyFactory intentStrategyFactory = new IntentStrategyFactory(
                 List.of(new AddMediaIntentStrategy(aiClient, conversationContextMap, addMediaControllerFactory)));
-        subRoute.post("/content")
-                .handler(context -> new AddMedia(addMediaControllerFactory).handle(context));
-        subRoute.post("/chat/completions")
+//        adminRouter.post("/content")
+//                .handler(context -> new AddMedia(addMediaControllerFactory).handle(context));
+        adminRouter.post("/moviehub/chat/completions")
                 .handler(context -> new ChatAutomation(conversationContextMap,
                         aiClient, intentStrategyFactory).handle(context));
-        mainRouter.route("/api/protected/admin/tools/moviehub/*").subRouter(subRoute);
     }
 }

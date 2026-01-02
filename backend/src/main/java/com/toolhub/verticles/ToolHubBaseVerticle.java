@@ -56,32 +56,35 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                                     .allowedHeader("Authorization")
                     );
                     router.route().handler(BodyHandler.create());
-                    router.route("/api/protected/*")
-                            .handler(new AuthHandler());
-                    router.route("/api/protected/admin/*")
+                    Router protectedRouter = Router.router(vertx);
+                    protectedRouter.route().handler(new AuthHandler());
+                    router.route("/v2/*").subRouter(protectedRouter);
+                    Router adminRouter = Router.router(vertx);
+                    adminRouter.route()
                             .handler(RoleHandler.allow(Role.ADMIN.name()));
-                    new MovieHubAutomationRoute(client, dotenv).register(router, vertx);
+                    protectedRouter.route("/admin/*").subRouter(adminRouter);
+                    new MovieHubAutomationRoute(client, dotenv).register(adminRouter, vertx);
                     UserManagement userManagement = new UserManagement(mongoDBClient);
                     SaveProduct saveProduct = new SaveProduct(mongoDBClient, client, vertx);
-                    router.post("/api/login").handler(userManagement::handleLogin);
-                    router.post("/api/register").handler(userManagement::handleRegister);
-                    router.post("/api/protected/save-product").handler(saveProduct::saveProduct);
-                    router.get("/api/schedule").handler(context
+                    router.post("/v2/login").handler(userManagement::handleLogin);
+                    router.post("/v2/register").handler(userManagement::handleRegister);
+                    protectedRouter.post("/save-product").handler(saveProduct::saveProduct);
+                    router.get("/v2/schedule").handler(context
                             -> Schedule.schedulePriceCheck(context, mongoDBClient, vertx, client));
-                    router.get("/api/protected/products")
+                    protectedRouter.get("/products")
                             .handler(context -> new GetProducts(mongoDBClient, context));
-                    router.post("/api/protected/pricehistory")
+                    protectedRouter.post("/pricehistory")
                             .handler(context -> new GetPriceHistory(mongoDBClient, context));
-                    router.post("/api/protected/delete")
+                    protectedRouter.post("/delete")
                             .handler(context -> new DeleteProduct(mongoDBClient, context));
-                    router.post("/api/protected/leetcode/add")
+                    protectedRouter.post("/leetcode/add")
                             .handler(new AddQuestionController(mongoDBClient, client)::handle);
-                    router.get("/api/protected/leetcode/questions").handler(new GetQuestions(mongoDBClient)::handle);
-                    router.post("/api/protected/leetcode/update-status")
+                    protectedRouter.get("/leetcode/questions").handler(new GetQuestions(mongoDBClient)::handle);
+                    protectedRouter.post("/leetcode/update-status")
                     .handler(new UpdateQuestionStatus(mongoDBClient)::handle);
-                    router.post("/api/protected/leetcode/update-notes")
+                    protectedRouter.post("/leetcode/update-notes")
                             .handler(new UpdateQuestionNotes(mongoDBClient)::handle);
-                    router.post("/api/protected/leetcode/delete").handler(new DeleteQuestion(mongoDBClient)::handle);
+                    protectedRouter.post("/leetcode/delete").handler(new DeleteQuestion(mongoDBClient)::handle);
                     
                     // Deploy PriceCheckSchedulerVerticle
                     vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
