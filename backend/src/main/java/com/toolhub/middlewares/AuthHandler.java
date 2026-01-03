@@ -10,6 +10,11 @@ public class AuthHandler implements Handler<RoutingContext> {
 
     @Override
     public void handle(RoutingContext context) {
+        String path = context.normalizedPath();
+        if (path.equals("/v2/login") || path.equals("/v2/register")) {
+            context.next();
+            return;
+        }
         String authHeader = context.request().getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer")) {
             Utility.buildResponse(context, 401, Utility.createErrorResponse("missing auth token"));
