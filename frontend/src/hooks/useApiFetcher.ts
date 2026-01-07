@@ -24,15 +24,21 @@ export const useApiFetcher = () => {
       console.log("calling url: ", url);
       const response = await fetch(url, options);
       if (!response.ok) {
-        const errorText = response.statusText;
+        let errorBody = null;
+
+        try {
+          errorBody = await response.json();
+        } catch (_) {}
+
         setState({
           loading: false,
           data: {
-            body: null,
+            body: errorBody,
             status: response.status,
           },
-          error: errorText,
+          error: errorBody?.error || errorBody?.message || response.statusText,
         });
+        return;
       } else {
         const data = await response.json();
         setState({

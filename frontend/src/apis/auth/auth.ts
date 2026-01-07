@@ -5,10 +5,11 @@ export interface User {
   password: string;
   userId: string;
   profilePicture: string | undefined;
+  role: string;
 }
 export const AuthService = {
   baseLogin: (email: string, password: string) => ({
-    url: BASE_URL + "/api/login",
+    url: BASE_URL + "/v2/login",
     options: {
       method: "POST",
       headers: {
@@ -23,7 +24,7 @@ export const AuthService = {
   }),
   googleLogin: (token: string) => {
     return {
-      url: BASE_URL + "/api/login",
+      url: BASE_URL + "/v2/login",
       options: {
         method: "POST",
         headers: {
@@ -38,7 +39,7 @@ export const AuthService = {
   },
   baseRegister: (user: User) => {
     return {
-      url: BASE_URL + "/api/register",
+      url: BASE_URL + "/v2/register",
       options: {
         method: "POST",
         headers: {

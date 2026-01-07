@@ -3,7 +3,7 @@ const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
 export const LeetCodeService = {
   addQuestions: (questionUrls: string[]) => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/add`,
+      url: `${BASE_URL}/v2/leetcode/add`,
       options: {
         method: "POST",
         headers: {
@@ -16,7 +16,7 @@ export const LeetCodeService = {
   },
 
   getQuestions: (tags?: string[], operation?: "union" | "intersection") => {
-    let url = `${BASE_URL}/api/protected/leetcode/questions`;
+    let url = `${BASE_URL}/v2/leetcode/questions`;
     if (tags && tags.length > 0) {
       const params = new URLSearchParams();
       tags.forEach((tag) => params.append("tags", tag));
@@ -37,7 +37,7 @@ export const LeetCodeService = {
 
   deleteQuestion: (questionId: string) => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/delete`,
+      url: `${BASE_URL}/v2/leetcode/delete`,
       options: {
         method: "POST", // use DELETE if backend supports
         headers: {
@@ -51,7 +51,7 @@ export const LeetCodeService = {
 
   updateQuestionStatus: (questionId: string, status: string) => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/update-status`,
+      url: `${BASE_URL}/v2/leetcode/update-status`,
       options: {
         method: "POST", // or PATCH if backend supports
         headers: {
@@ -67,7 +67,7 @@ export const LeetCodeService = {
   },
   updateQuestionNotes: (questionId: string, notes: string) => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/update-notes`,
+      url: `${BASE_URL}/v2/leetcode/update-notes`,
       options: {
         method: "POST", // or PATCH if backend supports
         headers: {
@@ -84,7 +84,7 @@ export const LeetCodeService = {
 
   applyTags: (questionId: string, tags: string[]) => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/applyTags`,
+      url: `${BASE_URL}/v2/leetcode/applyTags`,
       options: {
         method: "POST",
         headers: {
@@ -98,7 +98,7 @@ export const LeetCodeService = {
 
   filterWithTags: (tags: string[], operation: "union" | "intersection") => {
     return {
-      url: `${BASE_URL}/api/protected/leetcode/filterWithTags`,
+      url: `${BASE_URL}/v2/leetcode/filterWithTags`,
       options: {
         method: "POST",
         headers: {

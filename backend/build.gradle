@@ -59,7 +59,7 @@ test {
 }
 
 application {
-    mainClass = 'com.pricedrop.verticles.Main'
+    mainClass = 'com.toolhub.verticles.Main'
 }
 
 tasks.register('runDebug', JavaExec) {
