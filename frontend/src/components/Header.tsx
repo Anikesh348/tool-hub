@@ -57,7 +57,7 @@ function Header() {
           {isLanding ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/favicon.png"
+                src="/tool_hub_logo.png"
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />
@@ -65,7 +65,7 @@ function Header() {
           ) : showHome ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/favicon.png"
+                src="/tool_hub_logo.png"
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />
@@ -73,7 +73,7 @@ function Header() {
           ) : isAuthPage ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/favicon.png"
+                src="/tool_hub_logo.png"
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />
