@@ -28,7 +28,13 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/build/libs/pricedropproject-1.0-all.jar app.jar
 COPY --from=build /app/.env .env
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["java", "-jar", "app.jar"]
