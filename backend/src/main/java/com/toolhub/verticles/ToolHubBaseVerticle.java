@@ -58,6 +58,32 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                 );
                 router.route().handler(BodyHandler.create());
 
+                router.get("/health").handler(ctx -> {
+                    log.debug("Health check requested");
+                    mongoDBClient.pingConnection()
+                            .onSuccess(res -> {
+                                log.debug("Health check OK: mongo up");
+                                ctx.response()
+                                        .putHeader("Content-Type", "application/json")
+                                        .setStatusCode(200)
+                                        .end(new JsonObject()
+                                                .put("status", "ok")
+                                                .put("mongo", "up")
+                                                .encode());
+                            })
+                            .onFailure(err -> {
+                                log.warn("Health check degraded: mongo down", err);
+                                ctx.response()
+                                        .putHeader("Content-Type", "application/json")
+                                        .setStatusCode(503)
+                                        .end(new JsonObject()
+                                                .put("status", "degraded")
+                                                .put("mongo", "down")
+                                                .put("error", err.getMessage())
+                                                .encode());
+                            });
+                });
+
                 Router protectedRouter = Router.router(vertx);
                 protectedRouter.route().handler(new AuthHandler());
                 router.route("/v2/*").subRouter(protectedRouter);

@@ -1,0 +1,85 @@
+name: Deploy ToolHub (Docker Build + Up)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧩 Join Tailscale tailnet
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gha-deploy-toolhub
+
+      - name: 🔍 Verify Tailscale connectivity
+        run: |
+          echo "== Tailscale status =="
+          tailscale status
+          echo ""
+          echo "== Tailscale IPs =="
+          tailscale ip
+          echo ""
+          echo "== Ping Pi over tailnet =="
+          ping -c 3 ${{ secrets.PI_HOST }}
+
+      - name: 🚀 Deploy on Raspberry Pi
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PI_HOST }}
+          username: ${{ secrets.PI_USER }}
+          key: ${{ secrets.PI_SSH_KEY }}
+          script: |
+            set -euxo pipefail
+
+            echo "====================================="
+            echo "📍 Connected to Raspberry Pi"
+            echo "Hostname:"
+            hostname
+            echo "User:"
+            whoami
+            echo "Uptime:"
+            uptime
+            echo "====================================="
+
+            echo "📂 Switching to project directory"
+            cd /srv/toolhub/tool-hub
+
+            echo "📌 Git status (before)"
+            git status
+            git branch --show-current
+
+            echo "⬇️ Fetching latest changes"
+            git fetch origin
+
+            echo "📌 Checking out main"
+            git checkout main
+
+            echo "⬇️ Pulling latest commits"
+            git pull origin main
+
+            echo "📌 Latest commit"
+            git log -1 --oneline
+
+            echo "====================================="
+            echo "🐳 Docker Compose status (before)"
+            docker compose ps
+            echo "====================================="
+
+            echo "🔨 Building Docker images"
+            docker compose build
+
+            echo "🚀 Starting containers"
+            docker compose up -d
+
+            echo "====================================="
+            echo "🐳 Docker Compose status (after)"
+            docker compose ps
+            echo "====================================="
+
+            echo "📜 Recent container logs (last 100 lines)"
+            docker compose logs --tail=100
