@@ -1,27 +1,29 @@
 # scrape.py
+from __future__ import annotations
 
-import time
-import re
-import json
-import random
 import logging
+import os
+import random
 import sys
-import requests
+import time
+from typing import Optional
 
+import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
-from bs4 import BeautifulSoup
+
+from platforms import HANDLERS, get_handler_for_url
 
 # =========================================================
 # LOGGING CONFIG
 # =========================================================
 logging.basicConfig(
-    level=logging.INFO,  # change to DEBUG for deep tracing
+    level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-logger = logging.getLogger("amazon-scraper")
+logger = logging.getLogger("product-scraper")
 
 # =========================================================
 # FASTAPI APP
@@ -32,8 +34,12 @@ app = FastAPI()
 # =========================================================
 # INPUT MODEL
 # =========================================================
+DEFAULT_AMAZON_PINCODE = os.getenv("AMAZON_PINCODE", "560048")
+
+
 class ScrapeProductRequest(BaseModel):
     url: str
+    pincode: Optional[str] = DEFAULT_AMAZON_PINCODE
 
 
 # =========================================================
@@ -41,7 +47,7 @@ class ScrapeProductRequest(BaseModel):
 # =========================================================
 session = requests.Session()
 
-HEADERS = {
+BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -49,7 +55,6 @@ HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml",
-    "Referer": "https://www.amazon.in/",
 }
 
 
@@ -58,16 +63,8 @@ HEADERS = {
 # =========================================================
 def log_timing(label: str, start: float) -> float:
     elapsed = round(time.time() - start, 3)
-    logger.debug(f"{label} took {elapsed}s")
+    logger.debug("%s took %ss", label, elapsed)
     return elapsed
-
-
-def clean_price(text: str) -> str | None:
-    if not text:
-        return None
-    text = text.replace(",", "").strip()
-    match = re.search(r"\d+(\.\d{1,2})?", text)
-    return match.group(0) if match else None
 
 
 def is_blocked_page(html: str) -> bool:
@@ -76,108 +73,21 @@ def is_blocked_page(html: str) -> bool:
         "Enter the characters you see below",
         "Robot Check",
         "Sorry, we just need to make sure",
+        "Access denied",
+        "enable javascript",
+        "request could not be satisfied",
     ]
 
+    html_lower = html.lower()
     for marker in blocked_markers:
-        if marker.lower() in html.lower():
+        if marker.lower() in html_lower:
             logger.warning("Blocked page detected (captcha / bot check)")
             return True
-
     return False
 
 
-# =========================================================
-# AMAZON SCRAPER
-# =========================================================
-def extract_amazon_data(html: str) -> dict:
-    soup = BeautifulSoup(html, "lxml")
-
-    result = {
-        "title": None,
-        "price": None,
-        "image": None,
-        "status": "success",
-        "error": None,
-        "timings": {},
-    }
-
-    logger.info("Parsing Amazon product page")
-
-    # ---------------- Title ----------------
-    start = time.time()
-    title_tag = soup.select_one("#productTitle")
-    result["title"] = title_tag.get_text(strip=True) if title_tag else None
-    result["timings"]["title"] = log_timing("Title extraction", start)
-
-    if not result["title"]:
-        logger.warning("Title not found")
-
-    # ---------------- Price ----------------
-    start = time.time()
-    price = None
-
-    price_strategies = [
-        ("a-offscreen", "span.a-offscreen"),
-        ("priceblock_ourprice", "span#priceblock_ourprice"),
-        ("priceblock_dealprice", "span#priceblock_dealprice"),
-        ("nested_offscreen", "span.a-price > span.a-offscreen"),
-    ]
-
-    for name, selector in price_strategies:
-        el = soup.select_one(selector)
-        if el:
-            raw = el.get_text(strip=True)
-            logger.debug(f"Price strategy '{name}' found raw='{raw}'")
-            candidate = clean_price(raw)
-            if candidate:
-                price = candidate
-                logger.info(f"Price extracted using strategy: {name}")
-                break
-        else:
-            logger.debug(f"Price strategy '{name}' not found")
-
-    # JSON-LD fallback
-    if not price:
-        logger.info("Trying JSON-LD price fallback")
-        for script in soup.find_all("script", type="application/ld+json"):
-            try:
-                data = json.loads(script.string)
-                if isinstance(data, dict):
-                    offers = data.get("offers", {})
-                    price = offers.get("price")
-                    if price:
-                        logger.info("Price extracted from JSON-LD")
-                        break
-            except Exception:
-                continue
-
-    if not price:
-        logger.error("Price not found using any strategy")
-        result["status"] = "failure"
-        result["error"] = "Price not found"
-    else:
-        result["price"] = price
-
-    result["timings"]["price"] = log_timing("Price extraction", start)
-
-    # ---------------- Image ----------------
-    start = time.time()
-    img = soup.select_one("#landingImage")
-
-    if img and img.get("src"):
-        result["image"] = img["src"]
-        logger.debug("Image extracted from #landingImage")
-    else:
-        og = soup.find("meta", property="og:image")
-        if og:
-            result["image"] = og["content"]
-            logger.debug("Image extracted from og:image")
-        else:
-            logger.warning("Image not found")
-
-    result["timings"]["image"] = log_timing("Image extraction", start)
-
-    return result
+def supported_platform_names() -> list[str]:
+    return sorted({handler.name for handler in HANDLERS})
 
 
 # =========================================================
@@ -186,25 +96,49 @@ def extract_amazon_data(html: str) -> dict:
 @app.post("/scrape/product")
 def scrape_product(request: ScrapeProductRequest):
     url = request.url
-    logger.info(f"Incoming scrape request: {url}")
+    pincode = request.pincode
+    logger.info("Incoming scrape request: %s", url)
 
-    if "amazon." not in url:
-        logger.warning("Rejected non-Amazon URL")
-        return {"status": "failure", "error": "Only Amazon URLs supported"}
+    handler, domain = get_handler_for_url(url)
+    if not handler:
+        logger.warning("Rejected unsupported domain: %s", domain)
+        return {
+            "status": "failure",
+            "error": (
+                f"Unsupported domain: {domain}. "
+                f"Supported platforms: {', '.join(supported_platform_names())}"
+            ),
+        }
+
+    valid, validation_error = handler.validate_request(url, pincode)
+    if not valid:
+        logger.warning("Rejected invalid request for %s: %s", handler.name, validation_error)
+        return {"status": "failure", "error": validation_error}
 
     total_start = time.time()
+    pincode_timing = 0.0
+    pincode_applied = False
+    request_headers = handler.request_headers(BASE_HEADERS, url, pincode)
+
+    try:
+        pre_fetch = handler.before_fetch(session, request_headers, url, pincode)
+        pincode_timing = float(pre_fetch.get("pincode_timing", 0.0))
+        pincode_applied = bool(pre_fetch.get("pincode_applied", False))
+    except Exception:
+        logger.exception("Pre-fetch setup failed for platform: %s", handler.name)
 
     for attempt in range(2):  # retry once
-        logger.info(f"Fetch attempt {attempt + 1}")
+        logger.info("Fetch attempt %s for platform=%s", attempt + 1, handler.name)
 
         try:
             start = time.time()
-            response = session.get(url, headers=HEADERS, timeout=10)
+            response = session.get(url, headers=request_headers, timeout=10)
             fetch_time = log_timing("HTTP fetch", start)
 
-            logger.info(f"HTTP status: {response.status_code}")
-
+            logger.info("HTTP status: %s", response.status_code)
             if response.status_code != 200:
+                if response.status_code in (403, 429, 503):
+                    time.sleep(0.75 + random.random())
                 logger.warning("Non-200 response, retrying")
                 continue
 
@@ -213,27 +147,39 @@ def scrape_product(request: ScrapeProductRequest):
                 time.sleep(1 + random.random())
                 continue
 
-            parsed = extract_amazon_data(response.text)
+            parsed = handler.extract_product_data(response.text)
+            parsed.setdefault("timings", {})
             parsed["timings"]["fetch"] = fetch_time
+            parsed["timings"]["pincode"] = pincode_timing
             parsed["timings"]["total"] = round(time.time() - total_start, 3)
             parsed["attempt"] = attempt + 1
+            parsed["platform"] = handler.name
+            parsed["domain"] = domain
+            parsed["pincode"] = pincode
+            parsed["pincode_applied"] = pincode_applied
 
             logger.info(
-                f"Scrape completed: status={parsed['status']} "
-                f"price={parsed.get('price')}"
+                "Scrape completed: platform=%s status=%s price=%s",
+                handler.name,
+                parsed.get("status"),
+                parsed.get("price"),
             )
-
             return parsed
-
         except Exception:
-            logger.exception(f"Unexpected error on attempt {attempt + 1}")
+            logger.exception("Unexpected error on attempt %s", attempt + 1)
 
-    logger.error("Scraping failed after all retries")
-
+    logger.error("Scraping failed after all retries for platform=%s", handler.name)
     return {
         "status": "failure",
         "error": "Blocked or unable to scrape after retries",
-        "timings": {"total": round(time.time() - total_start, 3)},
+        "timings": {
+            "pincode": pincode_timing,
+            "total": round(time.time() - total_start, 3),
+        },
+        "platform": handler.name,
+        "domain": domain,
+        "pincode": pincode,
+        "pincode_applied": pincode_applied,
     }
 
 
