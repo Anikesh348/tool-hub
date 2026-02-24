@@ -64,13 +64,20 @@ jobs:
             git branch --show-current
 
             echo "⬇️ Fetching latest changes"
-            git fetch origin "${DEPLOY_BRANCH}"
+            git fetch --prune origin "${DEPLOY_BRANCH}"
+
+            echo "🧹 Cleaning local workspace"
+            git reset --hard
+            git clean -fd
 
             echo "📌 Checking out ${DEPLOY_BRANCH}"
-            git checkout -B "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
+            git checkout -f "${DEPLOY_BRANCH}" || git checkout -B "${DEPLOY_BRANCH}"
 
-            echo "⬇️ Pulling latest commits"
-            git pull origin "${DEPLOY_BRANCH}"
+            echo "🔄 Resetting to origin/${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
+
+            echo "🧹 Cleaning untracked files after reset"
+            git clean -fd
 
             echo "📌 Latest commit"
             git log -1 --oneline
