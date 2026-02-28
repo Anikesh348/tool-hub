@@ -652,6 +652,7 @@ public class MovieHubRequestPortalService {
     }
 
     private Future<JsonObject> reconcileDownloadedRequests(List<JsonObject> records) {
+        log.info("Starting downloaded request reconciliation, records={}", records.size());
         List<MediaDownloadRequest> requests = records.stream()
                 .map(record -> record.mapTo(MediaDownloadRequest.class))
                 .toList();
@@ -673,8 +674,15 @@ public class MovieHubRequestPortalService {
                 .put("statusUpdated", 0)
                 .put("alertsSent", 0)
                 .put("alertsFailed", 0);
+        log.info(
+                "Prepared reconciliation scope totalRequests={} approvedChecked={} downloadedMissingAlert={}",
+                requests.size(),
+                approvedRequests.size(),
+                downloadedWithoutAlert.size()
+        );
 
         if (approvedRequests.isEmpty() && downloadedWithoutAlert.isEmpty()) {
+            log.info("Skipping reconciliation because there are no approved or pending-alert downloaded requests");
             return Future.succeededFuture(summary);
         }
 
@@ -684,6 +692,11 @@ public class MovieHubRequestPortalService {
         ).compose(result -> {
             JsonArray availableMovies = result.resultAt(0);
             JsonArray availableShows = result.resultAt(1);
+            log.info(
+                    "Fetched available media for reconciliation moviesCount={} showsCount={}",
+                    availableMovies == null ? 0 : availableMovies.size(),
+                    availableShows == null ? 0 : availableShows.size()
+            );
 
             int[] inQueue = {0};
             int[] downloadedDetected = {0};
@@ -693,21 +706,28 @@ public class MovieHubRequestPortalService {
             List<Future> updateFutures = new ArrayList<>();
 
             for (MediaDownloadRequest request : approvedRequests) {
+                String requestId = request.getRequestId();
+                String title = request.getTitle();
                 if (!isRequestDownloaded(request, availableMovies, availableShows)) {
                     inQueue[0]++;
+                    log.debug("Request still not downloaded requestId={} title={}", requestId, title);
                     continue;
                 }
                 downloadedDetected[0]++;
+                log.info("Detected downloaded request requestId={} title={}", requestId, title);
                 Future<Void> updateFuture = markRequestDownloaded(request)
                         .compose(updateResult -> {
                             statusUpdated[0]++;
+                            log.info("Marked request as DOWNLOADED requestId={} title={}", requestId, title);
                             return sendDownloadedEmailIfNeeded(request);
                         })
                         .map(sent -> {
                             if (sent) {
                                 alertsSent[0]++;
+                                log.info("Downloaded notification sent requestId={} title={}", requestId, title);
                             } else {
                                 alertsFailed[0]++;
+                                log.warn("Downloaded notification skipped/failed requestId={} title={}", requestId, title);
                             }
                             return (Void) null;
                         })
@@ -720,12 +740,17 @@ public class MovieHubRequestPortalService {
             }
 
             for (MediaDownloadRequest request : downloadedWithoutAlert) {
+                String requestId = request.getRequestId();
+                String title = request.getTitle();
+                log.info("Attempting pending downloaded notification requestId={} title={}", requestId, title);
                 Future<Void> notifyFuture = sendDownloadedEmailIfNeeded(request)
                         .map(sent -> {
                             if (sent) {
                                 alertsSent[0]++;
+                                log.info("Pending downloaded notification sent requestId={} title={}", requestId, title);
                             } else {
                                 alertsFailed[0]++;
+                                log.warn("Pending downloaded notification skipped/failed requestId={} title={}", requestId, title);
                             }
                             return (Void) null;
                         })
@@ -746,10 +771,18 @@ public class MovieHubRequestPortalService {
                     .put("downloadedDetected", downloadedDetected[0])
                     .put("statusUpdated", statusUpdated[0])
                     .put("alertsSent", alertsSent[0])
-                    .put("alertsFailed", alertsFailed[0]));
+                    .put("alertsFailed", alertsFailed[0]))
+                    .map(updatedSummary -> {
+                        log.info(
+                                "Completed downloaded request reconciliation summary={}",
+                                updatedSummary.encode()
+                        );
+                        return updatedSummary;
+                    });
         }).recover(fail -> {
             log.error("Failed during downloaded request reconciliation", fail);
             summary.put("error", fail.getMessage());
+            log.warn("Reconciliation returning degraded summary={}", summary.encode());
             return Future.succeededFuture(summary);
         });
     }
