@@ -52,9 +52,14 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                         CorsHandler.create()
                                 .allowedMethod(HttpMethod.GET)
                                 .allowedMethod(HttpMethod.POST)
+                                .allowedMethod(HttpMethod.PUT)
+                                .allowedMethod(HttpMethod.PATCH)
+                                .allowedMethod(HttpMethod.DELETE)
                                 .allowedMethod(HttpMethod.OPTIONS)
                                 .allowedHeader("Content-Type")
                                 .allowedHeader("Authorization")
+                                .allowedHeader("Accept")
+                                .allowedHeader("X-Requested-With")
                 );
                 router.route().handler(BodyHandler.create());
 
@@ -92,7 +97,11 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                 adminRouter.route().handler(RoleHandler.allow(Role.ADMIN.name()));
                 protectedRouter.route("/admin/*").subRouter(adminRouter);
 
-                new MovieHubAutomationRoute(client, dotenv).register(adminRouter, vertx);
+                new MovieHubAutomationRoute(
+                        client,
+                        dotenv,
+                        mongoDBClient
+                ).register(protectedRouter, adminRouter, vertx);
 
                 UserManagement userManagement = new UserManagement(mongoDBClient);
                 SaveProduct saveProduct = new SaveProduct(mongoDBClient, client, vertx);

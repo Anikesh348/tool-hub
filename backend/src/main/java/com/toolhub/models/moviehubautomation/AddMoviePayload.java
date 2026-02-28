@@ -18,7 +18,8 @@ public class AddMoviePayload extends AddMediaPayload {
         this.addOptions = new JsonObject().put("searchForMovie", true);
         this.title = lookUpResponse.getString("title");
         this.tmdbId = lookUpResponse.getInteger("tmdbId");
-        this.qualityProfileId = QUALITY_PROFILE_MAP.getOrDefault(lookUpDTO.getQuality(), 4);
+        String quality = lookUpDTO.getQuality() == null ? "any" : lookUpDTO.getQuality().toLowerCase();
+        this.qualityProfileId = QUALITY_PROFILE_MAP.getOrDefault(quality, DEFAULT_QUALITY_PROFILE_ID);
     }
 
     public String getMinimumAvailability() {

@@ -28,7 +28,20 @@ public class LookUpClient {
 
     public Future<JsonObject> callLookUpUrl(String lookupQuery) {
         Promise<JsonObject> lookupPromise = Promise.promise();
-        log.debug("callLookUpUrl called with query={}", lookupQuery);
+        callLookUpUrlList(lookupQuery).onSuccess(arrResponse -> {
+            if (!arrResponse.isEmpty()) {
+                lookupPromise.complete(arrResponse.getJsonObject(0));
+            } else {
+                log.warn("Lookup returned empty results for query={}", lookupQuery);
+                lookupPromise.fail("failure while looking up for the content");
+            }
+        }).onFailure(lookupPromise::fail);
+        return lookupPromise.future();
+    }
+
+    public Future<JsonArray> callLookUpUrlList(String lookupQuery) {
+        Promise<JsonArray> lookupPromise = Promise.promise();
+        log.debug("callLookUpUrlList called with query={}", lookupQuery);
         log.info("logging api url {}", apiUrl);
         try {
             client.getAbs(apiUrl)
@@ -40,13 +53,8 @@ public class LookUpClient {
                         if (statusCode >= 200 && statusCode < 300) {
                             try {
                                 JsonArray arrResponse = res.bodyAsJsonArray();
-                                if (!arrResponse.isEmpty()) {
-                                    log.info("Lookup successful for query={}, found {} result(s)", lookupQuery, arrResponse.size());
-                                    lookupPromise.complete(res.bodyAsJsonArray().getJsonObject(0));
-                                } else {
-                                    log.warn("Lookup returned empty results for query={}", lookupQuery);
-                                    lookupPromise.fail("failure while looking up for the content");
-                                }
+                                log.info("Lookup successful for query={}, found {} result(s)", lookupQuery, arrResponse.size());
+                                lookupPromise.complete(arrResponse);
                             } catch(Exception processingException) {
                                 String errorMsg = processingException.getCause() != null ? processingException.getCause().getMessage() : processingException.getMessage();
                                 log.error("Exception while processing lookup response for query={}: {}", lookupQuery, errorMsg);

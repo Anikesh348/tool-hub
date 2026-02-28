@@ -2,6 +2,7 @@ package com.toolhub.services.user.login;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.toolhub.enums.user.Role;
 import com.toolhub.models.AuthProvider;
 import com.toolhub.models.User;
 import com.toolhub.services.jwt.JWTProvider;
@@ -31,13 +32,18 @@ public class GoogleLogin implements Login {
         JsonObject userQuery = new JsonObject().put("userId", userId);
 
         mongoDBClient.queryRecords(userQuery, "users").onSuccess(userRes -> {
+            if (userRes == null || userRes.isEmpty()) {
+                log.warn("No user found in users collection for userId: {}", userId);
+                buildResponse(routingContext, 404, createErrorResponse("user not found"));
+                return;
+            }
             log.info("User fetched successfully from users collection for userId: {}", userId);
 
-            JsonObject user = userRes.getFirst();
-            String userRole = user.getString("role");
+            JsonObject user = userRes.get(0);
+            String userRole = user.getString("role", Role.USER.name());
             String jwtToken = JWTProvider.generateToken(userId, userRole);
             JsonObject response = new JsonObject().put("token", jwtToken);
-            response.put("user", extractRequiredUserInfo(userRes.getFirst()));
+            response.put("user", extractRequiredUserInfo(user));
 
             log.info("JWT token generated for userId: {}", userId);
             buildResponse(routingContext, 200, response);
@@ -59,7 +65,15 @@ public class GoogleLogin implements Login {
     @Override
     public void handleLogin() {
         JsonObject requestBody = routingContext.body().asJsonObject();
+        if (requestBody == null) {
+            buildResponse(routingContext, 400, createErrorResponse("request body is required"));
+            return;
+        }
         String googleToken = requestBody.getString("token");
+        if (googleToken == null || googleToken.isBlank()) {
+            buildResponse(routingContext, 400, createErrorResponse("google token is required"));
+            return;
+        }
         log.info("Received Google login token");
 
         try {
@@ -113,7 +127,31 @@ public class GoogleLogin implements Login {
                 } else {
                     log.info("User already exists in authprovider: {}", email);
                     String userId = res.get(0).getString("userId");
-                    fetchUser(routingContext, userId);
+                    if (userId == null || userId.isBlank()) {
+                        log.error("authprovider record missing userId for email: {}", email);
+                        buildResponse(routingContext, 500, createErrorResponse("Invalid auth provider record"));
+                        return;
+                    }
+                    JsonObject existingUserQuery = new JsonObject().put("userId", userId);
+                    mongoDBClient.queryRecords(existingUserQuery, "users").onSuccess(existingUsers -> {
+                        if (existingUsers == null || existingUsers.isEmpty()) {
+                            log.warn("Missing users record for authprovider userId: {}. Auto-healing.", userId);
+                            Instant now = Instant.now();
+                            User user = new User("", email, name, userId, now, now, profilePicture);
+                            mongoDBClient.insertRecord(JsonObject.mapFrom(user), "users").onSuccess(insertRes -> {
+                                log.info("Recovered missing user record for userId: {}", userId);
+                                fetchUser(routingContext, userId);
+                            }).onFailure(insertFail -> {
+                                log.error("Failed to recover missing user record for userId: {}. Error: {}", userId, insertFail.getMessage());
+                                buildResponse(routingContext, 500, createErrorResponse("Failed to recover user profile"));
+                            });
+                            return;
+                        }
+                        fetchUser(routingContext, userId);
+                    }).onFailure(userQueryFail -> {
+                        log.error("Failed to query users collection for userId: {}. Error: {}", userId, userQueryFail.getMessage());
+                        buildResponse(routingContext, 500, createErrorResponse("Internal error"));
+                    });
                 }
 
             }).onFailure(err -> {

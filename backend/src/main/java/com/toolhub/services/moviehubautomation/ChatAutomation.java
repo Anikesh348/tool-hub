@@ -37,6 +37,10 @@ public class ChatAutomation {
                 conversationContext = new ConversationContext(conversationId);
                 conversationContextMap.put(conversationId, conversationContext);
             }
+            String userId = context.get("userId");
+            String userRole = context.get("role");
+            conversationContext.setUserId(userId == null ? "" : userId);
+            conversationContext.setUserRole(userRole == null ? "" : userRole);
             AutomationOrchestrator
                     .get(aiClient, intentStrategyFactory)
                     .orchestrate(userInput, conversationContext).onSuccess(res -> {

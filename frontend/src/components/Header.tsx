@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { LogOut, Menu, X, ArrowLeft } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotification } from "../context/NotificationContext";
+import { useTheme } from "../context/ThemeContext";
 
 function Header() {
   const location = useLocation().pathname;
@@ -12,7 +13,10 @@ function Header() {
     location !== "/login" && location !== "/register";
   const { isAuthenticated, logout, user } = useAuth();
   const { addNotification } = useNotification();
+  const { theme } = useTheme();
   const showSignIn = !isAuthenticated && isNotLoginOrRegister;
+  const logoSrc =
+    theme === "dark" ? "/tool_hub_logo_dark.png" : "/tool_hub_logo.png";
 
   const [open, setOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -46,7 +50,9 @@ function Header() {
 
   // Show a clickable Home link on /pricetracker and /leetcode
   const showHome =
-    location.startsWith("/pricetracker") || location.startsWith("/leetcode");
+    location.startsWith("/pricetracker") ||
+    location.startsWith("/leetcode") ||
+    location.startsWith("/moviehub");
   const isLanding = location === "/";
   const isAuthPage = location === "/login" || location === "/register";
 
@@ -57,7 +63,7 @@ function Header() {
           {isLanding ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/tool_hub_logo.png"
+                src={logoSrc}
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />
@@ -65,7 +71,7 @@ function Header() {
           ) : showHome ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/tool_hub_logo.png"
+                src={logoSrc}
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />
@@ -73,7 +79,7 @@ function Header() {
           ) : isAuthPage ? (
             <Link to="/" className="hover:opacity-80 transition">
               <img
-                src="/tool_hub_logo.png"
+                src={logoSrc}
                 alt="ToolHub"
                 className="w-16 h-8 md:w-24 md:h-10"
               />

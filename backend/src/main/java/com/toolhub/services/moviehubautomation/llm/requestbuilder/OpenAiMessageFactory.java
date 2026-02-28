@@ -12,7 +12,11 @@ public class OpenAiMessageFactory {
     private static final Logger log = LoggerFactory.getLogger(OpenAiMessageFactory.class);
 
     private static final Map<Intent, BaseOpenAiMessageBuilder> INTENT_TO_MESSAGE_BUILDER = Map.of(
-            Intent.ADD_MEDIA, new AddMediaMessageBuilder(),
+            Intent.DOWNLOAD_MEDIA, new AddMediaMessageBuilder(),
+            Intent.RAISE_REQUEST, new AddMediaMessageBuilder(),
+            Intent.CHECK_DOWNLOAD_STATUS, new DownloadStatusQueryMessageBuilder(),
+            Intent.LIST_DOWNLOADS, new DownloadStatusQueryMessageBuilder(),
+            Intent.CHECK_MEDIA_EXISTS, new MediaExistsQueryMessageBuilder(),
             Intent.UNKNOWN, new GetIntentMessageBuilder(),
             Intent.SUMMARIZE, new GetSummariseMessageBuilder());
 

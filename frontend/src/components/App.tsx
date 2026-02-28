@@ -7,6 +7,7 @@ import { Landing } from "./Landing";
 import Dashboard from "./Dashboard";
 import { Leetcode } from "./Leetcode";
 import PriceTracker from "./PriceTracker";
+import MovieHub from "./MovieHub";
 import { NotificationProvider } from "../context/NotificationContext";
 import { ToastContainer } from "./Toast";
 
@@ -19,6 +20,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/pricetracker" element={<PriceTracker />} />
+            <Route path="/moviehub/*" element={<MovieHub />} />
             <Route path="/login" element={<LogIn />} />
             <Route path="/register" element={<Register />} />
             <Route path="/pricetracker/dashboard" element={<Dashboard />} />
