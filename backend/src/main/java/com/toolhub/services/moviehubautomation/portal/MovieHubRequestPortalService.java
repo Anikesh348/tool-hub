@@ -551,8 +551,7 @@ public class MovieHubRequestPortalService {
                 ? Future.succeededFuture(Collections.emptyList())
                 : fetchApprovedRequestsForUser(userId);
 
-        return reconcileDownloadedRequestsBestEffort()
-                .compose(v -> refreshMonitoredDownloadsBestEffort())
+        return refreshMonitoredDownloadsBestEffort()
                 .compose(v -> CompositeFuture.all(
                         fetchMovieQueueRecords(),
                         fetchSeriesQueueRecords(),
@@ -582,83 +581,17 @@ public class MovieHubRequestPortalService {
         if (!includeAllDownloads) {
             query.put("userId", userId);
         }
-        query.put("status", new JsonObject().put("$in", new JsonArray()
-                .add(MediaRequestStatus.DOWNLOADED.name())
-                .add(MediaRequestStatus.APPROVED.name())));
+        query.put("status", MediaRequestStatus.DOWNLOADED.name());
 
-        return reconcileDownloadedRequestsBestEffort()
-                .compose(v -> mongoDBClient.queryRecords(query, MEDIA_REQUESTS_COLLECTION))
-                .compose(records -> {
-                    List<JsonObject> sanitized = records.stream()
+        return mongoDBClient.queryRecords(query, MEDIA_REQUESTS_COLLECTION)
+                .map(records -> {
+                    List<JsonObject> completedRecords = records.stream()
                             .map(this::sanitizeRequestRecord)
                             .toList();
-                    List<JsonObject> completedRecords = sanitized.stream()
-                            .filter(record -> MediaRequestStatus.DOWNLOADED.name()
-                                    .equalsIgnoreCase(record.getString("status", "")))
-                            .toList();
-                    List<MediaDownloadRequest> approvedRequests = sanitized.stream()
-                            .filter(record -> MediaRequestStatus.APPROVED.name()
-                                    .equalsIgnoreCase(record.getString("status", "")))
-                            .map(record -> record.mapTo(MediaDownloadRequest.class))
-                            .toList();
-
-                    if (approvedRequests.isEmpty()) {
-                        return Future.succeededFuture(buildCompletedDownloadsPayload(
-                                completedRecords,
-                                includeAllDownloads
-                        ));
-                    }
-
-                    return refreshMonitoredDownloadsBestEffort()
-                            .compose(v -> CompositeFuture.all(
-                                    fetchMovieQueueRecords(),
-                                    fetchSeriesQueueRecords(),
-                                    fetchAvailableMovies(),
-                                    fetchAvailableShows()
-                            ))
-                            .map(result -> {
-                                JsonArray movieQueue = result.resultAt(0);
-                                JsonArray seriesQueue = result.resultAt(1);
-                                JsonArray availableMovies = result.resultAt(2);
-                                JsonArray availableShows = result.resultAt(3);
-                                JsonArray combinedQueue = combineAndNormalizeQueue(movieQueue, seriesQueue);
-
-                                List<JsonObject> detectedCompleted = approvedRequests.stream()
-                                        .filter(request -> !isRequestPresentInQueue(request, combinedQueue))
-                                        .filter(request -> isRequestDownloaded(request, availableMovies, availableShows))
-                                        .map(this::toDetectedCompletedRecord)
-                                        .toList();
-
-                                List<JsonObject> merged = new ArrayList<>(completedRecords);
-                                Set<String> seenRequestIds = merged.stream()
-                                        .map(record -> record.getString("requestId"))
-                                        .filter(id -> id != null && !id.isBlank())
-                                        .collect(Collectors.toSet());
-                                for (JsonObject detected : detectedCompleted) {
-                                    String requestId = detected.getString("requestId");
-                                    if (requestId != null && seenRequestIds.contains(requestId)) {
-                                        continue;
-                                    }
-                                    if (requestId != null && !requestId.isBlank()) {
-                                        seenRequestIds.add(requestId);
-                                    }
-                                    merged.add(detected);
-                                }
-                                return buildCompletedDownloadsPayload(merged, includeAllDownloads);
-                            });
+                    return buildCompletedDownloadsPayload(completedRecords, includeAllDownloads);
                 });
     }
-
-    private Future<Void> reconcileDownloadedRequestsBestEffort() {
-        return mongoDBClient.queryRecords(new JsonObject(), MEDIA_REQUESTS_COLLECTION)
-                .compose(this::reconcileDownloadedRequests)
-                .map(summary -> (Void) null)
-                .recover(fail -> {
-                    log.warn("Best-effort download reconciliation failed: {}", fail.getMessage());
-                    return Future.succeededFuture((Void) null);
-                });
-    }
-
+    
     private JsonObject buildCompletedDownloadsPayload(List<JsonObject> completedRecords, boolean includeAllDownloads) {
         List<JsonObject> sorted = completedRecords.stream()
                 .sorted(Comparator.comparing(this::extractDownloadedAt, Comparator.reverseOrder()))
@@ -745,7 +678,7 @@ public class MovieHubRequestPortalService {
             return Future.succeededFuture(summary);
         }
 
-        return refreshMonitoredDownloadsBestEffort().compose(refreshResult -> CompositeFuture.all(
+        return CompositeFuture.all(
                 fetchAvailableMovies(),
                 fetchAvailableShows()
         ).compose(result -> {
@@ -761,6 +694,7 @@ public class MovieHubRequestPortalService {
 
             for (MediaDownloadRequest request : approvedRequests) {
                 if (!isRequestDownloaded(request, availableMovies, availableShows)) {
+                    inQueue[0]++;
                     continue;
                 }
                 downloadedDetected[0]++;
@@ -813,7 +747,7 @@ public class MovieHubRequestPortalService {
                     .put("statusUpdated", statusUpdated[0])
                     .put("alertsSent", alertsSent[0])
                     .put("alertsFailed", alertsFailed[0]));
-        })).recover(fail -> {
+        }).recover(fail -> {
             log.error("Failed during downloaded request reconciliation", fail);
             summary.put("error", fail.getMessage());
             return Future.succeededFuture(summary);

@@ -127,8 +127,6 @@ public class MovieHubAutomationRoute {
                 .handler(movieHubRequestPortalService::handleGetDownloadQueue);
         protectedRouter.get("/moviehub/completedDownloads")
                 .handler(movieHubRequestPortalService::handleGetCompletedDownloads);
-        protectedRouter.get("/completedDownloads")
-                .handler(movieHubRequestPortalService::handleGetCompletedDownloads);
         protectedRouter.get("/moviehub/reconcile-downloads")
                 .handler(movieHubRequestPortalService::handleReconcileDownloadedRequests);
         protectedRouter.post("/moviehub/requests")
