@@ -968,7 +968,7 @@ export const MovieHub: React.FC = () => {
 
   if (!isAdmin && !hasMovieHubAccess) {
     return (
-      <div className="min-h-screen w-full moviehub-bg pt-16 sm:pt-20 pb-8 sm:pb-12 px-4 overflow-x-hidden">
+      <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-4 overflow-x-hidden">
         <MovieHubAccessGateSection
           accessStatus={accessStatus}
           requestedUserName={requestedMovieHubUserName}
@@ -982,7 +982,7 @@ export const MovieHub: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full moviehub-bg pt-16 sm:pt-20 pb-8 sm:pb-12 px-4 overflow-x-hidden">
+    <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-4 overflow-x-hidden">
       <div className="max-w-7xl mx-auto">
         <div
           className={`grid grid-cols-1 gap-4 md:gap-6 md:items-start ${
