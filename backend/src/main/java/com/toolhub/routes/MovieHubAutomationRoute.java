@@ -3,6 +3,7 @@ package com.toolhub.routes;
 import com.toolhub.enums.moviehubautomation.AiModel;
 import com.toolhub.enums.moviehubautomation.Intent;
 import com.toolhub.models.moviehubautomation.ConversationContext;
+import com.toolhub.services.alerts.MailService;
 import com.toolhub.services.moviehubautomation.ChatAutomation;
 import com.toolhub.services.moviehubautomation.mediacontrollers.AddMediaControllerFactory;
 import com.toolhub.services.moviehubautomation.mediacontrollers.AddMovieController;
@@ -62,10 +63,13 @@ public class MovieHubAutomationRoute {
                 new AddMovieController(webClient, radarrBaseUrl, radarrApiKey),
                 new AddShowController(webClient, sonarrBaseUrl, sonarrApiKey, vertx)
         ));
+        MailService mailService = new MailService(webClient);
         MovieHubRequestPortalService movieHubRequestPortalService = new MovieHubRequestPortalService(
                 mongoDBClient,
                 addMediaControllerFactory,
+                vertx,
                 webClient,
+                mailService,
                 radarrBaseUrl,
                 radarrApiKey,
                 sonarrBaseUrl,

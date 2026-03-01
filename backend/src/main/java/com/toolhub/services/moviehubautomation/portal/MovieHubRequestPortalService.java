@@ -10,6 +10,7 @@ import com.toolhub.services.mongo.MongoDBClient;
 import com.toolhub.services.moviehubautomation.mediaclients.LookUpClient;
 import com.toolhub.services.moviehubautomation.mediacontrollers.AddMediaControllerFactory;
 import com.toolhub.enums.user.Role;
+import io.vertx.core.Vertx;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.CompositeFuture;
@@ -50,6 +51,8 @@ public class MovieHubRequestPortalService {
     private final LookUpClient movieLookupClient;
     private final LookUpClient showLookupClient;
     private final WebClient webClient;
+    private final Vertx vertx;
+    private final MailService mailService;
     private final String radarrMovieListUrl;
     private final String sonarrSeriesListUrl;
     private final String radarrQueueUrl;
@@ -61,14 +64,18 @@ public class MovieHubRequestPortalService {
 
     public MovieHubRequestPortalService(MongoDBClient mongoDBClient,
                                         AddMediaControllerFactory addMediaControllerFactory,
+                                        Vertx vertx,
                                         WebClient webClient,
+                                        MailService mailService,
                                         String radarrBaseUrl,
                                         String radarrApiKey,
                                         String sonarrBaseUrl,
                                         String sonarrApiKey) {
         this.mongoDBClient = mongoDBClient;
         this.addMediaControllerFactory = addMediaControllerFactory;
+        this.vertx = vertx;
         this.webClient = webClient;
+        this.mailService = mailService;
         this.radarrApiKey = radarrApiKey;
         this.sonarrApiKey = sonarrApiKey;
         this.radarrMovieListUrl = radarrBaseUrl + "/movie";
@@ -638,7 +645,7 @@ public class MovieHubRequestPortalService {
     }
 
     public void handleReconcileDownloadedRequests(RoutingContext context) {
-        mongoDBClient.queryRecords(new JsonObject(), MEDIA_REQUESTS_COLLECTION)
+        mongoDBClient.queryRecords(buildReconciliationQuery(), MEDIA_REQUESTS_COLLECTION)
                 .compose(this::reconcileDownloadedRequests)
                 .onSuccess(summary -> Utility.buildResponse(
                         context,
@@ -649,6 +656,18 @@ public class MovieHubRequestPortalService {
                     log.error("Failed to reconcile downloaded requests", fail);
                     Utility.buildResponse(context, 500, Utility.createErrorResponse(fail.getMessage()));
                 });
+    }
+
+    private JsonObject buildReconciliationQuery() {
+        JsonArray filters = new JsonArray()
+                .add(new JsonObject().put("status", MediaRequestStatus.APPROVED.name()))
+                .add(new JsonObject()
+                        .put("status", MediaRequestStatus.DOWNLOADED.name())
+                        .put("downloadedNotificationSentAt", null))
+                .add(new JsonObject()
+                        .put("status", MediaRequestStatus.DOWNLOADED.name())
+                        .put("downloadedNotificationSentAt", new JsonObject().put("$exists", false)));
+        return new JsonObject().put("$or", filters);
     }
 
     private Future<JsonObject> reconcileDownloadedRequests(List<JsonObject> records) {
@@ -697,23 +716,18 @@ public class MovieHubRequestPortalService {
                     availableMovies == null ? 0 : availableMovies.size(),
                     availableShows == null ? 0 : availableShows.size()
             );
-
-            int[] inQueue = {0};
-            int[] downloadedDetected = {0};
+            return planReconciliationOnWorker(approvedRequests, downloadedWithoutAlert, availableMovies, availableShows);
+        }).compose(plan -> {
+            int[] inQueue = {plan.inQueue()};
+            int[] downloadedDetected = {plan.downloadedDetected()};
             int[] statusUpdated = {0};
             int[] alertsSent = {0};
             int[] alertsFailed = {0};
             List<Future> updateFutures = new ArrayList<>();
 
-            for (MediaDownloadRequest request : approvedRequests) {
+            for (MediaDownloadRequest request : plan.requestsToMarkDownloaded()) {
                 String requestId = request.getRequestId();
                 String title = request.getTitle();
-                if (!isRequestDownloaded(request, availableMovies, availableShows)) {
-                    inQueue[0]++;
-                    log.debug("Request still not downloaded requestId={} title={}", requestId, title);
-                    continue;
-                }
-                downloadedDetected[0]++;
                 log.info("Detected downloaded request requestId={} title={}", requestId, title);
                 Future<Void> updateFuture = markRequestDownloaded(request)
                         .compose(updateResult -> {
@@ -739,7 +753,7 @@ public class MovieHubRequestPortalService {
                 updateFutures.add(updateFuture);
             }
 
-            for (MediaDownloadRequest request : downloadedWithoutAlert) {
+            for (MediaDownloadRequest request : plan.requestsToNotify()) {
                 String requestId = request.getRequestId();
                 String title = request.getTitle();
                 log.info("Attempting pending downloaded notification requestId={} title={}", requestId, title);
@@ -787,27 +801,89 @@ public class MovieHubRequestPortalService {
         });
     }
 
-    private boolean isRequestDownloaded(MediaDownloadRequest request, JsonArray availableMovies, JsonArray availableShows) {
+    private Future<ReconciliationPlan> planReconciliationOnWorker(List<MediaDownloadRequest> approvedRequests,
+                                                                   List<MediaDownloadRequest> downloadedWithoutAlert,
+                                                                   JsonArray availableMovies,
+                                                                   JsonArray availableShows) {
+        return vertx.executeBlocking(() ->
+                buildReconciliationPlan(approvedRequests, downloadedWithoutAlert, availableMovies, availableShows));
+    }
+
+    private ReconciliationPlan buildReconciliationPlan(List<MediaDownloadRequest> approvedRequests,
+                                                       List<MediaDownloadRequest> downloadedWithoutAlert,
+                                                       JsonArray availableMovies,
+                                                       JsonArray availableShows) {
+        Set<String> availableMovieTitles = indexAvailableMovieTitles(availableMovies);
+        Map<String, Set<Integer>> availableShowSeasonsByTitle = indexAvailableShowSeasons(availableShows);
+        List<MediaDownloadRequest> requestsToMarkDownloaded = new ArrayList<>();
+        int inQueue = 0;
+        int downloadedDetected = 0;
+        for (MediaDownloadRequest request : approvedRequests) {
+            if (isRequestDownloaded(request, availableMovieTitles, availableShowSeasonsByTitle)) {
+                downloadedDetected++;
+                requestsToMarkDownloaded.add(request);
+            } else {
+                inQueue++;
+                log.debug("Request still not downloaded requestId={} title={}", request.getRequestId(), request.getTitle());
+            }
+        }
+        return new ReconciliationPlan(requestsToMarkDownloaded, new ArrayList<>(downloadedWithoutAlert), inQueue, downloadedDetected);
+    }
+
+    private Set<String> indexAvailableMovieTitles(JsonArray availableMovies) {
+        Set<String> indexedTitles = new HashSet<>();
+        if (availableMovies == null) {
+            return indexedTitles;
+        }
+        for (Object item : availableMovies) {
+            if (!(item instanceof JsonObject movie)) {
+                continue;
+            }
+            String normalizedTitle = normalizeTitle(movie.getString("title"));
+            if (!normalizedTitle.isBlank()) {
+                indexedTitles.add(normalizedTitle);
+            }
+        }
+        return indexedTitles;
+    }
+
+    private Map<String, Set<Integer>> indexAvailableShowSeasons(JsonArray availableShows) {
+        Map<String, Set<Integer>> indexedShows = new LinkedHashMap<>();
+        if (availableShows == null) {
+            return indexedShows;
+        }
+        for (Object item : availableShows) {
+            if (!(item instanceof JsonObject show)) {
+                continue;
+            }
+            String normalizedTitle = normalizeTitle(show.getString("title"));
+            if (normalizedTitle.isBlank()) {
+                continue;
+            }
+            Set<Integer> indexedSeasons = indexedShows.computeIfAbsent(normalizedTitle, ignored -> new HashSet<>());
+            indexedSeasons.addAll(toIntegerSet(show.getJsonArray("availableSeasons", new JsonArray())));
+        }
+        return indexedShows;
+    }
+
+    private boolean isRequestDownloaded(MediaDownloadRequest request,
+                                        Set<String> availableMovieTitles,
+                                        Map<String, Set<Integer>> availableShowSeasonsByTitle) {
         if (request == null || request.getMediaType() == null) {
             return false;
         }
+        String requestTitle = normalizeTitle(request.getTitle());
+        if (requestTitle.isBlank()) {
+            return false;
+        }
         if (request.getMediaType() == MediaType.MOVIES) {
-            return availableMovies.stream()
-                    .filter(JsonObject.class::isInstance)
-                    .map(JsonObject.class::cast)
-                    .anyMatch(movie -> isSameTitle(movie.getString("title"), request.getTitle()));
+            return availableMovieTitles.contains(requestTitle);
         }
         if (request.getMediaType() == MediaType.SHOWS) {
-            JsonObject matchingShow = availableShows.stream()
-                    .filter(JsonObject.class::isInstance)
-                    .map(JsonObject.class::cast)
-                    .filter(show -> isSameTitle(show.getString("title"), request.getTitle()))
-                    .findFirst()
-                    .orElse(null);
-            if (matchingShow == null) {
+            Set<Integer> availableSeasons = availableShowSeasonsByTitle.get(requestTitle);
+            if (availableSeasons == null) {
                 return false;
             }
-            Set<Integer> availableSeasons = toIntegerSet(matchingShow.getJsonArray("availableSeasons", new JsonArray()));
             if (request.getSeason() == null || request.getSeason().isEmpty()) {
                 return !availableSeasons.isEmpty();
             }
@@ -854,7 +930,7 @@ public class MovieHubRequestPortalService {
                     "Downloaded",
                     posterUrl
             );
-            return new MailService(webClient).sendEmail(subject, request.getUserEmail(), htmlBody);
+            return mailService.sendEmail(subject, request.getUserEmail(), htmlBody);
         })
                 .compose(v -> markDownloadedNotificationSent(request.getRequestId()))
                 .map(v -> true)
@@ -966,8 +1042,8 @@ public class MovieHubRequestPortalService {
             }
         });
         combined.sort(Comparator.comparing(
-                item -> item.getString("added", ""),
-                Comparator.reverseOrder()
+                item -> item.getString("added"),
+                Comparator.nullsLast(Comparator.reverseOrder())
         ));
         return new JsonArray(combined);
     }
@@ -1307,7 +1383,7 @@ public class MovieHubRequestPortalService {
                     "Approved",
                     posterUrl
             );
-            return new MailService(webClient).sendEmail(subject, request.getUserEmail(), htmlBody);
+            return mailService.sendEmail(subject, request.getUserEmail(), htmlBody);
         });
     }
 
@@ -1697,6 +1773,14 @@ public class MovieHubRequestPortalService {
             MediaType mediaType,
             String qualityProfileId,
             List<Integer> season
+    ) {
+    }
+
+    private record ReconciliationPlan(
+            List<MediaDownloadRequest> requestsToMarkDownloaded,
+            List<MediaDownloadRequest> requestsToNotify,
+            int inQueue,
+            int downloadedDetected
     ) {
     }
 }
