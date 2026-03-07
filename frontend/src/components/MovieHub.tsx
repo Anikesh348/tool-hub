@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useApiFetcher } from "../hooks/useApiFetcher";
@@ -14,6 +14,8 @@ import {
   MovieHubRequest,
   MovieHubSearchResult,
   MovieHubService,
+  MovieHubYtFormatsResponse,
+  MovieHubYtRequestFormat,
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
@@ -29,6 +31,10 @@ import { MovieHubAccessGateSection } from "./moviehub/MovieHubAccessGateSection"
 import { MovieHubOpenSection } from "./moviehub/MovieHubOpenSection";
 import { MovieHubAccessAdminSection } from "./moviehub/MovieHubAccessAdminSection";
 import { MovieHubUsersAdminSection } from "./moviehub/MovieHubUsersAdminSection";
+import {
+  MovieHubYtAdminSection,
+  YtSseProgressEvent,
+} from "./moviehub/MovieHubYtAdminSection";
 import { CinePilotLauncher } from "./CineBotLauncher";
 import { CinePilotChat } from "./CineBot";
 
@@ -39,6 +45,29 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+};
+
+const parseSseMessage = (rawMessage: string) => {
+  const normalized = rawMessage.replace(/\r/g, "");
+  const lines = normalized.split("\n");
+  let event = "message";
+  const dataLines: string[] = [];
+
+  lines.forEach((line) => {
+    if (!line || line.startsWith(":")) return;
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim() || "message";
+      return;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trim());
+    }
+  });
+
+  return {
+    event,
+    data: dataLines.join("\n"),
+  };
 };
 
 export const MovieHub: React.FC = () => {
@@ -106,6 +135,22 @@ export const MovieHub: React.FC = () => {
   const [portalUserName, setPortalUserName] = useState("");
   const [deletingAccessUserMappingId, setDeletingAccessUserMappingId] =
     useState<string | null>(null);
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytFilename, setYtFilename] = useState("");
+  const [ytFormatsResponse, setYtFormatsResponse] =
+    useState<MovieHubYtFormatsResponse | null>(null);
+  const [selectedYtFormat, setSelectedYtFormat] =
+    useState<MovieHubYtRequestFormat | null>(null);
+  const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
+  const [ytLatestProgressEvent, setYtLatestProgressEvent] =
+    useState<YtSseProgressEvent | null>(null);
+  const [ytProgressEvents, setYtProgressEvents] = useState<YtSseProgressEvent[]>(
+    [],
+  );
+  const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
+  const [ytDownloadCompletePayload, setYtDownloadCompletePayload] =
+    useState<unknown>(null);
+  const ytDownloadAbortControllerRef = useRef<AbortController | null>(null);
 
   const {
     loading: accessStatusLoading,
@@ -197,6 +242,11 @@ export const MovieHub: React.FC = () => {
     data: deleteData,
     fetchData: fetchDeleteRequest,
   } = useApiFetcher();
+  const {
+    loading: ytFormatsLoading,
+    data: ytFormatsData,
+    fetchData: fetchYtFormats,
+  } = useApiFetcher();
 
   const isBusy =
     accessStatusLoading ||
@@ -269,6 +319,12 @@ export const MovieHub: React.FC = () => {
         compactLabel: "AP",
         adminOnly: true,
         badgeCount: pendingAdminRequestsCount,
+      },
+      {
+        id: "admin_yt_download" as MovieHubSection,
+        label: "Download YT Video to Server",
+        compactLabel: "YT",
+        adminOnly: true,
       },
       {
         id: "admin_access" as MovieHubSection,
@@ -630,6 +686,38 @@ export const MovieHub: React.FC = () => {
   }, [adminRequestsData, addNotification]);
 
   useEffect(() => {
+    if (!ytFormatsData) return;
+    if (ytFormatsData.status >= 200 && ytFormatsData.status < 300) {
+      const response: MovieHubYtFormatsResponse = {
+        ...(ytFormatsData.body || {}),
+        formats: Array.isArray(ytFormatsData.body?.formats)
+          ? ytFormatsData.body.formats
+          : [],
+      };
+      setYtFormatsResponse(response);
+      setYtDownloadCompletePayload(null);
+      setYtDownloadError(null);
+      setYtLatestProgressEvent(null);
+      setYtProgressEvents([]);
+
+      const firstFormat = response.formats?.[0];
+      if (firstFormat) {
+        setSelectedYtFormat({
+          quality: firstFormat.request_format?.quality || firstFormat.quality,
+          ext: firstFormat.request_format?.ext || firstFormat.ext || "mp4",
+        });
+      } else {
+        setSelectedYtFormat(null);
+      }
+      return;
+    }
+    addNotification(
+      ytFormatsData.body?.error || "Failed to fetch YT formats",
+      "error",
+    );
+  }, [ytFormatsData, addNotification]);
+
+  useEffect(() => {
     if (!approveData) return;
     const wasAutoApprove = Boolean(autoApproveRequestId);
     setAutoApproveRequestId(null);
@@ -695,6 +783,13 @@ export const MovieHub: React.FC = () => {
   useEffect(() => {
     setIsMobileNavOpen(false);
   }, [activeSection]);
+
+  useEffect(() => {
+    return () => {
+      ytDownloadAbortControllerRef.current?.abort();
+      ytDownloadAbortControllerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (activeSection !== "available") return;
@@ -839,6 +934,195 @@ export const MovieHub: React.FC = () => {
     setQualityByResult({});
     setSeasonsByResult({});
     setActiveRequestKey(null);
+  }, []);
+
+  const handleFetchYtFormats = useCallback(() => {
+    const trimmedUrl = ytUrl.trim();
+    if (!trimmedUrl) {
+      addNotification("Please enter a YouTube URL", "warning");
+      return;
+    }
+    const { url, options } = MovieHubService.getYtFormats(trimmedUrl);
+    fetchYtFormats(url, options);
+  }, [ytUrl, addNotification, fetchYtFormats]);
+
+  const handleDownloadYtToServer = useCallback(() => {
+    const startDownload = async () => {
+      const trimmedUrl = ytUrl.trim();
+      if (!trimmedUrl) {
+        addNotification("Please enter a YouTube URL", "warning");
+        return;
+      }
+      if (!selectedYtFormat?.quality) {
+        addNotification("Please select a format", "warning");
+        return;
+      }
+
+      ytDownloadAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      ytDownloadAbortControllerRef.current = controller;
+
+      setYtDownloadInProgress(true);
+      setYtDownloadError(null);
+      setYtDownloadCompletePayload(null);
+      setYtLatestProgressEvent(null);
+      setYtProgressEvents([]);
+
+      const pushProgressEvent = (event: string, payload: Record<string, unknown> | null) => {
+        const nextEvent: YtSseProgressEvent = {
+          event,
+          payload,
+          receivedAt: new Date().toISOString(),
+        };
+        setYtLatestProgressEvent(nextEvent);
+        setYtProgressEvents((prev) => [nextEvent, ...prev].slice(0, 40));
+      };
+
+      try {
+        const { url, options } = MovieHubService.downloadYtToServer({
+          url: trimmedUrl,
+          format: {
+            quality: selectedYtFormat.quality,
+            ext: selectedYtFormat.ext || "mp4",
+          },
+          ...(ytFilename.trim() ? { filename: ytFilename.trim() } : {}),
+          progress_updates: true,
+        });
+
+        const headers = {
+          ...((options.headers as Record<string, string> | undefined) || {}),
+          Accept: "text/event-stream",
+        };
+
+        const response = await fetch(url, {
+          ...options,
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          let errorMessage = "Failed to start YT download to server";
+          try {
+            const errorBody = await response.json();
+            errorMessage =
+              errorBody?.error || errorBody?.message || errorMessage;
+          } catch {
+            const text = await response.text();
+            if (text) errorMessage = text;
+          }
+          setYtDownloadError(errorMessage);
+          addNotification(errorMessage, "error");
+          return;
+        }
+
+        const contentType = response.headers.get("Content-Type") || "";
+        if (!contentType.includes("text/event-stream") || !response.body) {
+          const body = await response.json().catch(() => null);
+          setYtDownloadCompletePayload(body);
+          addNotification("YT download started on server", "success");
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          let boundaryMatch = buffer.match(/\r?\n\r?\n/);
+          while (boundaryMatch && boundaryMatch.index !== undefined) {
+            const boundaryIndex = boundaryMatch.index;
+            const boundaryLength = boundaryMatch[0].length;
+            const rawMessage = buffer.slice(0, boundaryIndex);
+            buffer = buffer.slice(boundaryIndex + boundaryLength);
+            boundaryMatch = buffer.match(/\r?\n\r?\n/);
+
+            if (!rawMessage.trim()) continue;
+
+            const parsed = parseSseMessage(rawMessage);
+            let payload: Record<string, unknown> | null = null;
+            if (parsed.data) {
+              try {
+                payload = JSON.parse(parsed.data) as Record<string, unknown>;
+              } catch {
+                payload = { raw: parsed.data };
+              }
+            }
+
+            pushProgressEvent(parsed.event, payload);
+
+            if (parsed.event === "complete") {
+              setYtDownloadCompletePayload(payload);
+              addNotification("YT download completed on server", "success");
+            }
+            if (parsed.event === "error") {
+              const errorMessage =
+                (typeof payload?.error === "string" && payload.error) ||
+                (typeof payload?.message === "string" && payload.message) ||
+                "YT download failed";
+              setYtDownloadError(errorMessage);
+              addNotification(errorMessage, "error");
+            }
+          }
+        }
+
+        const tail = buffer.trim();
+        if (tail) {
+          const parsed = parseSseMessage(tail);
+          let payload: Record<string, unknown> | null = null;
+          if (parsed.data) {
+            try {
+              payload = JSON.parse(parsed.data) as Record<string, unknown>;
+            } catch {
+              payload = { raw: parsed.data };
+            }
+          }
+          pushProgressEvent(parsed.event, payload);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to stream YT download progress";
+        setYtDownloadError(message);
+        addNotification(message, "error");
+      } finally {
+        if (ytDownloadAbortControllerRef.current === controller) {
+          ytDownloadAbortControllerRef.current = null;
+        }
+        setYtDownloadInProgress(false);
+      }
+    };
+
+    void startDownload();
+  }, [ytUrl, selectedYtFormat, ytFilename, addNotification]);
+
+  const handleCancelYtDownload = useCallback(() => {
+    if (!ytDownloadAbortControllerRef.current) return;
+    ytDownloadAbortControllerRef.current.abort();
+    ytDownloadAbortControllerRef.current = null;
+    setYtDownloadInProgress(false);
+    addNotification("YT progress stream cancelled", "info");
+  }, [addNotification]);
+
+  const handleClearYtSearch = useCallback(() => {
+    ytDownloadAbortControllerRef.current?.abort();
+    ytDownloadAbortControllerRef.current = null;
+    setYtDownloadInProgress(false);
+    setYtUrl("");
+    setYtFilename("");
+    setYtFormatsResponse(null);
+    setSelectedYtFormat(null);
+    setYtLatestProgressEvent(null);
+    setYtProgressEvents([]);
+    setYtDownloadError(null);
+    setYtDownloadCompletePayload(null);
   }, []);
 
   const handleSelectSection = useCallback(
@@ -1110,6 +1394,28 @@ export const MovieHub: React.FC = () => {
                   formatDateTime={formatDateTime}
                 />
               )}
+
+              {!isChatPage &&
+                activeSection === "admin_yt_download" &&
+                isAdmin && (
+                  <MovieHubYtAdminSection
+                    ytUrl={ytUrl}
+                    filename={ytFilename}
+                    formatsLoading={ytFormatsLoading}
+                    downloadInProgress={ytDownloadInProgress}
+                    formatsResponse={ytFormatsResponse}
+                    selectedFormat={selectedYtFormat}
+                    latestProgressEvent={ytLatestProgressEvent}
+                    downloadError={ytDownloadError}
+                    onYtUrlChange={setYtUrl}
+                    onFilenameChange={setYtFilename}
+                    onFetchFormats={handleFetchYtFormats}
+                    onClearSearch={handleClearYtSearch}
+                    onFormatChange={setSelectedYtFormat}
+                    onDownloadToServer={handleDownloadYtToServer}
+                    onCancelDownload={handleCancelYtDownload}
+                  />
+                )}
 
               {!isChatPage && activeSection === "admin_users" && isAdmin && (
                 <MovieHubUsersAdminSection

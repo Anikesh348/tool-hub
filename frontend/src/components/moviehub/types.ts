@@ -3,6 +3,7 @@ export type MovieHubSection =
   | "request"
   | "status"
   | "admin_approve"
+  | "admin_yt_download"
   | "admin_access"
   | "admin_users"
   | "available"

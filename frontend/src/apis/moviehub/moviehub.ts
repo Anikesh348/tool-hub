@@ -131,6 +131,31 @@ export interface MovieHubAccessUser {
   isAdmin?: boolean;
 }
 
+export interface MovieHubYtRequestFormat {
+  quality: string;
+  ext?: string;
+}
+
+export interface MovieHubYtFormatItem {
+  label?: string;
+  quality: string;
+  height?: number;
+  ext?: string;
+  audio_combined?: boolean;
+  request_format?: MovieHubYtRequestFormat;
+}
+
+export interface MovieHubYtFormatsResponse {
+  id?: string;
+  title?: string;
+  duration?: number;
+  webpage_url?: string;
+  thumbnail?: string;
+  uploader?: string;
+  extractor?: string;
+  formats: MovieHubYtFormatItem[];
+}
+
 export const MovieHubService = {
   search: (term: string, mediaType: MovieHubMediaType) => {
     const encodedTerm = encodeURIComponent(term);
@@ -384,6 +409,42 @@ export const MovieHubService = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
+      },
+    };
+  },
+
+  getYtFormats: (urlValue: string) => {
+    return {
+      url: `${BASE_URL}/v2/yt/formats`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify({
+          url: urlValue,
+        }),
+      },
+    };
+  },
+
+  downloadYtToServer: (payload: {
+    url: string;
+    format: MovieHubYtRequestFormat;
+    filename?: string;
+    download_path?: string;
+    progress_updates?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/server`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify(payload),
       },
     };
   },

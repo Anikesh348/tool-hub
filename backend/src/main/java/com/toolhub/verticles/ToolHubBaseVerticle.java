@@ -9,6 +9,7 @@ import com.toolhub.services.products.DeleteProduct;
 import com.toolhub.services.products.GetPriceHistory;
 import com.toolhub.services.products.GetProducts;
 import com.toolhub.services.products.SaveProduct;
+import com.toolhub.services.ytdownload.YtDownloadProxyService;
 import com.toolhub.services.mongo.MongoDBClient;
 import com.toolhub.services.schedule.Schedule;
 import com.toolhub.services.user.UserManagement;
@@ -105,6 +106,7 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
 
                 UserManagement userManagement = new UserManagement(mongoDBClient);
                 SaveProduct saveProduct = new SaveProduct(mongoDBClient, client, vertx);
+                YtDownloadProxyService ytDownloadProxyService = new YtDownloadProxyService(client, vertx, dotenv);
 
                 router.post("/v2/login").handler(userManagement::handleLogin);
                 router.post("/v2/register").handler(userManagement::handleRegister);
@@ -130,6 +132,13 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                         .handler(new UpdateQuestionNotes(mongoDBClient)::handle);
                 protectedRouter.post("/leetcode/delete")
                         .handler(new DeleteQuestion(mongoDBClient)::handle);
+
+                protectedRouter.post("/yt/formats")
+                        .handler(ytDownloadProxyService::handleFormats);
+                protectedRouter.post("/yt/download/stream")
+                        .handler(ytDownloadProxyService::handleDownloadStream);
+                adminRouter.post("/yt/download/server")
+                        .handler(ytDownloadProxyService::handleDownloadToServer);
 
                 vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
                         .onSuccess(id ->
