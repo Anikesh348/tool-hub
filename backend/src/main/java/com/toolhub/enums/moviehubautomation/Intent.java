@@ -1,11 +1,12 @@
 package com.toolhub.enums.moviehubautomation;
 
 public enum Intent {
-    ADD_MEDIA,
+    DOWNLOAD_MEDIA,
+    RAISE_REQUEST,
+    CHECK_MEDIA_EXISTS,
     CHECK_DOWNLOAD_STATUS,
     LIST_DOWNLOADS,
     CONTROL_DOWNLOAD,
     UNKNOWN,
     SUMMARIZE
 }
-

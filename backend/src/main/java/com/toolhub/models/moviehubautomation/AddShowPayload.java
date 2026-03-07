@@ -16,7 +16,8 @@ public class AddShowPayload extends AddMediaPayload {
                 .put("searchForCutoffUnmetEpisodes", false);
         this.tvdbId = lookUpResponse.getInteger("tvdbId");
         this.seasonFolder = true;
-        this.qualityProfileId = QUALITY_PROFILE_MAP.getOrDefault(lookUpDTO.getQuality(), 4);
+        String quality = lookUpDTO.getQuality() == null ? "any" : lookUpDTO.getQuality().toLowerCase();
+        this.qualityProfileId = QUALITY_PROFILE_MAP.getOrDefault(quality, DEFAULT_QUALITY_PROFILE_ID);
         this.title = lookUpResponse.getString("title");
     }
 

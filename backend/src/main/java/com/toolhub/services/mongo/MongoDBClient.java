@@ -57,7 +57,6 @@ public class MongoDBClient {
         Promise<List<JsonObject>> promise = Promise.promise();
         mongoClient.find(collection, query).onComplete(res -> {
             if (res.succeeded()) {
-                log.info("queried from db");
                 promise.complete(res.result());
             } else {
                 Throwable fail = res.cause();
@@ -91,8 +90,8 @@ public class MongoDBClient {
         mongoClient.findOneAndDelete(collection, query)
                 .onFailure(this::handleMongoFailure)
                 .onSuccess(res -> {
-            log.info("deleted the product");
-        });
+                    log.info("deleted the product");
+                });
     }
 
     public Future<Void> updateRecord(JsonObject query, JsonObject updatedRecord, String collection) {
@@ -115,7 +114,8 @@ public class MongoDBClient {
 
     public void updateRecordAsync(JsonObject query, JsonObject updatedRecord, String collection) {
         JsonObject update = new JsonObject().put("$set", updatedRecord);
-        mongoClient.findOneAndUpdate(collection, query, update).onFailure(this::handleMongoFailure).onComplete(res -> {});
+        mongoClient.findOneAndUpdate(collection, query, update).onFailure(this::handleMongoFailure).onComplete(res -> {
+        });
     }
 
     // Timeout failure handler
@@ -125,7 +125,7 @@ public class MongoDBClient {
                 || rootCause instanceof com.mongodb.MongoSocketReadException
                 || fail.getMessage().toLowerCase().contains("timeout")) {
             log.error("Mongo timeout detected. Exiting to trigger Docker restart.");
-            System.exit(1);  // Causes container restart if `restart: always` is set
+            System.exit(1); // Causes container restart if `restart: always` is set
         }
     }
 

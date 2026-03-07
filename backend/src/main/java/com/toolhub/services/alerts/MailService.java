@@ -13,13 +13,25 @@ public class MailService implements EmailAlertService {
     private static Logger log = LoggerFactory.getLogger(MailService.class);
     WebClient client;
     String API_KEY;
-    MailService(WebClient client) {
+
+    public MailService(WebClient client) {
         this.client = client;
         Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         API_KEY = dotenv.get("MAIL_API_KEY", "");
     }
+
     @Override
     public Future<Void> sendEmail(String subject, String to, String body) {
+        if (to == null || to.isBlank()) {
+            return Future.failedFuture("recipient email is required");
+        }
+        if (senderEmail == null || senderEmail.isBlank()) {
+            return Future.failedFuture("sender email is not configured");
+        }
+        if (API_KEY == null || API_KEY.isBlank()) {
+            return Future.failedFuture("mail api key is not configured");
+        }
+
         JsonObject payload = new JsonObject()
                 .put("sender", new JsonObject().put("email", senderEmail))
                 .put("to", new JsonArray().add(new JsonObject().put("email", to)))
@@ -32,6 +44,12 @@ public class MailService implements EmailAlertService {
                 .putHeader("api-key", API_KEY)
                 .sendJsonObject(payload)
                 .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        String bodyText = res.bodyAsString();
+                        log.error("mail api failure for {} status={} body={}", to, res.statusCode(), bodyText);
+                        promise.fail("mail api failure status " + res.statusCode());
+                        return;
+                    }
                     log.info("mail sent successfully to: {}, {}", to, res.bodyAsString());
                     promise.complete();
                 }).onFailure(fail -> {

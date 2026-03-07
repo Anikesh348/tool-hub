@@ -11,7 +11,9 @@ public class AuthHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext context) {
         String path = context.normalizedPath();
-        if (path.equals("/v2/login") || path.equals("/v2/register")) {
+        if (path.equals("/v2/login")
+                || path.equals("/v2/register")
+                || path.equals("/v2/moviehub/reconcile-downloads")) {
             context.next();
             return;
         }

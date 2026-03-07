@@ -13,6 +13,7 @@ public class LLMResponse {
     String clarification;
     Intent intent;
     String summary;
+    Query query;
 
     public String getSummary() {
         return summary;
@@ -20,6 +21,14 @@ public class LLMResponse {
 
     public void setSummary(String summary) {
         this.summary = summary;
+    }
+
+    public Query getQuery() {
+        return query;
+    }
+
+    public void setQuery(Query query) {
+        this.query = query;
     }
 
     public Payload getPayload() {
@@ -84,5 +93,35 @@ public class LLMResponse {
             this.quality = quality;
         }
     }
-}
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Query {
+        String title;
+        MediaType mediaType;
+        String scope;
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public MediaType getMediaType() {
+            return mediaType;
+        }
+
+        public void setMediaType(MediaType mediaType) {
+            this.mediaType = mediaType;
+        }
+
+        public String getScope() {
+            return scope;
+        }
+
+        public void setScope(String scope) {
+            this.scope = scope;
+        }
+    }
+}

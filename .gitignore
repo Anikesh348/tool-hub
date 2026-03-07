@@ -34,3 +34,5 @@ scrapper/fly.toml
 scraper-v2/fly.toml
 frontend/fly.toml
 frontend/nginx.conf
+
+scripts

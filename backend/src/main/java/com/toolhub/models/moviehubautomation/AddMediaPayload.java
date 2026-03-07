@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public abstract class AddMediaPayload {
+    protected static final int DEFAULT_QUALITY_PROFILE_ID = 1;
 
     protected String title;
     protected Integer qualityProfileId;
@@ -15,8 +16,11 @@ public abstract class AddMediaPayload {
 
     protected static final Map<String, Integer> QUALITY_PROFILE_MAP = new HashMap<String, Integer>() {
         {
+            put("any", 1);
+            put("720", 3);
             put("1080p", 4);
-            put("720p", 6);
+            put("720p", 3);
+            put("1080", 4);
         }
     };
 
