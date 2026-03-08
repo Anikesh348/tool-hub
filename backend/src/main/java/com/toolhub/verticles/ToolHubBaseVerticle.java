@@ -106,7 +106,7 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
 
                 UserManagement userManagement = new UserManagement(mongoDBClient);
                 SaveProduct saveProduct = new SaveProduct(mongoDBClient, client, vertx);
-                YtDownloadProxyService ytDownloadProxyService = new YtDownloadProxyService(client, vertx, dotenv);
+                YtDownloadProxyService ytDownloadProxyService = new YtDownloadProxyService(client, vertx, mongoDBClient, dotenv);
 
                 router.post("/v2/login").handler(userManagement::handleLogin);
                 router.post("/v2/register").handler(userManagement::handleRegister);
@@ -135,10 +135,29 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
 
                 protectedRouter.post("/yt/formats")
                         .handler(ytDownloadProxyService::handleFormats);
-                protectedRouter.post("/yt/download/stream")
-                        .handler(ytDownloadProxyService::handleDownloadStream);
-                adminRouter.post("/yt/download/server")
-                        .handler(ytDownloadProxyService::handleDownloadToServer);
+
+                //CRON ROUTES        
+                protectedRouter.post("/yt/download/cronStart")
+                        .handler(ytDownloadProxyService::handleCronStart);
+                protectedRouter.get("/yt/download/cronStart")
+                        .handler(ytDownloadProxyService::handleCronStart);
+                protectedRouter.post("/yt/download/check")
+                        .handler(ytDownloadProxyService::handleCheckAndUpdate);
+                protectedRouter.get("/yt/download/check")
+                        .handler(ytDownloadProxyService::handleCheckAndUpdate);
+                        
+                protectedRouter.get("/yt/download/status/stream/:videoId")
+                        .handler(ytDownloadProxyService::handleStatusStream);
+                adminRouter.post("/yt/download/start")
+                        .handler(ytDownloadProxyService::handleStart);
+                adminRouter.post("/yt/download/add")
+                        .handler(ytDownloadProxyService::handleAdd);
+                adminRouter.get("/yt/download/requests")
+                        .handler(ytDownloadProxyService::handleListRequests);
+                adminRouter.get("/yt/download/status/:videoId")
+                        .handler(ytDownloadProxyService::handleStatus);
+                adminRouter.get("/yt/download/status/stream/:videoId")
+                        .handler(ytDownloadProxyService::handleStatusStream);
 
                 vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
                         .onSuccess(id ->

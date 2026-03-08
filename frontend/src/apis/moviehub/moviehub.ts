@@ -156,6 +156,23 @@ export interface MovieHubYtFormatsResponse {
   formats: MovieHubYtFormatItem[];
 }
 
+export interface MovieHubYtDownloadRequest {
+  requestId: string;
+  videoId: string;
+  userId?: string;
+  url?: string;
+  title?: string;
+  filename?: string;
+  download_path?: string;
+  format?: MovieHubYtRequestFormat;
+  status: string;
+  userEmail?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  startedAt?: string;
+  downloadedAt?: string;
+}
+
 export const MovieHubService = {
   search: (term: string, mediaType: MovieHubMediaType) => {
     const encodedTerm = encodeURIComponent(term);
@@ -429,15 +446,16 @@ export const MovieHubService = {
     };
   },
 
-  downloadYtToServer: (payload: {
-    url: string;
+  addYtDownload: (payload: {
+    videoId: string;
     format: MovieHubYtRequestFormat;
+    url?: string;
+    title?: string;
     filename?: string;
     download_path?: string;
-    progress_updates?: boolean;
   }) => {
     return {
-      url: `${BASE_URL}/v2/admin/yt/download/server`,
+      url: `${BASE_URL}/v2/admin/yt/download/add`,
       options: {
         method: "POST",
         headers: {
@@ -445,6 +463,45 @@ export const MovieHubService = {
           Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
         body: JSON.stringify(payload),
+      },
+    };
+  },
+
+  startYtDownload: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/start`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadRequests: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/requests`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadStatus: (videoId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/status/${encodeURIComponent(videoId)}`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
       },
     };
   },

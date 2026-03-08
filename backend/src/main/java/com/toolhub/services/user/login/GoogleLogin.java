@@ -41,7 +41,7 @@ public class GoogleLogin implements Login {
 
             JsonObject user = userRes.get(0);
             String userRole = user.getString("role", Role.USER.name());
-            String jwtToken = JWTProvider.generateToken(userId, userRole);
+            String jwtToken = JWTProvider.generateToken(userId, userRole, user.getString("email", ""));
             JsonObject response = new JsonObject().put("token", jwtToken);
             response.put("user", extractRequiredUserInfo(user));
 

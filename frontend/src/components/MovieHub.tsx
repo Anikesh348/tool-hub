@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useApiFetcher } from "../hooks/useApiFetcher";
@@ -15,6 +15,7 @@ import {
   MovieHubSearchResult,
   MovieHubService,
   MovieHubYtFormatsResponse,
+  MovieHubYtDownloadRequest,
   MovieHubYtRequestFormat,
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
@@ -33,7 +34,6 @@ import { MovieHubAccessAdminSection } from "./moviehub/MovieHubAccessAdminSectio
 import { MovieHubUsersAdminSection } from "./moviehub/MovieHubUsersAdminSection";
 import {
   MovieHubYtAdminSection,
-  YtSseProgressEvent,
 } from "./moviehub/MovieHubYtAdminSection";
 import { CinePilotLauncher } from "./CineBotLauncher";
 import { CinePilotChat } from "./CineBot";
@@ -45,29 +45,6 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
-};
-
-const parseSseMessage = (rawMessage: string) => {
-  const normalized = rawMessage.replace(/\r/g, "");
-  const lines = normalized.split("\n");
-  let event = "message";
-  const dataLines: string[] = [];
-
-  lines.forEach((line) => {
-    if (!line || line.startsWith(":")) return;
-    if (line.startsWith("event:")) {
-      event = line.slice("event:".length).trim() || "message";
-      return;
-    }
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice("data:".length).trim());
-    }
-  });
-
-  return {
-    event,
-    data: dataLines.join("\n"),
-  };
 };
 
 export const MovieHub: React.FC = () => {
@@ -141,16 +118,14 @@ export const MovieHub: React.FC = () => {
     useState<MovieHubYtFormatsResponse | null>(null);
   const [selectedYtFormat, setSelectedYtFormat] =
     useState<MovieHubYtRequestFormat | null>(null);
+  const [ytDownloadRequests, setYtDownloadRequests] = useState<
+    MovieHubYtDownloadRequest[]
+  >([]);
+  const [ytStatusByVideoId, setYtStatusByVideoId] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
   const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
-  const [ytLatestProgressEvent, setYtLatestProgressEvent] =
-    useState<YtSseProgressEvent | null>(null);
-  const [ytProgressEvents, setYtProgressEvents] = useState<YtSseProgressEvent[]>(
-    [],
-  );
   const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
-  const [ytDownloadCompletePayload, setYtDownloadCompletePayload] =
-    useState<unknown>(null);
-  const ytDownloadAbortControllerRef = useRef<AbortController | null>(null);
 
   const {
     loading: accessStatusLoading,
@@ -247,6 +222,11 @@ export const MovieHub: React.FC = () => {
     data: ytFormatsData,
     fetchData: fetchYtFormats,
   } = useApiFetcher();
+  const {
+    loading: ytRequestsLoading,
+    data: ytRequestsData,
+    fetchData: fetchYtRequests,
+  } = useApiFetcher();
 
   const isBusy =
     accessStatusLoading ||
@@ -263,6 +243,7 @@ export const MovieHub: React.FC = () => {
     requestsLoading ||
     approveLoading ||
     deleteLoading ||
+    ytRequestsLoading ||
     availableLoading ||
     downloadsLoading ||
     completedDownloadsLoading;
@@ -393,6 +374,56 @@ export const MovieHub: React.FC = () => {
       fetchDownloadQueue(url, options);
     },
     [fetchDownloadQueue],
+  );
+
+  const loadYtDownloadRequests = useCallback(() => {
+    if (!isAdmin) return;
+    const { url, options } = MovieHubService.getYtDownloadRequests();
+    fetchYtRequests(url, options);
+  }, [isAdmin, fetchYtRequests]);
+
+  const refreshDownloadingStatuses = useCallback(
+    async (requests: MovieHubYtDownloadRequest[]) => {
+      const downloadingRequests = requests.filter(
+        (request) =>
+          request.status?.toUpperCase() === "DOWNLOADING" &&
+          Boolean(request.videoId),
+      );
+      if (downloadingRequests.length === 0) {
+        setYtStatusByVideoId({});
+        return;
+      }
+
+      const statusEntries = await Promise.all(
+        downloadingRequests.map(async (request) => {
+          const videoId = request.videoId;
+          const { url, options } = MovieHubService.getYtDownloadStatus(videoId);
+          try {
+            const response = await fetch(url, options);
+            const body = await response.json().catch(() => null);
+            if (!response.ok) return [videoId, null] as const;
+            const payload =
+              body?.response && typeof body.response === "object"
+                ? (body.response as Record<string, unknown>)
+                : body && typeof body === "object"
+                  ? (body as Record<string, unknown>)
+                  : null;
+            return [videoId, payload] as const;
+          } catch {
+            return [videoId, null] as const;
+          }
+        }),
+      );
+
+      const nextStatusMap: Record<string, Record<string, unknown>> = {};
+      statusEntries.forEach(([videoId, payload]) => {
+        if (payload) {
+          nextStatusMap[videoId] = payload;
+        }
+      });
+      setYtStatusByVideoId(nextStatusMap);
+    },
+    [],
   );
 
   const loadCompletedDownloads = useCallback(
@@ -695,10 +726,7 @@ export const MovieHub: React.FC = () => {
           : [],
       };
       setYtFormatsResponse(response);
-      setYtDownloadCompletePayload(null);
       setYtDownloadError(null);
-      setYtLatestProgressEvent(null);
-      setYtProgressEvents([]);
 
       const firstFormat = response.formats?.[0];
       if (firstFormat) {
@@ -716,6 +744,22 @@ export const MovieHub: React.FC = () => {
       "error",
     );
   }, [ytFormatsData, addNotification]);
+
+  useEffect(() => {
+    if (!ytRequestsData) return;
+    if (ytRequestsData.status >= 200 && ytRequestsData.status < 300) {
+      const requests = Array.isArray(ytRequestsData.body?.response?.requests)
+        ? (ytRequestsData.body.response.requests as MovieHubYtDownloadRequest[])
+        : [];
+      setYtDownloadRequests(requests);
+      void refreshDownloadingStatuses(requests);
+      return;
+    }
+    addNotification(
+      ytRequestsData.body?.error || "Failed to fetch YT download requests",
+      "error",
+    );
+  }, [ytRequestsData, addNotification, refreshDownloadingStatuses]);
 
   useEffect(() => {
     if (!approveData) return;
@@ -781,15 +825,36 @@ export const MovieHub: React.FC = () => {
   }, [activeSection, isAdmin, loadAccessUsers]);
 
   useEffect(() => {
-    setIsMobileNavOpen(false);
-  }, [activeSection]);
+    if (activeSection === "admin_yt_download" && isAdmin) {
+      loadYtDownloadRequests();
+    }
+  }, [activeSection, isAdmin, loadYtDownloadRequests]);
 
   useEffect(() => {
-    return () => {
-      ytDownloadAbortControllerRef.current?.abort();
-      ytDownloadAbortControllerRef.current = null;
-    };
-  }, []);
+    if (!isAdmin || activeSection !== "admin_yt_download") return;
+    const hasDownloadingRequests = ytDownloadRequests.some(
+      (request) =>
+        request.status?.toUpperCase() === "DOWNLOADING" &&
+        Boolean(request.videoId),
+    );
+    if (!hasDownloadingRequests) return;
+
+    void refreshDownloadingStatuses(ytDownloadRequests);
+    const intervalId = window.setInterval(() => {
+      void refreshDownloadingStatuses(ytDownloadRequests);
+    }, 4000);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    activeSection,
+    isAdmin,
+    ytDownloadRequests,
+    refreshDownloadingStatuses,
+  ]);
+
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection !== "available") return;
@@ -948,6 +1013,7 @@ export const MovieHub: React.FC = () => {
 
   const handleDownloadYtToServer = useCallback(() => {
     const startDownload = async () => {
+      if (ytDownloadInProgress) return;
       const trimmedUrl = ytUrl.trim();
       if (!trimmedUrl) {
         addNotification("Please enter a YouTube URL", "warning");
@@ -957,172 +1023,88 @@ export const MovieHub: React.FC = () => {
         addNotification("Please select a format", "warning");
         return;
       }
-
-      ytDownloadAbortControllerRef.current?.abort();
-      const controller = new AbortController();
-      ytDownloadAbortControllerRef.current = controller;
+      const videoId = ytFormatsResponse?.id?.trim() || "";
+      if (!videoId) {
+        addNotification(
+          "Unable to determine videoId. Please fetch formats again.",
+          "warning",
+        );
+        return;
+      }
 
       setYtDownloadInProgress(true);
       setYtDownloadError(null);
-      setYtDownloadCompletePayload(null);
-      setYtLatestProgressEvent(null);
-      setYtProgressEvents([]);
-
-      const pushProgressEvent = (event: string, payload: Record<string, unknown> | null) => {
-        const nextEvent: YtSseProgressEvent = {
-          event,
-          payload,
-          receivedAt: new Date().toISOString(),
-        };
-        setYtLatestProgressEvent(nextEvent);
-        setYtProgressEvents((prev) => [nextEvent, ...prev].slice(0, 40));
-      };
 
       try {
-        const { url, options } = MovieHubService.downloadYtToServer({
+        const { url: addUrl, options: addOptions } = MovieHubService.addYtDownload({
+          videoId,
           url: trimmedUrl,
+          title: ytFormatsResponse?.title || "",
           format: {
             quality: selectedYtFormat.quality,
             ext: selectedYtFormat.ext || "mp4",
           },
           ...(ytFilename.trim() ? { filename: ytFilename.trim() } : {}),
-          progress_updates: true,
         });
 
-        const headers = {
-          ...((options.headers as Record<string, string> | undefined) || {}),
-          Accept: "text/event-stream",
-        };
-
-        const response = await fetch(url, {
-          ...options,
-          headers,
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          let errorMessage = "Failed to start YT download to server";
-          try {
-            const errorBody = await response.json();
-            errorMessage =
-              errorBody?.error || errorBody?.message || errorMessage;
-          } catch {
-            const text = await response.text();
-            if (text) errorMessage = text;
-          }
+        const addResponse = await fetch(addUrl, addOptions);
+        const addBody = await addResponse.json().catch(() => null);
+        if (!addResponse.ok) {
+          const errorMessage =
+            addBody?.error || addBody?.message || "Failed to add YT download request";
           setYtDownloadError(errorMessage);
           addNotification(errorMessage, "error");
           return;
         }
 
-        const contentType = response.headers.get("Content-Type") || "";
-        if (!contentType.includes("text/event-stream") || !response.body) {
-          const body = await response.json().catch(() => null);
-          setYtDownloadCompletePayload(body);
-          addNotification("YT download started on server", "success");
+        const { url: startUrl, options: startOptions } =
+          MovieHubService.startYtDownload();
+        const startResponse = await fetch(startUrl, startOptions);
+        const startBody = await startResponse.json().catch(() => null);
+        if (!startResponse.ok) {
+          const errorMessage =
+            startBody?.error || startBody?.message || "Failed to trigger YT download start";
+          setYtDownloadError(errorMessage);
+          addNotification(errorMessage, "error");
           return;
         }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          let boundaryMatch = buffer.match(/\r?\n\r?\n/);
-          while (boundaryMatch && boundaryMatch.index !== undefined) {
-            const boundaryIndex = boundaryMatch.index;
-            const boundaryLength = boundaryMatch[0].length;
-            const rawMessage = buffer.slice(0, boundaryIndex);
-            buffer = buffer.slice(boundaryIndex + boundaryLength);
-            boundaryMatch = buffer.match(/\r?\n\r?\n/);
-
-            if (!rawMessage.trim()) continue;
-
-            const parsed = parseSseMessage(rawMessage);
-            let payload: Record<string, unknown> | null = null;
-            if (parsed.data) {
-              try {
-                payload = JSON.parse(parsed.data) as Record<string, unknown>;
-              } catch {
-                payload = { raw: parsed.data };
-              }
-            }
-
-            pushProgressEvent(parsed.event, payload);
-
-            if (parsed.event === "complete") {
-              setYtDownloadCompletePayload(payload);
-              addNotification("YT download completed on server", "success");
-            }
-            if (parsed.event === "error") {
-              const errorMessage =
-                (typeof payload?.error === "string" && payload.error) ||
-                (typeof payload?.message === "string" && payload.message) ||
-                "YT download failed";
-              setYtDownloadError(errorMessage);
-              addNotification(errorMessage, "error");
-            }
-          }
-        }
-
-        const tail = buffer.trim();
-        if (tail) {
-          const parsed = parseSseMessage(tail);
-          let payload: Record<string, unknown> | null = null;
-          if (parsed.data) {
-            try {
-              payload = JSON.parse(parsed.data) as Record<string, unknown>;
-            } catch {
-              payload = { raw: parsed.data };
-            }
-          }
-          pushProgressEvent(parsed.event, payload);
-        }
+        addNotification(
+          startBody?.response?.message || "Download request queued successfully",
+          "success",
+        );
+        loadYtDownloadRequests();
       } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
         const message =
           error instanceof Error
             ? error.message
-            : "Failed to stream YT download progress";
+            : "Failed to queue YT download request";
         setYtDownloadError(message);
         addNotification(message, "error");
       } finally {
-        if (ytDownloadAbortControllerRef.current === controller) {
-          ytDownloadAbortControllerRef.current = null;
-        }
         setYtDownloadInProgress(false);
       }
     };
 
     void startDownload();
-  }, [ytUrl, selectedYtFormat, ytFilename, addNotification]);
-
-  const handleCancelYtDownload = useCallback(() => {
-    if (!ytDownloadAbortControllerRef.current) return;
-    ytDownloadAbortControllerRef.current.abort();
-    ytDownloadAbortControllerRef.current = null;
-    setYtDownloadInProgress(false);
-    addNotification("YT progress stream cancelled", "info");
-  }, [addNotification]);
+  }, [
+    ytDownloadInProgress,
+    ytUrl,
+    selectedYtFormat,
+    ytFormatsResponse?.id,
+    ytFormatsResponse?.title,
+    ytFilename,
+    addNotification,
+    loadYtDownloadRequests,
+  ]);
 
   const handleClearYtSearch = useCallback(() => {
-    ytDownloadAbortControllerRef.current?.abort();
-    ytDownloadAbortControllerRef.current = null;
     setYtDownloadInProgress(false);
     setYtUrl("");
     setYtFilename("");
     setYtFormatsResponse(null);
     setSelectedYtFormat(null);
-    setYtLatestProgressEvent(null);
-    setYtProgressEvents([]);
     setYtDownloadError(null);
-    setYtDownloadCompletePayload(null);
+    setYtStatusByVideoId({});
   }, []);
 
   const handleSelectSection = useCallback(
@@ -1405,15 +1387,18 @@ export const MovieHub: React.FC = () => {
                     downloadInProgress={ytDownloadInProgress}
                     formatsResponse={ytFormatsResponse}
                     selectedFormat={selectedYtFormat}
-                    latestProgressEvent={ytLatestProgressEvent}
                     downloadError={ytDownloadError}
+                    ytRequestsLoading={ytRequestsLoading}
+                    ytRequests={ytDownloadRequests}
+                    ytStatusByVideoId={ytStatusByVideoId}
+                    formatDateTime={formatDateTime}
                     onYtUrlChange={setYtUrl}
                     onFilenameChange={setYtFilename}
                     onFetchFormats={handleFetchYtFormats}
                     onClearSearch={handleClearYtSearch}
                     onFormatChange={setSelectedYtFormat}
                     onDownloadToServer={handleDownloadYtToServer}
-                    onCancelDownload={handleCancelYtDownload}
+                    onRefreshRequests={loadYtDownloadRequests}
                   />
                 )}
 

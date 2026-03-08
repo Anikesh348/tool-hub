@@ -41,7 +41,11 @@ public class BaseLogin implements Login {
                         } else {
                             JsonObject user = res.getFirst();
                             if (PasswordUtil.checkPassword(password, hashedPassword)) {
-                                String jwtToken = JWTProvider.generateToken(userId, user.getString("role"));
+                                String jwtToken = JWTProvider.generateToken(
+                                        userId,
+                                        user.getString("role"),
+                                        user.getString("email", "")
+                                );
                                 JsonObject response = new JsonObject().put("token", jwtToken);
                                 response.put("user", extractRequiredUserInfo(user));
                                 buildResponse(context, 200, response);
