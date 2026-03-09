@@ -2,15 +2,19 @@ import React from "react";
 import {
   MovieHubYtDownloadRequest,
   MovieHubYtFormatsResponse,
+  MovieHubYtLibraryItem,
   MovieHubYtRequestFormat,
 } from "../../apis/moviehub/moviehub";
 import { YtDownloadComposer } from "./yt/YtDownloadComposer";
 import { YtCurrentDownloadingStatusPanel } from "./yt/YtCurrentDownloadingStatusPanel";
 import { YtDownloadRequestsTable } from "./yt/YtDownloadRequestsTable";
+import { YtLibraryItemsTable } from "./yt/YtLibraryItemsTable";
 
 type MovieHubYtAdminSectionProps = {
   ytUrl: string;
   filename: string;
+  passDownloadPath: boolean;
+  downloadPath: string;
   formatsLoading: boolean;
   downloadInProgress: boolean;
   formatsResponse: MovieHubYtFormatsResponse | null;
@@ -19,14 +23,21 @@ type MovieHubYtAdminSectionProps = {
   ytRequestsLoading: boolean;
   ytRequests: MovieHubYtDownloadRequest[];
   ytStatusByVideoId: Record<string, Record<string, unknown>>;
+  ytLibraryLoading: boolean;
+  ytLibraryItems: MovieHubYtLibraryItem[];
+  deletingYtLibraryItemId: string | null;
   formatDateTime: (value?: string) => string;
   onYtUrlChange: (value: string) => void;
   onFilenameChange: (value: string) => void;
+  onPassDownloadPathChange: (value: boolean) => void;
+  onDownloadPathChange: (value: string) => void;
   onFetchFormats: () => void;
   onClearSearch: () => void;
   onFormatChange: (format: MovieHubYtRequestFormat) => void;
   onDownloadToServer: () => void;
   onRefreshRequests: () => void;
+  onRefreshLibraryItems: () => void;
+  onDeleteLibraryItem: (itemId: string) => void;
 };
 
 export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
@@ -34,6 +45,8 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
     ({
       ytUrl,
       filename,
+      passDownloadPath,
+      downloadPath,
       formatsLoading,
       downloadInProgress,
       formatsResponse,
@@ -42,14 +55,21 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
       ytRequestsLoading,
       ytRequests,
       ytStatusByVideoId,
+      ytLibraryLoading,
+      ytLibraryItems,
+      deletingYtLibraryItemId,
       formatDateTime,
       onYtUrlChange,
       onFilenameChange,
+      onPassDownloadPathChange,
+      onDownloadPathChange,
       onFetchFormats,
       onClearSearch,
       onFormatChange,
       onDownloadToServer,
       onRefreshRequests,
+      onRefreshLibraryItems,
+      onDeleteLibraryItem,
     }) => {
       return (
         <div className="space-y-6">
@@ -67,6 +87,8 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
               <YtDownloadComposer
                 ytUrl={ytUrl}
                 filename={filename}
+                passDownloadPath={passDownloadPath}
+                downloadPath={downloadPath}
                 formatsLoading={formatsLoading}
                 downloadInProgress={downloadInProgress}
                 formatsResponse={formatsResponse}
@@ -74,6 +96,8 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
                 downloadError={downloadError}
                 onYtUrlChange={onYtUrlChange}
                 onFilenameChange={onFilenameChange}
+                onPassDownloadPathChange={onPassDownloadPathChange}
+                onDownloadPathChange={onDownloadPathChange}
                 onFetchFormats={onFetchFormats}
                 onClearSearch={onClearSearch}
                 onFormatChange={onFormatChange}
@@ -94,6 +118,14 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
             ytRequests={ytRequests}
             formatDateTime={formatDateTime}
             onRefreshRequests={onRefreshRequests}
+          />
+
+          <YtLibraryItemsTable
+            ytLibraryLoading={ytLibraryLoading}
+            ytLibraryItems={ytLibraryItems}
+            deletingItemId={deletingYtLibraryItemId}
+            onRefreshItems={onRefreshLibraryItems}
+            onDeleteItem={onDeleteLibraryItem}
           />
         </div>
       );

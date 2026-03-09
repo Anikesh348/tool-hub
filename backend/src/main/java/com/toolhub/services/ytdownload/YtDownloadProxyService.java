@@ -17,6 +17,8 @@ import io.vertx.ext.web.client.WebClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -59,7 +61,7 @@ public class YtDownloadProxyService {
     private final String ytServerDownloadPath;
     private final String jellyfinBaseUrl;
     private final String jellyfinApiKey;
-    private final String ytMovieHubRefreshItemId;
+    private final String ytJellyfinId;
     private final Deque<String> pendingQueue = new ConcurrentLinkedDeque<>();
     private final Set<String> queuedRequestIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean startDispatchInProgress = new AtomicBoolean(false);
@@ -73,7 +75,7 @@ public class YtDownloadProxyService {
         this.ytServerDownloadPath = dotenv.get("YT_DOWNLOAD_SERVER_PATH");
         this.jellyfinBaseUrl = sanitizeBaseUrl(dotenv.get("JELLYFIN_BASE_URL"));
         this.jellyfinApiKey = firstNonBlank(dotenv.get("JELLYFIN_API_KEY", ""));
-        this.ytMovieHubRefreshItemId = firstNonBlank(dotenv.get("YT_MOVIEHUB_REFRESH_ITEM_ID", ""));
+        this.ytJellyfinId = firstNonBlank(dotenv.get("YT_JELLYFIN_ID", ""));
     }
 
     public void handleFormats(RoutingContext context) {
@@ -225,6 +227,94 @@ public class YtDownloadProxyService {
                 .onFailure(fail -> {
                     log.error("Failed to fetch yt download requests", fail);
                     buildResponse(context, 500, createErrorResponse("failed to fetch yt download requests"));
+                });
+    }
+
+    public void handleListLibraryItems(RoutingContext context) {
+        if (!validateJellyfinConfig(context)) {
+            return;
+        }
+
+        int startIndex = parseNonNegativeInt(context.request().getParam("startIndex"), 0);
+        int limit = parsePositiveInt(context.request().getParam("limit"), 100);
+        String parentId = firstNonBlank(
+                context.request().getParam("parentId"),
+                ytJellyfinId
+        ).trim();
+        if (parentId.isBlank()) {
+            buildResponse(context, 500, createErrorResponse("YT_JELLYFIN_ID is not configured"));
+            return;
+        }
+
+        String endpoint = jellyfinBaseUrl
+                + "/Items?ParentId=" + encodeQueryValue(parentId)
+                + "&StartIndex=" + startIndex
+                + "&Limit=" + limit
+                + "&Fields=Path,SortName,ChildCount,MediaSourceCount"
+                + "&SortBy=SortName"
+                + "&SortOrder=Ascending";
+
+        webClient.getAbs(endpoint)
+                .putHeader("accept", "application/json")
+                .putHeader("authorization", buildJellyfinAuthorizationHeader())
+                .putHeader("X-Emby-Token", jellyfinApiKey)
+                .putHeader("X-MediaBrowser-Token", jellyfinApiKey)
+                .putHeader("X-Api-Key", jellyfinApiKey)
+                .send()
+                .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        log.error("Failed to list jellyfin yt library items status={}", res.statusCode());
+                        buildResponse(context, 502, createErrorResponse("failed to list yt library items"));
+                        return;
+                    }
+
+                    JsonObject payload = toJsonObjectSafe(res.bodyAsString());
+                    JsonArray items = payload.getJsonArray("Items", new JsonArray());
+                    buildResponse(context, 200, createSuccessResponse(new JsonObject()
+                            .put("items", items)
+                            .put("totalRecordCount", payload.getInteger("TotalRecordCount", items.size()))
+                            .put("startIndex", payload.getInteger("StartIndex", startIndex))
+                            .put("limit", limit)
+                            .put("parentId", parentId)));
+                })
+                .onFailure(err -> {
+                    log.error("Failed to call jellyfin items endpoint for yt library", err);
+                    buildResponse(context, 502, createErrorResponse("failed to list yt library items"));
+                });
+    }
+
+    public void handleDeleteLibraryItem(RoutingContext context) {
+        if (!validateJellyfinConfig(context)) {
+            return;
+        }
+        String itemId = firstNonBlank(context.pathParam("itemId")).trim();
+        if (itemId.isBlank()) {
+            buildResponse(context, 400, createErrorResponse("itemId path param is required"));
+            return;
+        }
+
+        String endpoint = jellyfinBaseUrl + "/Items/" + encodeQueryValue(itemId);
+        webClient.deleteAbs(endpoint)
+                .putHeader("accept", "*/*")
+                .putHeader("authorization", buildJellyfinAuthorizationHeader())
+                .putHeader("X-Emby-Token", jellyfinApiKey)
+                .putHeader("X-MediaBrowser-Token", jellyfinApiKey)
+                .putHeader("X-Api-Key", jellyfinApiKey)
+                .send()
+                .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        log.error("Failed to delete jellyfin yt library item itemId={} status={}", itemId, res.statusCode());
+                        buildResponse(context, 502, createErrorResponse("failed to delete yt library item"));
+                        return;
+                    }
+
+                    buildResponse(context, 200, createSuccessResponse(new JsonObject()
+                            .put("message", "yt library item deleted")
+                            .put("itemId", itemId)));
+                })
+                .onFailure(err -> {
+                    log.error("Failed to call jellyfin delete item endpoint itemId={}", itemId, err);
+                    buildResponse(context, 502, createErrorResponse("failed to delete yt library item"));
                 });
     }
 
@@ -679,17 +769,17 @@ public class YtDownloadProxyService {
 
     private Future<Void> triggerMovieHubLibraryRefresh() {
         if (jellyfinBaseUrl == null || jellyfinBaseUrl.isBlank()) {
-            return Future.failedFuture("jellyfin base url is not configured");
+            return Future.failedFuture("JELLYFIN_BASE_URL is not configured");
         }
         if (jellyfinApiKey == null || jellyfinApiKey.isBlank()) {
-            return Future.failedFuture("jellyfin api key is not configured");
+            return Future.failedFuture("JELLYFIN_API_KEY is not configured");
         }
-        if (ytMovieHubRefreshItemId == null || ytMovieHubRefreshItemId.isBlank()) {
-            return Future.failedFuture("YT_MOVIEHUB_REFRESH_ITEM_ID is not configured");
+        if (ytJellyfinId == null || ytJellyfinId.isBlank()) {
+            return Future.failedFuture("YT_JELLYFIN_ID is not configured");
         }
 
         String endpoint = jellyfinBaseUrl
-                + "/Items/" + ytMovieHubRefreshItemId
+                + "/Items/" + ytJellyfinId
                 + "/Refresh?Recursive=true&ImageRefreshMode=Default&MetadataRefreshMode=Default"
                 + "&ReplaceAllImages=false&RegenerateTrickplay=false&ReplaceAllMetadata=false";
 
@@ -704,7 +794,7 @@ public class YtDownloadProxyService {
                 .onSuccess(res -> {
                     if (res.statusCode() >= 200 && res.statusCode() < 300) {
                         log.info("Triggered moviehub library refresh itemId={} status={}",
-                                ytMovieHubRefreshItemId, res.statusCode());
+                                ytJellyfinId, res.statusCode());
                         promise.complete();
                         return;
                     }
@@ -772,6 +862,42 @@ public class YtDownloadProxyService {
         }
         String status = payload.getString("status", "").trim().toUpperCase();
         return FAILED_STATUSES.contains(status);
+    }
+
+    private boolean validateJellyfinConfig(RoutingContext context) {
+        if (jellyfinBaseUrl == null || jellyfinBaseUrl.isBlank()) {
+            buildResponse(context, 500, createErrorResponse("JELLYFIN_BASE_URL is not configured"));
+            return false;
+        }
+        if (jellyfinApiKey == null || jellyfinApiKey.isBlank()) {
+            buildResponse(context, 500, createErrorResponse("JELLYFIN_API_KEY is not configured"));
+            return false;
+        }
+        return true;
+    }
+
+    private int parseNonNegativeInt(String value, int fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            return Math.max(0, parsed);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private int parsePositiveInt(String value, int fallback) {
+        int parsed = parseNonNegativeInt(value, fallback);
+        return parsed <= 0 ? fallback : parsed;
+    }
+
+    private String encodeQueryValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String firstNonBlank(String... candidates) {

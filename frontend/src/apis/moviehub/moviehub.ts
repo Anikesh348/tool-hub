@@ -173,6 +173,21 @@ export interface MovieHubYtDownloadRequest {
   downloadedAt?: string;
 }
 
+export interface MovieHubYtLibraryItem {
+  Id: string;
+  Name: string;
+  Path?: string;
+  SortName?: string;
+  ChildCount?: number;
+  MediaSourceCount?: number;
+  Type?: string;
+  IsFolder?: boolean;
+  RunTimeTicks?: number;
+  Container?: string;
+  LocationType?: string;
+  MediaType?: string;
+}
+
 export const MovieHubService = {
   search: (term: string, mediaType: MovieHubMediaType) => {
     const encodedTerm = encodeURIComponent(term);
@@ -498,6 +513,47 @@ export const MovieHubService = {
       url: `${BASE_URL}/v2/admin/yt/download/status/${encodeURIComponent(videoId)}`,
       options: {
         method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtLibraryItems: (payload?: {
+    parentId?: string;
+    startIndex?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (payload?.parentId?.trim()) {
+      query.set("parentId", payload.parentId.trim());
+    }
+    if (typeof payload?.startIndex === "number" && payload.startIndex >= 0) {
+      query.set("startIndex", String(payload.startIndex));
+    }
+    if (typeof payload?.limit === "number" && payload.limit > 0) {
+      query.set("limit", String(payload.limit));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return {
+      url: `${BASE_URL}/v2/admin/yt/library/items${suffix}`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  deleteYtLibraryItem: (itemId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/library/items/${encodeURIComponent(itemId)}`,
+      options: {
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("authToken")}`,

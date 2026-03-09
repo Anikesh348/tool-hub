@@ -158,6 +158,10 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                         .handler(ytDownloadProxyService::handleStatus);
                 adminRouter.get("/yt/download/status/stream/:videoId")
                         .handler(ytDownloadProxyService::handleStatusStream);
+                adminRouter.get("/yt/library/items")
+                        .handler(ytDownloadProxyService::handleListLibraryItems);
+                adminRouter.delete("/yt/library/items/:itemId")
+                        .handler(ytDownloadProxyService::handleDeleteLibraryItem);
 
                 vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
                         .onSuccess(id ->

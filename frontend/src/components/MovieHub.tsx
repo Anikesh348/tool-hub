@@ -14,8 +14,9 @@ import {
   MovieHubRequest,
   MovieHubSearchResult,
   MovieHubService,
-  MovieHubYtFormatsResponse,
   MovieHubYtDownloadRequest,
+  MovieHubYtFormatsResponse,
+  MovieHubYtLibraryItem,
   MovieHubYtRequestFormat,
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
@@ -44,7 +45,14 @@ const formatDateTime = (value?: string) => {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 };
 
 export const MovieHub: React.FC = () => {
@@ -114,6 +122,8 @@ export const MovieHub: React.FC = () => {
     useState<string | null>(null);
   const [ytUrl, setYtUrl] = useState("");
   const [ytFilename, setYtFilename] = useState("");
+  const [ytPassDownloadPath, setYtPassDownloadPath] = useState(false);
+  const [ytDownloadPath, setYtDownloadPath] = useState("");
   const [ytFormatsResponse, setYtFormatsResponse] =
     useState<MovieHubYtFormatsResponse | null>(null);
   const [selectedYtFormat, setSelectedYtFormat] =
@@ -124,6 +134,12 @@ export const MovieHub: React.FC = () => {
   const [ytStatusByVideoId, setYtStatusByVideoId] = useState<
     Record<string, Record<string, unknown>>
   >({});
+  const [ytLibraryItems, setYtLibraryItems] = useState<MovieHubYtLibraryItem[]>(
+    [],
+  );
+  const [deletingYtLibraryItemId, setDeletingYtLibraryItemId] = useState<
+    string | null
+  >(null);
   const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
   const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
 
@@ -227,6 +243,16 @@ export const MovieHub: React.FC = () => {
     data: ytRequestsData,
     fetchData: fetchYtRequests,
   } = useApiFetcher();
+  const {
+    loading: ytLibraryLoading,
+    data: ytLibraryData,
+    fetchData: fetchYtLibraryItems,
+  } = useApiFetcher();
+  const {
+    loading: deleteYtLibraryLoading,
+    data: deleteYtLibraryData,
+    fetchData: fetchDeleteYtLibraryItem,
+  } = useApiFetcher();
 
   const isBusy =
     accessStatusLoading ||
@@ -244,6 +270,7 @@ export const MovieHub: React.FC = () => {
     approveLoading ||
     deleteLoading ||
     ytRequestsLoading ||
+    deleteYtLibraryLoading ||
     availableLoading ||
     downloadsLoading ||
     completedDownloadsLoading;
@@ -303,7 +330,7 @@ export const MovieHub: React.FC = () => {
       },
       {
         id: "admin_yt_download" as MovieHubSection,
-        label: "Download YT Video to Server",
+        label: "YT",
         compactLabel: "YT",
         adminOnly: true,
       },
@@ -381,6 +408,15 @@ export const MovieHub: React.FC = () => {
     const { url, options } = MovieHubService.getYtDownloadRequests();
     fetchYtRequests(url, options);
   }, [isAdmin, fetchYtRequests]);
+
+  const loadYtLibraryItems = useCallback(() => {
+    if (!isAdmin) return;
+    const { url, options } = MovieHubService.getYtLibraryItems({
+      startIndex: 0,
+      limit: 100,
+    });
+    fetchYtLibraryItems(url, options);
+  }, [isAdmin, fetchYtLibraryItems]);
 
   const refreshDownloadingStatuses = useCallback(
     async (requests: MovieHubYtDownloadRequest[]) => {
@@ -762,6 +798,41 @@ export const MovieHub: React.FC = () => {
   }, [ytRequestsData, addNotification, refreshDownloadingStatuses]);
 
   useEffect(() => {
+    if (!ytLibraryData) return;
+    if (ytLibraryData.status >= 200 && ytLibraryData.status < 300) {
+      const items = Array.isArray(ytLibraryData.body?.response?.items)
+        ? (ytLibraryData.body.response.items as MovieHubYtLibraryItem[])
+        : [];
+      setYtLibraryItems(items);
+      return;
+    }
+    addNotification(
+      ytLibraryData.body?.error || "Failed to fetch YT library items",
+      "error",
+    );
+  }, [ytLibraryData, addNotification]);
+
+  useEffect(() => {
+    if (!deleteYtLibraryData) return;
+    setDeletingYtLibraryItemId(null);
+    if (deleteYtLibraryData.status >= 200 && deleteYtLibraryData.status < 300) {
+      addNotification("YT library item deleted", "success");
+      loadYtLibraryItems();
+      loadYtDownloadRequests();
+      return;
+    }
+    addNotification(
+      deleteYtLibraryData.body?.error || "Failed to delete YT library item",
+      "error",
+    );
+  }, [
+    deleteYtLibraryData,
+    addNotification,
+    loadYtLibraryItems,
+    loadYtDownloadRequests,
+  ]);
+
+  useEffect(() => {
     if (!approveData) return;
     const wasAutoApprove = Boolean(autoApproveRequestId);
     setAutoApproveRequestId(null);
@@ -827,8 +898,9 @@ export const MovieHub: React.FC = () => {
   useEffect(() => {
     if (activeSection === "admin_yt_download" && isAdmin) {
       loadYtDownloadRequests();
+      loadYtLibraryItems();
     }
-  }, [activeSection, isAdmin, loadYtDownloadRequests]);
+  }, [activeSection, isAdmin, loadYtDownloadRequests, loadYtLibraryItems]);
 
   useEffect(() => {
     if (!isAdmin || activeSection !== "admin_yt_download") return;
@@ -1015,12 +1087,17 @@ export const MovieHub: React.FC = () => {
     const startDownload = async () => {
       if (ytDownloadInProgress) return;
       const trimmedUrl = ytUrl.trim();
+      const trimmedDownloadPath = ytDownloadPath.trim();
       if (!trimmedUrl) {
         addNotification("Please enter a YouTube URL", "warning");
         return;
       }
       if (!selectedYtFormat?.quality) {
         addNotification("Please select a format", "warning");
+        return;
+      }
+      if (ytPassDownloadPath && !trimmedDownloadPath) {
+        addNotification("Please enter a download path or disable the toggle", "warning");
         return;
       }
       const videoId = ytFormatsResponse?.id?.trim() || "";
@@ -1045,6 +1122,9 @@ export const MovieHub: React.FC = () => {
             ext: selectedYtFormat.ext || "mp4",
           },
           ...(ytFilename.trim() ? { filename: ytFilename.trim() } : {}),
+          ...(ytPassDownloadPath && trimmedDownloadPath
+            ? { download_path: trimmedDownloadPath }
+            : {}),
         });
 
         const addResponse = await fetch(addUrl, addOptions);
@@ -1073,6 +1153,7 @@ export const MovieHub: React.FC = () => {
           "success",
         );
         loadYtDownloadRequests();
+        loadYtLibraryItems();
       } catch (error) {
         const message =
           error instanceof Error
@@ -1089,28 +1170,47 @@ export const MovieHub: React.FC = () => {
   }, [
     ytDownloadInProgress,
     ytUrl,
+    ytDownloadPath,
+    ytPassDownloadPath,
     selectedYtFormat,
     ytFormatsResponse?.id,
     ytFormatsResponse?.title,
     ytFilename,
     addNotification,
     loadYtDownloadRequests,
+    loadYtLibraryItems,
   ]);
 
   const handleClearYtSearch = useCallback(() => {
     setYtDownloadInProgress(false);
     setYtUrl("");
     setYtFilename("");
+    setYtPassDownloadPath(false);
+    setYtDownloadPath("");
     setYtFormatsResponse(null);
     setSelectedYtFormat(null);
     setYtDownloadError(null);
     setYtStatusByVideoId({});
   }, []);
 
+  const handleDeleteYtLibraryItem = useCallback(
+    (itemId: string) => {
+      if (!itemId) return;
+      setDeletingYtLibraryItemId(itemId);
+      const { url, options } = MovieHubService.deleteYtLibraryItem(itemId);
+      fetchDeleteYtLibraryItem(url, options);
+    },
+    [fetchDeleteYtLibraryItem],
+  );
+
   const handleSelectSection = useCallback(
     (section: MovieHubSection) => {
       if (isChatPage) {
         navigate("/moviehub");
+      }
+      if (section === "admin_yt_download") {
+        navigate("/moviehub/yt");
+        return;
       }
       if (section === "status" && authToken && !isAuthLoading) {
         loadMyRequests();
@@ -1383,6 +1483,8 @@ export const MovieHub: React.FC = () => {
                   <MovieHubYtAdminSection
                     ytUrl={ytUrl}
                     filename={ytFilename}
+                    passDownloadPath={ytPassDownloadPath}
+                    downloadPath={ytDownloadPath}
                     formatsLoading={ytFormatsLoading}
                     downloadInProgress={ytDownloadInProgress}
                     formatsResponse={ytFormatsResponse}
@@ -1391,14 +1493,21 @@ export const MovieHub: React.FC = () => {
                     ytRequestsLoading={ytRequestsLoading}
                     ytRequests={ytDownloadRequests}
                     ytStatusByVideoId={ytStatusByVideoId}
+                    ytLibraryLoading={ytLibraryLoading}
+                    ytLibraryItems={ytLibraryItems}
+                    deletingYtLibraryItemId={deletingYtLibraryItemId}
                     formatDateTime={formatDateTime}
                     onYtUrlChange={setYtUrl}
                     onFilenameChange={setYtFilename}
+                    onPassDownloadPathChange={setYtPassDownloadPath}
+                    onDownloadPathChange={setYtDownloadPath}
                     onFetchFormats={handleFetchYtFormats}
                     onClearSearch={handleClearYtSearch}
                     onFormatChange={setSelectedYtFormat}
                     onDownloadToServer={handleDownloadYtToServer}
                     onRefreshRequests={loadYtDownloadRequests}
+                    onRefreshLibraryItems={loadYtLibraryItems}
+                    onDeleteLibraryItem={handleDeleteYtLibraryItem}
                   />
                 )}
 
