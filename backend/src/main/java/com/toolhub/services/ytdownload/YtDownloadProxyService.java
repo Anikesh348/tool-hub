@@ -134,6 +134,7 @@ public class YtDownloadProxyService {
             buildResponse(context, 400, createErrorResponse("download_path is required"));
             return;
         }
+        final String resolvedDownloadPath = downloadPath;
 
         JsonObject format = payload.getJsonObject("format", new JsonObject());
         String quality = format.getString("quality", "").trim();
@@ -141,27 +142,14 @@ public class YtDownloadProxyService {
             buildResponse(context, 400, createErrorResponse("format.quality is required"));
             return;
         }
-        String requestId = UUID.randomUUID().toString();
         String now = Instant.now().toString();
-        JsonObject record = new JsonObject()
-                .put("requestId", requestId)
-                .put("videoId", videoId)
-                .put("url", payload.getString("url", ""))
-                .put("title", payload.getString("title", ""))
-                .put("filename", payload.getString("filename", ""))
-                .put("download_path", downloadPath)
-                .put("format", new JsonObject()
-                        .put("quality", quality)
-                        .put("ext", format.getString("ext", "mp4")))
-                .put("status", STATUS_REQUESTED)
-                .put("downloadAlertSent", false)
-                .put("userId", userId == null ? "" : userId)
-                .put("createdAt", now)
-                .put("updatedAt", now);
+        String safeUserId = firstNonBlank(userId);
+        JsonObject requestFormat = new JsonObject()
+                .put("quality", quality)
+                .put("ext", format.getString("ext", "mp4"));
 
         String userEmailFromClaim = context.get("userEmail");
         String userEmail = firstNonBlank(userEmailFromClaim, payload.getString("userEmail", ""));
-        record.put("userEmail", userEmail);
 
         JsonObject duplicateCheckQuery = new JsonObject().put("videoId", videoId);
         mongoDBClient.queryRecords(duplicateCheckQuery, YT_DOWNLOADS_COLLECTION)
@@ -170,11 +158,70 @@ public class YtDownloadProxyService {
                         JsonObject latestRecord = existingRequests.stream()
                                 .max(Comparator.comparing(existing -> existing.getString("createdAt", "")))
                                 .orElse(existingRequests.getFirst());
+                        String existingRequestId = latestRecord.getString("requestId", "").trim();
                         String existingStatus = latestRecord.getString("status", "UNKNOWN");
+                        if (STATUS_FAILED.equalsIgnoreCase(existingStatus)) {
+                            if (existingRequestId.isBlank()) {
+                                buildResponse(context, 500, createErrorResponse("failed request entry is missing requestId"));
+                                return;
+                            }
+                            JsonObject update = new JsonObject()
+                                    .put("videoId", videoId)
+                                    .put("url", payload.getString("url", ""))
+                                    .put("title", payload.getString("title", ""))
+                                    .put("filename", payload.getString("filename", ""))
+                                    .put("download_path", resolvedDownloadPath)
+                                    .put("format", requestFormat)
+                                    .put("status", STATUS_REQUESTED)
+                                    .put("downloadAlertSent", false)
+                                    .put("downloadAlertSentAt", null)
+                                    .put("startedAt", null)
+                                    .put("downloadedAt", null)
+                                    .put("movieHubRefreshTriggered", false)
+                                    .put("movieHubRefreshTriggeredAt", null)
+                                    .put("lastStatusPayload", null)
+                                    .put("lastStartResponse", null)
+                                    .put("error", null)
+                                    .put("startError", null)
+                                    .put("userId", safeUserId)
+                                    .put("userEmail", userEmail)
+                                    .put("updatedAt", now);
+
+                            updateDownloadRecord(existingRequestId, update)
+                                    .onSuccess(v -> {
+                                        enqueueRequest(existingRequestId);
+                                        buildResponse(context, 200, createSuccessResponse(new JsonObject()
+                                                .put("message", "failed download request re-queued")
+                                                .put("requestId", existingRequestId)
+                                                .put("status", STATUS_REQUESTED)
+                                                .put("videoId", videoId)));
+                                    })
+                                    .onFailure(fail -> {
+                                        log.error("Failed to re-queue failed yt request requestId={} videoId={}",
+                                                existingRequestId, videoId, fail);
+                                        buildResponse(context, 500, createErrorResponse("failed to re-queue download request"));
+                                    });
+                            return;
+                        }
                         buildResponse(context, 409, createErrorResponse(
                                 "download request already exists for this videoId (status: " + existingStatus + ")"));
                         return;
                     }
+                    String requestId = UUID.randomUUID().toString();
+                    JsonObject record = new JsonObject()
+                            .put("requestId", requestId)
+                            .put("videoId", videoId)
+                            .put("url", payload.getString("url", ""))
+                            .put("title", payload.getString("title", ""))
+                            .put("filename", payload.getString("filename", ""))
+                            .put("download_path", resolvedDownloadPath)
+                            .put("format", requestFormat)
+                            .put("status", STATUS_REQUESTED)
+                            .put("downloadAlertSent", false)
+                            .put("userId", safeUserId)
+                            .put("userEmail", userEmail)
+                            .put("createdAt", now)
+                            .put("updatedAt", now);
                     mongoDBClient.insertRecord(record, YT_DOWNLOADS_COLLECTION)
                             .onSuccess(res -> {
                                 enqueueRequest(requestId);
@@ -227,6 +274,53 @@ public class YtDownloadProxyService {
                 .onFailure(fail -> {
                     log.error("Failed to fetch yt download requests", fail);
                     buildResponse(context, 500, createErrorResponse("failed to fetch yt download requests"));
+                });
+    }
+
+    public void handleDeleteRequest(RoutingContext context) {
+        String requestId = firstNonBlank(context.pathParam("requestId")).trim();
+        if (requestId.isBlank()) {
+            buildResponse(context, 400, createErrorResponse("requestId path param is required"));
+            return;
+        }
+
+        fetchDownloadByRequestId(requestId)
+                .onSuccess(record -> {
+                    if (record == null) {
+                        buildResponse(context, 404, createErrorResponse("download request not found"));
+                        return;
+                    }
+
+                    String status = record.getString("status", "");
+                    boolean allowedToDelete = STATUS_REQUESTED.equalsIgnoreCase(status)
+                            || STATUS_FAILED.equalsIgnoreCase(status)
+                            || STATUS_DOWNLOADED.equalsIgnoreCase(status);
+                    if (!allowedToDelete) {
+                        buildResponse(context, 409, createErrorResponse(
+                                "only REQUESTED, FAILED, or DOWNLOADED requests can be deleted (current status: "
+                                        + firstNonBlank(status, "UNKNOWN") + ")"));
+                        return;
+                    }
+
+                    pendingQueue.remove(requestId);
+                    queuedRequestIds.remove(requestId);
+                    mongoDBClient.deleteRecord(new JsonObject().put("requestId", requestId), YT_DOWNLOADS_COLLECTION)
+                            .onSuccess(v -> buildResponse(context, 200, createSuccessResponse(new JsonObject()
+                                    .put("message", "download request deleted")
+                                    .put("requestId", requestId))))
+                            .onFailure(fail -> {
+                                String failMessage = fail == null ? "" : fail.getMessage();
+                                if (failMessage != null && failMessage.toLowerCase().contains("no matching")) {
+                                    buildResponse(context, 404, createErrorResponse("download request not found"));
+                                    return;
+                                }
+                                log.error("Failed to delete yt request requestId={}", requestId, fail);
+                                buildResponse(context, 500, createErrorResponse("failed to delete download request"));
+                            });
+                })
+                .onFailure(fail -> {
+                    log.error("Failed to fetch yt request for delete requestId={}", requestId, fail);
+                    buildResponse(context, 500, createErrorResponse("failed to delete download request"));
                 });
     }
 
@@ -353,8 +447,17 @@ public class YtDownloadProxyService {
         httpClient.request(options)
                 .onSuccess(upstreamReq -> {
                     upstreamReq.putHeader("Accept", "text/event-stream");
+                    context.response().exceptionHandler(err -> {
+                        if (!isBenignStreamClose(err)) {
+                            log.warn("Downstream SSE response exception for videoId={}", videoId, err);
+                        }
+                    });
                     upstreamReq.send()
                             .onSuccess(upstreamRes -> {
+                                if (context.response().ended() || context.response().closed()) {
+                                    upstreamRes.request().reset();
+                                    return;
+                                }
                                 context.response().setStatusCode(upstreamRes.statusCode());
                                 upstreamRes.headers().forEach(entry -> {
                                     if (!HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase())
@@ -367,23 +470,85 @@ public class YtDownloadProxyService {
                                 }
                                 context.response().setChunked(true);
 
-                                upstreamRes.pipeTo(context.response())
-                                        .onFailure(err -> {
-                                            log.error("Failed while streaming status SSE for videoId={}", videoId, err);
-                                            if (!context.response().ended()) {
-                                                context.response().end();
-                                            }
-                                        });
+                                context.response().closeHandler(v -> upstreamRes.request().reset());
+
+                                upstreamRes.exceptionHandler(err -> {
+                                    if (isBenignStreamClose(err)) {
+                                        return;
+                                    }
+                                    log.error("Failed while streaming status SSE for videoId={}", videoId, err);
+                                    if (!context.response().ended() && !context.response().closed()) {
+                                        context.response().end();
+                                    }
+                                });
+
+                                upstreamRes.endHandler(v -> {
+                                    if (!context.response().ended() && !context.response().closed()) {
+                                        context.response().end();
+                                    }
+                                });
+
+                                upstreamRes.handler(chunk -> {
+                                    if (context.response().ended() || context.response().closed()) {
+                                        upstreamRes.request().reset();
+                                        return;
+                                    }
+                                    try {
+                                        if (context.response().writeQueueFull()) {
+                                            upstreamRes.pause();
+                                            context.response().drainHandler(done -> upstreamRes.resume());
+                                        }
+                                        context.response().write(chunk)
+                                                .onFailure(err -> {
+                                                    if (!isBenignStreamClose(err)) {
+                                                        log.error("Failed to write SSE chunk for videoId={}", videoId, err);
+                                                    }
+                                                    upstreamRes.request().reset();
+                                                    if (!context.response().ended() && !context.response().closed()) {
+                                                        context.response().end();
+                                                    }
+                                                });
+                                    } catch (Throwable err) {
+                                        if (!isBenignStreamClose(err)) {
+                                            log.error("Failed to write SSE chunk for videoId={}", videoId, err);
+                                        }
+                                        upstreamRes.request().reset();
+                                        if (!context.response().ended() && !context.response().closed()) {
+                                            context.response().end();
+                                        }
+                                    }
+                                });
                             })
                             .onFailure(err -> {
+                                if (isBenignStreamClose(err) || context.response().closed() || context.response().ended()) {
+                                    return;
+                                }
                                 log.error("Failed to call upstream status stream for videoId={}", videoId, err);
                                 buildResponse(context, 502, createErrorResponse("failed to call status stream"));
                             });
                 })
                 .onFailure(err -> {
+                    if (isBenignStreamClose(err) || context.response().closed() || context.response().ended()) {
+                        return;
+                    }
                     log.error("Failed to initialize upstream status stream request for videoId={}", videoId, err);
                     buildResponse(context, 502, createErrorResponse("failed to initialize status stream request"));
                 });
+    }
+
+    private boolean isBenignStreamClose(Throwable err) {
+        if (err == null) {
+            return false;
+        }
+        String typeName = err.getClass().getName().toLowerCase();
+        if (typeName.contains("closedchannelexception")) {
+            return true;
+        }
+        String message = firstNonBlank(err.getMessage()).toLowerCase();
+        return message.contains("response has already been written")
+                || message.contains("connection was closed")
+                || message.contains("broken pipe")
+                || message.contains("connection reset");
     }
 
     private void startDownloadFromQueue(RoutingContext context) {

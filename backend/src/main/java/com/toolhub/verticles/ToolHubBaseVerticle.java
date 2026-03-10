@@ -154,6 +154,8 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                         .handler(ytDownloadProxyService::handleAdd);
                 adminRouter.get("/yt/download/requests")
                         .handler(ytDownloadProxyService::handleListRequests);
+                adminRouter.delete("/yt/download/requests/:requestId")
+                        .handler(ytDownloadProxyService::handleDeleteRequest);
                 adminRouter.get("/yt/download/status/:videoId")
                         .handler(ytDownloadProxyService::handleStatus);
                 adminRouter.get("/yt/download/status/stream/:videoId")
