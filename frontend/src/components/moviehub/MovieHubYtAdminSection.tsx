@@ -15,6 +15,7 @@ type MovieHubYtAdminSectionProps = {
   filename: string;
   passDownloadPath: boolean;
   downloadPath: string;
+  isSong: boolean;
   formatsLoading: boolean;
   downloadInProgress: boolean;
   formatsResponse: MovieHubYtFormatsResponse | null;
@@ -32,6 +33,7 @@ type MovieHubYtAdminSectionProps = {
   onFilenameChange: (value: string) => void;
   onPassDownloadPathChange: (value: boolean) => void;
   onDownloadPathChange: (value: string) => void;
+  onSongChange: (value: boolean) => void;
   onFetchFormats: () => void;
   onClearSearch: () => void;
   onFormatChange: (format: MovieHubYtRequestFormat) => void;
@@ -49,6 +51,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
       filename,
       passDownloadPath,
       downloadPath,
+      isSong,
       formatsLoading,
       downloadInProgress,
       formatsResponse,
@@ -66,6 +69,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
       onFilenameChange,
       onPassDownloadPathChange,
       onDownloadPathChange,
+      onSongChange,
       onFetchFormats,
       onClearSearch,
       onFormatChange,
@@ -93,6 +97,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
                 filename={filename}
                 passDownloadPath={passDownloadPath}
                 downloadPath={downloadPath}
+                isSong={isSong}
                 formatsLoading={formatsLoading}
                 downloadInProgress={downloadInProgress}
                 formatsResponse={formatsResponse}
@@ -102,6 +107,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
                 onFilenameChange={onFilenameChange}
                 onPassDownloadPathChange={onPassDownloadPathChange}
                 onDownloadPathChange={onDownloadPathChange}
+                onSongChange={onSongChange}
                 onFetchFormats={onFetchFormats}
                 onClearSearch={onClearSearch}
                 onFormatChange={onFormatChange}

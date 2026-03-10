@@ -59,6 +59,7 @@ public class YtDownloadProxyService {
     private final MailService mailService;
     private final String ytDownloadApiBaseUrl;
     private final String ytServerDownloadPath;
+    private final String ytSongsDownloadPath;
     private final String jellyfinBaseUrl;
     private final String jellyfinApiKey;
     private final String ytJellyfinId;
@@ -73,6 +74,7 @@ public class YtDownloadProxyService {
         this.mailService = new MailService(webClient);
         this.ytDownloadApiBaseUrl = sanitizeBaseUrl(dotenv.get("YT_DOWNLOAD_API_BASE_URL"));
         this.ytServerDownloadPath = dotenv.get("YT_DOWNLOAD_SERVER_PATH");
+        this.ytSongsDownloadPath = dotenv.get("YT_DOWNLOAD_SONGS_PATH");
         this.jellyfinBaseUrl = sanitizeBaseUrl(dotenv.get("JELLYFIN_BASE_URL"));
         this.jellyfinApiKey = firstNonBlank(dotenv.get("JELLYFIN_API_KEY", ""));
         this.ytJellyfinId = firstNonBlank(dotenv.get("YT_JELLYFIN_ID", ""));
@@ -126,13 +128,23 @@ public class YtDownloadProxyService {
             buildResponse(context, 400, createErrorResponse("videoId is required"));
             return;
         }
-        String downloadPath = payload.getString("download_path", "").trim();
-        if (downloadPath.isBlank()) {
-            downloadPath = ytServerDownloadPath == null ? "" : ytServerDownloadPath.trim();
-        }
-        if (downloadPath.isBlank()) {
-            buildResponse(context, 400, createErrorResponse("download_path is required"));
-            return;
+        boolean isSong = payload.getBoolean("isSong", payload.getBoolean("is_song", false));
+        String downloadPath;
+        if (isSong) {
+            downloadPath = ytSongsDownloadPath == null ? "" : ytSongsDownloadPath.trim();
+            if (downloadPath.isBlank()) {
+                buildResponse(context, 500, createErrorResponse("YT_DOWNLOAD_SONGS_PATH is not configured"));
+                return;
+            }
+        } else {
+            downloadPath = payload.getString("download_path", "").trim();
+            if (downloadPath.isBlank()) {
+                downloadPath = ytServerDownloadPath == null ? "" : ytServerDownloadPath.trim();
+            }
+            if (downloadPath.isBlank()) {
+                buildResponse(context, 400, createErrorResponse("download_path is required"));
+                return;
+            }
         }
         final String resolvedDownloadPath = downloadPath;
 
@@ -171,6 +183,7 @@ public class YtDownloadProxyService {
                                     .put("title", payload.getString("title", ""))
                                     .put("filename", payload.getString("filename", ""))
                                     .put("download_path", resolvedDownloadPath)
+                                    .put("isSong", isSong)
                                     .put("format", requestFormat)
                                     .put("status", STATUS_REQUESTED)
                                     .put("downloadAlertSent", false)
@@ -215,6 +228,7 @@ public class YtDownloadProxyService {
                             .put("title", payload.getString("title", ""))
                             .put("filename", payload.getString("filename", ""))
                             .put("download_path", resolvedDownloadPath)
+                            .put("isSong", isSong)
                             .put("format", requestFormat)
                             .put("status", STATUS_REQUESTED)
                             .put("downloadAlertSent", false)

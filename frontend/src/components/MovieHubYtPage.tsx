@@ -86,6 +86,7 @@ export const MovieHubYtPage: React.FC = () => {
   const [ytFilename, setYtFilename] = useState("");
   const [ytPassDownloadPath, setYtPassDownloadPath] = useState(false);
   const [ytDownloadPath, setYtDownloadPath] = useState("");
+  const [ytIsSong, setYtIsSong] = useState(false);
   const [ytFormatsResponse, setYtFormatsResponse] =
     useState<MovieHubYtFormatsResponse | null>(null);
   const [selectedYtFormat, setSelectedYtFormat] =
@@ -369,6 +370,25 @@ export const MovieHubYtPage: React.FC = () => {
     fetchYtFormats(url, options);
   }, [ytUrl, addNotification, fetchYtFormats]);
 
+  const handleSongModeChange = useCallback((value: boolean) => {
+    setYtIsSong(value);
+    if (value) {
+      setYtPassDownloadPath(false);
+      setYtDownloadPath("");
+    }
+  }, []);
+
+  const handlePassDownloadPathChange = useCallback(
+    (value: boolean) => {
+      if (ytIsSong && value) return;
+      setYtPassDownloadPath(value);
+      if (!value) {
+        setYtDownloadPath("");
+      }
+    },
+    [ytIsSong],
+  );
+
   const handleDownloadYtToServer = useCallback(() => {
     const startDownload = async () => {
       if (ytDownloadInProgress) return;
@@ -382,7 +402,7 @@ export const MovieHubYtPage: React.FC = () => {
         addNotification("Please select a format", "warning");
         return;
       }
-      if (ytPassDownloadPath && !trimmedDownloadPath) {
+      if (!ytIsSong && ytPassDownloadPath && !trimmedDownloadPath) {
         addNotification("Please enter a download path or disable the toggle", "warning");
         return;
       }
@@ -407,8 +427,9 @@ export const MovieHubYtPage: React.FC = () => {
             quality: selectedYtFormat.quality,
             ext: selectedYtFormat.ext || "mp4",
           },
+          ...(ytIsSong ? { isSong: true } : {}),
           ...(ytFilename.trim() ? { filename: ytFilename.trim() } : {}),
-          ...(ytPassDownloadPath && trimmedDownloadPath
+          ...(!ytIsSong && ytPassDownloadPath && trimmedDownloadPath
             ? { download_path: trimmedDownloadPath }
             : {}),
         });
@@ -456,6 +477,7 @@ export const MovieHubYtPage: React.FC = () => {
     ytDownloadInProgress,
     ytUrl,
     ytDownloadPath,
+    ytIsSong,
     ytPassDownloadPath,
     selectedYtFormat,
     ytFormatsResponse?.id,
@@ -471,6 +493,7 @@ export const MovieHubYtPage: React.FC = () => {
     setYtFilename("");
     setYtPassDownloadPath(false);
     setYtDownloadPath("");
+    setYtIsSong(false);
     setYtFormatsResponse(null);
     setSelectedYtFormat(null);
     setYtDownloadError(null);
@@ -638,6 +661,7 @@ export const MovieHubYtPage: React.FC = () => {
                       filename={ytFilename}
                       passDownloadPath={ytPassDownloadPath}
                       downloadPath={ytDownloadPath}
+                      isSong={ytIsSong}
                       formatsLoading={ytFormatsLoading}
                       downloadInProgress={ytDownloadInProgress}
                       formatsResponse={ytFormatsResponse}
@@ -645,8 +669,9 @@ export const MovieHubYtPage: React.FC = () => {
                       downloadError={ytDownloadError}
                       onYtUrlChange={setYtUrl}
                       onFilenameChange={setYtFilename}
-                      onPassDownloadPathChange={setYtPassDownloadPath}
+                      onPassDownloadPathChange={handlePassDownloadPathChange}
                       onDownloadPathChange={setYtDownloadPath}
+                      onSongChange={handleSongModeChange}
                       onFetchFormats={handleFetchYtFormats}
                       onClearSearch={handleClearYtSearch}
                       onFormatChange={setSelectedYtFormat}

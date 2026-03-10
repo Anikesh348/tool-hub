@@ -11,6 +11,7 @@ type YtDownloadComposerProps = {
   filename: string;
   passDownloadPath: boolean;
   downloadPath: string;
+  isSong: boolean;
   formatsLoading: boolean;
   downloadInProgress: boolean;
   formatsResponse: MovieHubYtFormatsResponse | null;
@@ -20,6 +21,7 @@ type YtDownloadComposerProps = {
   onFilenameChange: (value: string) => void;
   onPassDownloadPathChange: (value: boolean) => void;
   onDownloadPathChange: (value: string) => void;
+  onSongChange: (value: boolean) => void;
   onFetchFormats: () => void;
   onClearSearch: () => void;
   onFormatChange: (format: MovieHubYtRequestFormat) => void;
@@ -48,6 +50,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
     filename,
     passDownloadPath,
     downloadPath,
+    isSong,
     formatsLoading,
     downloadInProgress,
     formatsResponse,
@@ -57,6 +60,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
     onFilenameChange,
     onPassDownloadPathChange,
     onDownloadPathChange,
+    onSongChange,
     onFetchFormats,
     onClearSearch,
     onFormatChange,
@@ -175,7 +179,22 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
                   <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
+                      checked={isSong}
+                      onChange={(e) => onSongChange(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Song download
+                  </label>
+                  {isSong ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      This request uses the configured songs download path.
+                    </p>
+                  ) : null}
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
                       checked={passDownloadPath}
+                      disabled={isSong}
                       onChange={(e) => onPassDownloadPathChange(e.target.checked)}
                       className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />

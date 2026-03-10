@@ -468,6 +468,7 @@ export const MovieHubService = {
     title?: string;
     filename?: string;
     download_path?: string;
+    isSong?: boolean;
   }) => {
     return {
       url: `${BASE_URL}/v2/admin/yt/download/add`,
