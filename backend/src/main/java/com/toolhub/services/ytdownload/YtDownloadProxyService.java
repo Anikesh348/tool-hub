@@ -292,13 +292,10 @@ public class YtDownloadProxyService {
                     }
 
                     String status = record.getString("status", "");
-                    boolean isPending = "PENDING".equalsIgnoreCase(status);
-                    boolean allowedToDelete = STATUS_REQUESTED.equalsIgnoreCase(status)
-                            || isPending
-                            || STATUS_DOWNLOADED.equalsIgnoreCase(status);
+                    boolean allowedToDelete = !STATUS_DOWNLOADING.equalsIgnoreCase(status);
                     if (!allowedToDelete) {
                         buildResponse(context, 409, createErrorResponse(
-                                "only PENDING, REQUESTED, or DOWNLOADED requests can be deleted (current status: "
+                                "DOWNLOADING requests cannot be deleted (current status: "
                                         + firstNonBlank(status, "UNKNOWN") + ")"));
                         return;
                     }

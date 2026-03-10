@@ -113,10 +113,7 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
                     const requestStatus = request.status || "UNKNOWN";
                     const normalizedStatus = requestStatus.toUpperCase();
                     const requestedBy = request.userEmail || request.userId || "-";
-                    const canDelete =
-                      normalizedStatus === "PENDING" ||
-                      normalizedStatus === "REQUESTED" ||
-                      normalizedStatus === "DOWNLOADED";
+                    const canDelete = normalizedStatus !== "DOWNLOADING";
                     const isDeleting = deletingRequestId === request.requestId;
 
                     return (
