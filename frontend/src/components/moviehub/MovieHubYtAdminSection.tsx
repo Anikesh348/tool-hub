@@ -25,6 +25,7 @@ type MovieHubYtAdminSectionProps = {
   ytStatusByVideoId: Record<string, Record<string, unknown>>;
   ytLibraryLoading: boolean;
   ytLibraryItems: MovieHubYtLibraryItem[];
+  deletingYtRequestId: string | null;
   deletingYtLibraryItemId: string | null;
   formatDateTime: (value?: string) => string;
   onYtUrlChange: (value: string) => void;
@@ -36,6 +37,7 @@ type MovieHubYtAdminSectionProps = {
   onFormatChange: (format: MovieHubYtRequestFormat) => void;
   onDownloadToServer: () => void;
   onRefreshRequests: () => void;
+  onDeleteRequest: (requestId: string) => void;
   onRefreshLibraryItems: () => void;
   onDeleteLibraryItem: (itemId: string) => void;
 };
@@ -57,6 +59,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
       ytStatusByVideoId,
       ytLibraryLoading,
       ytLibraryItems,
+      deletingYtRequestId,
       deletingYtLibraryItemId,
       formatDateTime,
       onYtUrlChange,
@@ -68,6 +71,7 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
       onFormatChange,
       onDownloadToServer,
       onRefreshRequests,
+      onDeleteRequest,
       onRefreshLibraryItems,
       onDeleteLibraryItem,
     }) => {
@@ -118,6 +122,8 @@ export const MovieHubYtAdminSection: React.FC<MovieHubYtAdminSectionProps> =
             ytRequests={ytRequests}
             formatDateTime={formatDateTime}
             onRefreshRequests={onRefreshRequests}
+            deletingRequestId={deletingYtRequestId}
+            onDeleteRequest={onDeleteRequest}
           />
 
           <YtLibraryItemsTable

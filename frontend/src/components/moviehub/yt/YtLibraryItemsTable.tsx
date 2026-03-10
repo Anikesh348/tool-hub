@@ -19,8 +19,8 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
     onDeleteItem,
   }) => {
     return (
-      <div className="moviehub-section-card rounded-xl p-4 sm:p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               Available YT Videos (Server)
@@ -44,12 +44,12 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
             No YT videos found in the configured Jellyfin folder.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
+            <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-gradient-to-r from-slate-50 to-blue-50/60 dark:from-slate-900/70 dark:to-slate-800/50">
                 <tr className="text-left text-slate-600 dark:text-slate-300">
-                  <th className="py-3 px-4 font-semibold">Title</th>
-                  <th className="py-3 px-4 font-semibold w-[140px] text-right">
+                  <th className="py-2 px-3 font-semibold">Title</th>
+                  <th className="py-2 px-3 font-semibold w-[140px] text-right">
                     Action
                   </th>
                 </tr>
@@ -63,10 +63,10 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
                       key={itemId}
                       className="border-t border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50/70 dark:hover:bg-slate-900/30 transition-colors"
                     >
-                      <td className="py-3 px-4 max-w-[560px] truncate font-medium">
+                      <td className="py-2 px-3 max-w-[560px] truncate font-medium">
                         {item.Name || "-"}
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-2 px-3 text-right">
                         <button
                           disabled={isDeleting || !itemId}
                           onClick={() => onDeleteItem(itemId)}

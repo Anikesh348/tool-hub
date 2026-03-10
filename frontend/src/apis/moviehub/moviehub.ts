@@ -508,6 +508,19 @@ export const MovieHubService = {
     };
   },
 
+  deleteYtDownloadRequest: (requestId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/requests/${encodeURIComponent(requestId)}`,
+      options: {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
   getYtDownloadStatus: (videoId: string) => {
     return {
       url: `${BASE_URL}/v2/admin/yt/download/status/${encodeURIComponent(videoId)}`,
@@ -515,6 +528,19 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadStatusStream: (videoId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/status/stream/${encodeURIComponent(videoId)}`,
+      options: {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
           Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
       },

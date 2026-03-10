@@ -68,9 +68,9 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
       : "";
 
     return (
-      <div className="space-y-4">
-        <div className="moviehub-section-card rounded-xl p-4 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+      <div className="space-y-3">
+        <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-2.5">
+          <div className="flex items-center justify-between gap-2.5">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               1. Search Format
             </h3>
@@ -85,7 +85,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
               onChange={(e) => onYtUrlChange(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onFetchFormats()}
               placeholder="https://www.youtube.com/watch?v=..."
-              className="mt-1 w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">
@@ -106,13 +106,13 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
         </div>
 
         {formatsLoading ? (
-          <div className="moviehub-section-card rounded-xl p-4 sm:p-5">
+          <div className="moviehub-section-card rounded-xl p-3 sm:p-4">
             <Loader />
           </div>
         ) : null}
 
         {formatsResponse ? (
-          <div className="moviehub-section-card rounded-xl p-4 sm:p-5 space-y-4">
+          <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               2. Queue Download
             </h3>
@@ -167,7 +167,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
                     value={filename}
                     onChange={(e) => onFilenameChange(e.target.value)}
                     placeholder="Leave empty to use video title"
-                    className="mt-1 w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
                   />
                 </label>
 
@@ -188,7 +188,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
                         value={downloadPath}
                         onChange={(e) => onDownloadPathChange(e.target.value)}
                         placeholder="/path/to/download/folder"
-                        className="mt-1 w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
                       />
                     </label>
                   ) : null}
@@ -213,7 +213,7 @@ export const YtDownloadComposer: React.FC<YtDownloadComposerProps> = React.memo(
         ) : null}
 
         {downloadError ? (
-          <div className="moviehub-section-card rounded-xl p-4">
+          <div className="moviehub-section-card rounded-xl p-3">
             <p className="text-sm font-semibold text-red-700 dark:text-red-300">
               {downloadError}
             </p>

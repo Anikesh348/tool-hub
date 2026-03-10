@@ -43,7 +43,7 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
   );
 
   return (
-    <div className="moviehub-section-card rounded-xl p-4 sm:p-5 space-y-4 xl:sticky xl:top-4">
+    <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3 xl:sticky xl:top-4">
       <div>
         <h3 className="text-base font-semibold text-gray-900 dark:text-white">
           Current Downloading Status
@@ -58,7 +58,7 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
           No active downloads right now.
         </p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {downloadingRequests.map((request) => {
             const status = ytStatusByVideoId[request.videoId] || {};
             const statusLabel =
@@ -86,7 +86,7 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
             return (
               <div
                 key={request.requestId}
-                className="rounded-lg border border-gray-200 dark:border-gray-800 p-3 space-y-2"
+                className="rounded-lg border border-gray-200 dark:border-gray-800 p-2.5 space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white break-words">

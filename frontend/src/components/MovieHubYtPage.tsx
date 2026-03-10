@@ -36,6 +36,16 @@ const formatDateTime = (value?: string) => {
   });
 };
 
+const parseSsePayload = (rawEvent: string): string | null => {
+  const dataLines = rawEvent
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart());
+  if (dataLines.length === 0) return null;
+  const payload = dataLines.join("\n").trim();
+  return payload || null;
+};
+
 const ytSectionItems: Array<{
   id: YtWorkspaceSection;
   label: string;
@@ -92,6 +102,9 @@ export const MovieHubYtPage: React.FC = () => {
   const [deletingYtLibraryItemId, setDeletingYtLibraryItemId] = useState<
     string | null
   >(null);
+  const [deletingYtRequestId, setDeletingYtRequestId] = useState<string | null>(
+    null,
+  );
   const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
   const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
 
@@ -113,6 +126,10 @@ export const MovieHubYtPage: React.FC = () => {
   const {
     data: deleteYtLibraryData,
     fetchData: fetchDeleteYtLibraryItem,
+  } = useApiFetcher();
+  const {
+    data: deleteYtRequestData,
+    fetchData: fetchDeleteYtRequest,
   } = useApiFetcher();
 
   const isUnauthenticated = !isAuthLoading && !authToken;
@@ -145,49 +162,56 @@ export const MovieHubYtPage: React.FC = () => {
     fetchYtLibraryItems(url, options);
   }, [isAdmin, fetchYtLibraryItems]);
 
-  const refreshDownloadingStatuses = useCallback(
-    async (requests: MovieHubYtDownloadRequest[]) => {
-      const downloadingRequests = requests.filter(
-        (request) =>
-          request.status?.toUpperCase() === "DOWNLOADING" &&
-          Boolean(request.videoId),
-      );
-      if (downloadingRequests.length === 0) {
-        setYtStatusByVideoId({});
-        return;
-      }
+  const streamDownloadingStatus = useCallback(async (videoId: string, signal: AbortSignal) => {
+    while (!signal.aborted) {
+      const { url, options } = MovieHubService.getYtDownloadStatusStream(videoId);
+      try {
+        const response = await fetch(url, {
+          ...options,
+          cache: "no-store",
+          signal,
+        });
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-      const statusEntries = await Promise.all(
-        downloadingRequests.map(async (request) => {
-          const videoId = request.videoId;
-          const { url, options } = MovieHubService.getYtDownloadStatus(videoId);
-          try {
-            const response = await fetch(url, options);
-            const body = await response.json().catch(() => null);
-            if (!response.ok) return [videoId, null] as const;
-            const payload =
-              body?.response && typeof body.response === "object"
-                ? (body.response as Record<string, unknown>)
-                : body && typeof body === "object"
-                  ? (body as Record<string, unknown>)
-                  : null;
-            return [videoId, payload] as const;
-          } catch {
-            return [videoId, null] as const;
+          while (!signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+            let separatorIndex = buffer.indexOf("\n\n");
+            while (separatorIndex !== -1) {
+              const rawEvent = buffer.slice(0, separatorIndex);
+              buffer = buffer.slice(separatorIndex + 2);
+
+              const payload = parseSsePayload(rawEvent);
+              if (payload) {
+                try {
+                  const parsed = JSON.parse(payload);
+                  if (parsed && typeof parsed === "object") {
+                    setYtStatusByVideoId((prev) => ({
+                      ...prev,
+                      [videoId]: parsed as Record<string, unknown>,
+                    }));
+                  }
+                } catch {
+                  // ignore non-json SSE messages
+                }
+              }
+
+              separatorIndex = buffer.indexOf("\n\n");
+            }
           }
-        }),
-      );
-
-      const nextStatusMap: Record<string, Record<string, unknown>> = {};
-      statusEntries.forEach(([videoId, payload]) => {
-        if (payload) {
-          nextStatusMap[videoId] = payload;
         }
-      });
-      setYtStatusByVideoId(nextStatusMap);
-    },
-    [],
-  );
+      } catch {
+        // stream errors are tolerated
+      }
+      if (signal.aborted) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+  }, []);
 
   useEffect(() => {
     if (activeSection === "search_download" || activeSection === "request_history") {
@@ -237,14 +261,13 @@ export const MovieHubYtPage: React.FC = () => {
         ? (ytRequestsData.body.response.requests as MovieHubYtDownloadRequest[])
         : [];
       setYtDownloadRequests(requests);
-      void refreshDownloadingStatuses(requests);
       return;
     }
     addNotification(
       ytRequestsData.body?.error || "Failed to fetch YT download requests",
       "error",
     );
-  }, [ytRequestsData, addNotification, refreshDownloadingStatuses]);
+  }, [ytRequestsData, addNotification]);
 
   useEffect(() => {
     if (!ytLibraryData) return;
@@ -282,21 +305,59 @@ export const MovieHubYtPage: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (activeSection !== "search_download") return;
-    const hasDownloadingRequests = ytDownloadRequests.some(
-      (request) =>
-        request.status?.toUpperCase() === "DOWNLOADING" &&
-        Boolean(request.videoId),
+    if (!deleteYtRequestData) return;
+    setDeletingYtRequestId(null);
+    if (deleteYtRequestData.status >= 200 && deleteYtRequestData.status < 300) {
+      addNotification("YT download request deleted", "success");
+      loadYtDownloadRequests();
+      return;
+    }
+    addNotification(
+      deleteYtRequestData.body?.error || "Failed to delete YT download request",
+      "error",
     );
-    if (!hasDownloadingRequests) return;
+  }, [deleteYtRequestData, addNotification, loadYtDownloadRequests]);
 
-    void refreshDownloadingStatuses(ytDownloadRequests);
-    const intervalId = window.setInterval(() => {
-      void refreshDownloadingStatuses(ytDownloadRequests);
-    }, 4000);
+  useEffect(() => {
+    if (activeSection !== "search_download") return;
+    const downloadingVideoIds = Array.from(
+      new Set(
+        ytDownloadRequests
+          .filter(
+            (request) =>
+              request.status?.toUpperCase() === "DOWNLOADING" &&
+              Boolean(request.videoId),
+          )
+          .map((request) => (request.videoId || "").trim())
+          .filter((videoId) => videoId.length > 0),
+      ),
+    );
 
-    return () => window.clearInterval(intervalId);
-  }, [activeSection, ytDownloadRequests, refreshDownloadingStatuses]);
+    if (downloadingVideoIds.length === 0) {
+      setYtStatusByVideoId({});
+      return;
+    }
+
+    setYtStatusByVideoId((prev) => {
+      const next: Record<string, Record<string, unknown>> = {};
+      downloadingVideoIds.forEach((videoId) => {
+        if (prev[videoId]) {
+          next[videoId] = prev[videoId];
+        }
+      });
+      return next;
+    });
+
+    const controllers = downloadingVideoIds.map((videoId) => {
+      const controller = new AbortController();
+      void streamDownloadingStatus(videoId, controller.signal);
+      return controller;
+    });
+
+    return () => {
+      controllers.forEach((controller) => controller.abort());
+    };
+  }, [activeSection, ytDownloadRequests, streamDownloadingStatus]);
 
   const handleFetchYtFormats = useCallback(() => {
     const trimmedUrl = ytUrl.trim();
@@ -426,6 +487,16 @@ export const MovieHubYtPage: React.FC = () => {
     [fetchDeleteYtLibraryItem],
   );
 
+  const handleDeleteYtRequest = useCallback(
+    (requestId: string) => {
+      if (!requestId) return;
+      setDeletingYtRequestId(requestId);
+      const { url, options } = MovieHubService.deleteYtDownloadRequest(requestId);
+      fetchDeleteYtRequest(url, options);
+    },
+    [fetchDeleteYtRequest],
+  );
+
   const activeSectionMeta = useMemo(
     () => ytSectionItems.find((item) => item.id === activeSection),
     [activeSection],
@@ -449,7 +520,7 @@ export const MovieHubYtPage: React.FC = () => {
               : "md:grid-cols-[300px_minmax(0,1fr)]"
           }`}
         >
-          <aside className="hidden md:flex md:flex-col self-start moviehub-panel rounded-2xl p-3 h-fit max-h-[calc(100vh-7rem)] overflow-y-auto transition-all duration-300">
+          <aside className="hidden md:flex md:flex-col self-start moviehub-panel rounded-2xl p-2.5 h-fit max-h-[calc(100vh-7rem)] overflow-y-auto transition-all duration-300">
             <div
               className={`mb-4 flex items-center ${
                 isSidebarCollapsed ? "justify-center" : "justify-between"
@@ -473,12 +544,12 @@ export const MovieHubYtPage: React.FC = () => {
                 {isSidebarCollapsed ? ">>" : "<<"}
               </button>
             </div>
-            <button
-              onClick={() => navigate("/moviehub")}
-              className={`mb-2 rounded-xl px-3 py-2.5 text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2 ${
-                isSidebarCollapsed ? "justify-center" : ""
-              }`}
-              title="Back to MovieHub"
+              <button
+                onClick={() => navigate("/moviehub")}
+                className={`mb-2 rounded-xl px-2.5 py-2 text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2 ${
+                  isSidebarCollapsed ? "justify-center" : ""
+                }`}
+                title="Back to MovieHub"
             >
               <ArrowLeft className="w-4 h-4" />
               {!isSidebarCollapsed && <span>Back to MovieHub</span>}
@@ -497,8 +568,8 @@ export const MovieHubYtPage: React.FC = () => {
                         : "text-gray-700 dark:text-gray-300 hover:bg-white/60 dark:hover:bg-slate-800/70"
                     } ${
                       isSidebarCollapsed
-                        ? "px-1.5 py-2.5 flex items-center justify-center"
-                        : "px-3 py-3 flex items-center gap-3 text-left"
+                        ? "px-1.5 py-2 flex items-center justify-center"
+                        : "px-2.5 py-2 flex items-center gap-3 text-left"
                     }`}
                     title={section.label}
                   >
@@ -518,10 +589,10 @@ export const MovieHubYtPage: React.FC = () => {
           </aside>
 
           <section className="min-w-0 space-y-4">
-            <div className="md:hidden moviehub-panel rounded-2xl p-3 space-y-3">
+            <div className="md:hidden moviehub-panel rounded-2xl p-2.5 space-y-2.5">
               <button
                 onClick={() => navigate("/moviehub")}
-                className="w-full rounded-xl px-3 py-2.5 text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center justify-center gap-2"
+                className="w-full rounded-xl px-2.5 py-2 text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center justify-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back to MovieHub</span>
@@ -534,7 +605,7 @@ export const MovieHubYtPage: React.FC = () => {
                     <button
                       key={`mobile-${section.id}`}
                       onClick={() => setActiveSection(section.id)}
-                      className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-2 ${
+                      className={`shrink-0 rounded-xl px-2.5 py-1.5 text-sm font-semibold flex items-center gap-2 ${
                         isActive
                           ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white"
                           : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
@@ -548,7 +619,7 @@ export const MovieHubYtPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="moviehub-panel rounded-2xl p-4 sm:p-6 min-h-[520px] overflow-x-hidden relative">
+            <div className="moviehub-panel rounded-2xl p-3 sm:p-4 min-h-[520px] overflow-x-hidden relative">
               <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/70 to-transparent" />
               <div className="mb-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-300">
@@ -608,6 +679,8 @@ export const MovieHubYtPage: React.FC = () => {
                   ytRequests={ytDownloadRequests}
                   formatDateTime={formatDateTime}
                   onRefreshRequests={loadYtDownloadRequests}
+                  deletingRequestId={deletingYtRequestId}
+                  onDeleteRequest={handleDeleteYtRequest}
                 />
               )}
             </div>

@@ -7,6 +7,8 @@ type YtDownloadRequestsTableProps = {
   ytRequests: MovieHubYtDownloadRequest[];
   formatDateTime: (value?: string) => string;
   onRefreshRequests: () => void;
+  deletingRequestId: string | null;
+  onDeleteRequest: (requestId: string) => void;
 };
 
 const statusClass = (status: string) => {
@@ -30,6 +32,8 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
       ytRequests,
       formatDateTime,
       onRefreshRequests,
+      deletingRequestId,
+      onDeleteRequest,
     }) => {
       const counts = useMemo(() => {
         return ytRequests.reduce(
@@ -53,8 +57,8 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
       }, [ytRequests]);
 
       return (
-        <div className="moviehub-section-card rounded-xl p-4 sm:p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div>
               <h3 className="text-base font-semibold text-gray-900 dark:text-white">
                 Request Tracker
@@ -92,47 +96,69 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
               No YT download requests found.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-              <table className="w-full text-sm">
+            <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-900/40">
                   <tr className="text-left text-gray-500 dark:text-gray-400">
-                    <th className="py-2 px-3">Title</th>
-                    <th className="py-2 px-3">Format</th>
-                    <th className="py-2 px-3">Status</th>
-                    <th className="py-2 px-3">Created At</th>
-                    <th className="py-2 px-3">Requested By</th>
+                    <th className="py-1.5 px-2.5 w-[34%]">Title</th>
+                    <th className="py-1.5 px-2.5 w-[10%]">Format</th>
+                    <th className="py-1.5 px-2.5 w-[15%]">Status</th>
+                    <th className="py-1.5 px-2.5 w-[15%]">Created At</th>
+                    <th className="py-1.5 px-2.5 w-[18%]">Requested By</th>
+                    <th className="py-1.5 px-2.5 w-[8%] text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ytRequests.map((request) => {
                     const requestStatus = request.status || "UNKNOWN";
+                    const normalizedStatus = requestStatus.toUpperCase();
                     const requestedBy = request.userEmail || request.userId || "-";
+                    const canDelete =
+                      normalizedStatus === "PENDING" ||
+                      normalizedStatus === "REQUESTED" ||
+                      normalizedStatus === "DOWNLOADED";
+                    const isDeleting = deletingRequestId === request.requestId;
 
                     return (
                       <tr
                         key={request.requestId}
                         className="border-t border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300"
                       >
-                        <td className="py-2 px-3 max-w-[320px] truncate">
-                          {request.title || request.filename || "-"}
+                        <td className="py-1.5 px-2.5">
+                          <span className="block truncate">
+                            {request.title || request.filename || "-"}
+                          </span>
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-1.5 px-2.5 whitespace-nowrap">
                           {request.format?.quality || "-"}
                           {request.format?.ext ? ` / ${request.format.ext}` : ""}
                         </td>
-                        <td className="py-2 px-3 min-w-[190px]">
+                        <td className="py-1.5 px-2.5">
                           <span
                             className={`px-2 py-1 rounded-full text-xs font-semibold ${statusClass(
                               requestStatus,
                             )}`}
                           >
-                            {requestStatus.toUpperCase()}
+                            {normalizedStatus}
                           </span>
                         </td>
-                        <td className="py-2 px-3 whitespace-nowrap">
+                        <td className="py-1.5 px-2.5 whitespace-nowrap">
                           {formatDateTime(request.createdAt)}
                         </td>
-                        <td className="py-2 px-3 break-all">{requestedBy}</td>
+                        <td className="py-1.5 px-2.5 break-all">{requestedBy}</td>
+                        <td className="py-1.5 px-2.5 text-right">
+                          {canDelete ? (
+                            <button
+                              disabled={isDeleting}
+                              onClick={() => onDeleteRequest(request.requestId)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 disabled:opacity-60"
+                            >
+                              {isDeleting ? "Deleting..." : "Delete"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">-</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
