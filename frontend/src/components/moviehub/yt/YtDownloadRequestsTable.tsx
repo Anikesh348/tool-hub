@@ -96,7 +96,7 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
               No YT download requests found.
             </p>
           ) : (
-            <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+            <div className="overflow-auto moviehub-table-scroll rounded-lg border border-gray-200 dark:border-gray-800">
               <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-900/40">
                   <tr className="text-left text-gray-500 dark:text-gray-400">
