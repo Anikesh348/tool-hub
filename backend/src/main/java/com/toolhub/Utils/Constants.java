@@ -10,5 +10,6 @@ public class Constants {
     public static final String MEDIA_REQUESTS_COLLECTION = "mediarequests";
     public static final String MOVIEHUB_ACCESS_REQUESTS_COLLECTION = "moviehubaccessrequest";
     public static final String MOVIEHUB_ACCESS_USERS_COLLECTION = "moviehubusers";
+    public static final String YT_DOWNLOADS_COLLECTION = "ytdownloads";
     public static final String DEFAULT_PROFILE_PICTURE = "https://ui-avatars.com/api/?name=U&background=FF5733&color=fff&size=64";
 }

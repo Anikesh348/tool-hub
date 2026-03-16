@@ -158,43 +158,63 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                   No completed downloads found.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {completedDownloadItems.map((item) => (
-                    <div
-                      key={item.requestId}
-                      className="rounded-xl p-4 min-w-0 border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-950/20"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h4 className="text-base font-bold text-gray-900 dark:text-white truncate">
-                            {item.title}
-                          </h4>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {item.mediaType === "MOVIES" ? "Movie" : "Series"}
-                          </p>
-                        </div>
-                        <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                          {item.status || "DOWNLOADED"}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 text-xs text-gray-600 dark:text-gray-300 space-y-1">
-                        {item.season?.length ? <p>Seasons: {item.season.join(", ")}</p> : null}
-                        {item.qualityProfileId ? <p>Quality: {item.qualityProfileId}</p> : null}
-                        {item.downloadedAt ? (
-                          <p>Downloaded: {formatDateTime(item.downloadedAt)}</p>
+                <div className="overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gradient-to-r from-emerald-50 to-blue-50/60 dark:from-emerald-950/30 dark:to-slate-800/40">
+                      <tr className="text-left text-slate-600 dark:text-slate-300">
+                        <th className="py-3 px-4 font-semibold">Title</th>
+                        <th className="py-3 px-4 font-semibold">Type</th>
+                        <th className="py-3 px-4 font-semibold">Quality</th>
+                        <th className="py-3 px-4 font-semibold">Downloaded</th>
+                        <th className="py-3 px-4 font-semibold">Status</th>
+                        {isAdmin && downloadScope === "all" ? (
+                          <th className="py-3 px-4 font-semibold">Requested By</th>
                         ) : null}
-                        {item.approvedAt ? <p>Approved: {formatDateTime(item.approvedAt)}</p> : null}
-                        {item.createdAt ? <p>Requested: {formatDateTime(item.createdAt)}</p> : null}
-                        {isAdmin && downloadScope === "all" && item.requestedBy ? (
-                          <p>
-                            Requested by:{" "}
-                            {item.requestedBy.userName || item.requestedBy.userEmail || "Unknown"}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {completedDownloadItems.map((item) => {
+                        const requestedBy =
+                          item.requestedBy?.userName ||
+                          item.requestedBy?.userEmail ||
+                          "Unknown";
+                        return (
+                          <tr
+                            key={item.requestId}
+                            className="border-t border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50/70 dark:hover:bg-slate-900/30 transition-colors"
+                          >
+                            <td className="py-3 px-4 min-w-[240px] max-w-[420px]">
+                              <p className="font-semibold truncate">{item.title}</p>
+                              {item.season?.length ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  Seasons: {item.season.join(", ")}
+                                </p>
+                              ) : null}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {item.mediaType === "MOVIES" ? "Movie" : "Series"}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {item.qualityProfileId || "-"}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {formatDateTime(item.downloadedAt)}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                {item.status || "DOWNLOADED"}
+                              </span>
+                            </td>
+                            {isAdmin && downloadScope === "all" ? (
+                              <td className="py-3 px-4 max-w-[260px] truncate">
+                                {requestedBy}
+                              </td>
+                            ) : null}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

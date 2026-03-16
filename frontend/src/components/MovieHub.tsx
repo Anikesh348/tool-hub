@@ -14,6 +14,10 @@ import {
   MovieHubRequest,
   MovieHubSearchResult,
   MovieHubService,
+  MovieHubYtDownloadRequest,
+  MovieHubYtFormatsResponse,
+  MovieHubYtLibraryItem,
+  MovieHubYtRequestFormat,
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
@@ -29,6 +33,9 @@ import { MovieHubAccessGateSection } from "./moviehub/MovieHubAccessGateSection"
 import { MovieHubOpenSection } from "./moviehub/MovieHubOpenSection";
 import { MovieHubAccessAdminSection } from "./moviehub/MovieHubAccessAdminSection";
 import { MovieHubUsersAdminSection } from "./moviehub/MovieHubUsersAdminSection";
+import {
+  MovieHubYtAdminSection,
+} from "./moviehub/MovieHubYtAdminSection";
 import { CinePilotLauncher } from "./CineBotLauncher";
 import { CinePilotChat } from "./CineBot";
 
@@ -38,7 +45,24 @@ const formatDateTime = (value?: string) => {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
+const parseSsePayload = (rawEvent: string): string | null => {
+  const dataLines = rawEvent
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart());
+  if (dataLines.length === 0) return null;
+  const payload = dataLines.join("\n").trim();
+  return payload || null;
 };
 
 export const MovieHub: React.FC = () => {
@@ -106,6 +130,32 @@ export const MovieHub: React.FC = () => {
   const [portalUserName, setPortalUserName] = useState("");
   const [deletingAccessUserMappingId, setDeletingAccessUserMappingId] =
     useState<string | null>(null);
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytFilename, setYtFilename] = useState("");
+  const [ytPassDownloadPath, setYtPassDownloadPath] = useState(false);
+  const [ytDownloadPath, setYtDownloadPath] = useState("");
+  const [ytIsSong, setYtIsSong] = useState(false);
+  const [ytFormatsResponse, setYtFormatsResponse] =
+    useState<MovieHubYtFormatsResponse | null>(null);
+  const [selectedYtFormat, setSelectedYtFormat] =
+    useState<MovieHubYtRequestFormat | null>(null);
+  const [ytDownloadRequests, setYtDownloadRequests] = useState<
+    MovieHubYtDownloadRequest[]
+  >([]);
+  const [ytStatusByVideoId, setYtStatusByVideoId] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [ytLibraryItems, setYtLibraryItems] = useState<MovieHubYtLibraryItem[]>(
+    [],
+  );
+  const [deletingYtLibraryItemId, setDeletingYtLibraryItemId] = useState<
+    string | null
+  >(null);
+  const [deletingYtRequestId, setDeletingYtRequestId] = useState<string | null>(
+    null,
+  );
+  const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
+  const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
 
   const {
     loading: accessStatusLoading,
@@ -197,6 +247,31 @@ export const MovieHub: React.FC = () => {
     data: deleteData,
     fetchData: fetchDeleteRequest,
   } = useApiFetcher();
+  const {
+    loading: ytFormatsLoading,
+    data: ytFormatsData,
+    fetchData: fetchYtFormats,
+  } = useApiFetcher();
+  const {
+    loading: ytRequestsLoading,
+    data: ytRequestsData,
+    fetchData: fetchYtRequests,
+  } = useApiFetcher();
+  const {
+    loading: ytLibraryLoading,
+    data: ytLibraryData,
+    fetchData: fetchYtLibraryItems,
+  } = useApiFetcher();
+  const {
+    loading: deleteYtLibraryLoading,
+    data: deleteYtLibraryData,
+    fetchData: fetchDeleteYtLibraryItem,
+  } = useApiFetcher();
+  const {
+    loading: deleteYtRequestLoading,
+    data: deleteYtRequestData,
+    fetchData: fetchDeleteYtRequest,
+  } = useApiFetcher();
 
   const isBusy =
     accessStatusLoading ||
@@ -213,6 +288,9 @@ export const MovieHub: React.FC = () => {
     requestsLoading ||
     approveLoading ||
     deleteLoading ||
+    ytRequestsLoading ||
+    deleteYtRequestLoading ||
+    deleteYtLibraryLoading ||
     availableLoading ||
     downloadsLoading ||
     completedDownloadsLoading;
@@ -269,6 +347,12 @@ export const MovieHub: React.FC = () => {
         compactLabel: "AP",
         adminOnly: true,
         badgeCount: pendingAdminRequestsCount,
+      },
+      {
+        id: "admin_yt_download" as MovieHubSection,
+        label: "YT",
+        compactLabel: "YT",
+        adminOnly: true,
       },
       {
         id: "admin_access" as MovieHubSection,
@@ -338,6 +422,72 @@ export const MovieHub: React.FC = () => {
     },
     [fetchDownloadQueue],
   );
+
+  const loadYtDownloadRequests = useCallback(() => {
+    if (!isAdmin) return;
+    const { url, options } = MovieHubService.getYtDownloadRequests();
+    fetchYtRequests(url, options);
+  }, [isAdmin, fetchYtRequests]);
+
+  const loadYtLibraryItems = useCallback(() => {
+    if (!isAdmin) return;
+    const { url, options } = MovieHubService.getYtLibraryItems({
+      startIndex: 0,
+      limit: 100,
+    });
+    fetchYtLibraryItems(url, options);
+  }, [isAdmin, fetchYtLibraryItems]);
+
+  const streamDownloadingStatus = useCallback(async (videoId: string, signal: AbortSignal) => {
+    while (!signal.aborted) {
+      const { url, options } = MovieHubService.getYtDownloadStatusStream(videoId);
+      try {
+        const response = await fetch(url, {
+          ...options,
+          cache: "no-store",
+          signal,
+        });
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (!signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+            let separatorIndex = buffer.indexOf("\n\n");
+            while (separatorIndex !== -1) {
+              const rawEvent = buffer.slice(0, separatorIndex);
+              buffer = buffer.slice(separatorIndex + 2);
+
+              const payload = parseSsePayload(rawEvent);
+              if (payload) {
+                try {
+                  const parsed = JSON.parse(payload);
+                  if (parsed && typeof parsed === "object") {
+                    setYtStatusByVideoId((prev) => ({
+                      ...prev,
+                      [videoId]: parsed as Record<string, unknown>,
+                    }));
+                  }
+                } catch {
+                  // ignore non-json SSE messages
+                }
+              }
+
+              separatorIndex = buffer.indexOf("\n\n");
+            }
+          }
+        }
+      } catch {
+        // stream errors are tolerated
+      }
+      if (signal.aborted) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+  }, []);
 
   const loadCompletedDownloads = useCallback(
     (scope: MovieHubDownloadScope) => {
@@ -630,6 +780,99 @@ export const MovieHub: React.FC = () => {
   }, [adminRequestsData, addNotification]);
 
   useEffect(() => {
+    if (!ytFormatsData) return;
+    if (ytFormatsData.status >= 200 && ytFormatsData.status < 300) {
+      const response: MovieHubYtFormatsResponse = {
+        ...(ytFormatsData.body || {}),
+        formats: Array.isArray(ytFormatsData.body?.formats)
+          ? ytFormatsData.body.formats
+          : [],
+      };
+      setYtFormatsResponse(response);
+      setYtDownloadError(null);
+
+      const firstFormat = response.formats?.[0];
+      if (firstFormat) {
+        setSelectedYtFormat({
+          quality: firstFormat.request_format?.quality || firstFormat.quality,
+          ext: firstFormat.request_format?.ext || firstFormat.ext || "mp4",
+        });
+      } else {
+        setSelectedYtFormat(null);
+      }
+      return;
+    }
+    addNotification(
+      ytFormatsData.body?.error || "Failed to fetch YT formats",
+      "error",
+    );
+  }, [ytFormatsData, addNotification]);
+
+  useEffect(() => {
+    if (!ytRequestsData) return;
+    if (ytRequestsData.status >= 200 && ytRequestsData.status < 300) {
+      const requests = Array.isArray(ytRequestsData.body?.response?.requests)
+        ? (ytRequestsData.body.response.requests as MovieHubYtDownloadRequest[])
+        : [];
+      setYtDownloadRequests(requests);
+      return;
+    }
+    addNotification(
+      ytRequestsData.body?.error || "Failed to fetch YT download requests",
+      "error",
+    );
+  }, [ytRequestsData, addNotification]);
+
+  useEffect(() => {
+    if (!ytLibraryData) return;
+    if (ytLibraryData.status >= 200 && ytLibraryData.status < 300) {
+      const items = Array.isArray(ytLibraryData.body?.response?.items)
+        ? (ytLibraryData.body.response.items as MovieHubYtLibraryItem[])
+        : [];
+      setYtLibraryItems(items);
+      return;
+    }
+    addNotification(
+      ytLibraryData.body?.error || "Failed to fetch YT library items",
+      "error",
+    );
+  }, [ytLibraryData, addNotification]);
+
+  useEffect(() => {
+    if (!deleteYtLibraryData) return;
+    setDeletingYtLibraryItemId(null);
+    if (deleteYtLibraryData.status >= 200 && deleteYtLibraryData.status < 300) {
+      addNotification("YT library item deleted", "success");
+      loadYtLibraryItems();
+      loadYtDownloadRequests();
+      return;
+    }
+    addNotification(
+      deleteYtLibraryData.body?.error || "Failed to delete YT library item",
+      "error",
+    );
+  }, [
+    deleteYtLibraryData,
+    addNotification,
+    loadYtLibraryItems,
+    loadYtDownloadRequests,
+  ]);
+
+  useEffect(() => {
+    if (!deleteYtRequestData) return;
+    setDeletingYtRequestId(null);
+    if (deleteYtRequestData.status >= 200 && deleteYtRequestData.status < 300) {
+      addNotification("YT download request deleted", "success");
+      loadYtDownloadRequests();
+      return;
+    }
+    addNotification(
+      deleteYtRequestData.body?.error || "Failed to delete YT download request",
+      "error",
+    );
+  }, [deleteYtRequestData, addNotification, loadYtDownloadRequests]);
+
+  useEffect(() => {
     if (!approveData) return;
     const wasAutoApprove = Boolean(autoApproveRequestId);
     setAutoApproveRequestId(null);
@@ -691,6 +934,55 @@ export const MovieHub: React.FC = () => {
       loadAccessUsers();
     }
   }, [activeSection, isAdmin, loadAccessUsers]);
+
+  useEffect(() => {
+    if (activeSection === "admin_yt_download" && isAdmin) {
+      loadYtDownloadRequests();
+      loadYtLibraryItems();
+    }
+  }, [activeSection, isAdmin, loadYtDownloadRequests, loadYtLibraryItems]);
+
+  useEffect(() => {
+    if (!isAdmin || activeSection !== "admin_yt_download") return;
+
+    const downloadingVideoIds = Array.from(
+      new Set(
+        ytDownloadRequests
+          .filter(
+            (request) =>
+              request.status?.toUpperCase() === "DOWNLOADING" &&
+              Boolean(request.videoId),
+          )
+          .map((request) => (request.videoId || "").trim())
+          .filter((videoId) => videoId.length > 0),
+      ),
+    );
+
+    if (downloadingVideoIds.length === 0) {
+      setYtStatusByVideoId({});
+      return;
+    }
+
+    setYtStatusByVideoId((prev) => {
+      const next: Record<string, Record<string, unknown>> = {};
+      downloadingVideoIds.forEach((videoId) => {
+        if (prev[videoId]) {
+          next[videoId] = prev[videoId];
+        }
+      });
+      return next;
+    });
+
+    const controllers = downloadingVideoIds.map((videoId) => {
+      const controller = new AbortController();
+      void streamDownloadingStatus(videoId, controller.signal);
+      return controller;
+    });
+
+    return () => {
+      controllers.forEach((controller) => controller.abort());
+    };
+  }, [activeSection, isAdmin, ytDownloadRequests, streamDownloadingStatus]);
 
   useEffect(() => {
     setIsMobileNavOpen(false);
@@ -841,10 +1133,176 @@ export const MovieHub: React.FC = () => {
     setActiveRequestKey(null);
   }, []);
 
+  const handleFetchYtFormats = useCallback(() => {
+    const trimmedUrl = ytUrl.trim();
+    if (!trimmedUrl) {
+      addNotification("Please enter a YouTube URL", "warning");
+      return;
+    }
+    const { url, options } = MovieHubService.getYtFormats(trimmedUrl);
+    fetchYtFormats(url, options);
+  }, [ytUrl, addNotification, fetchYtFormats]);
+
+  const handleSongModeChange = useCallback((value: boolean) => {
+    setYtIsSong(value);
+    if (value) {
+      setYtPassDownloadPath(false);
+      setYtDownloadPath("");
+    }
+  }, []);
+
+  const handlePassDownloadPathChange = useCallback(
+    (value: boolean) => {
+      if (ytIsSong && value) return;
+      setYtPassDownloadPath(value);
+      if (!value) {
+        setYtDownloadPath("");
+      }
+    },
+    [ytIsSong],
+  );
+
+  const handleDownloadYtToServer = useCallback(() => {
+    const startDownload = async () => {
+      if (ytDownloadInProgress) return;
+      const trimmedUrl = ytUrl.trim();
+      const trimmedDownloadPath = ytDownloadPath.trim();
+      if (!trimmedUrl) {
+        addNotification("Please enter a YouTube URL", "warning");
+        return;
+      }
+      if (!selectedYtFormat?.quality) {
+        addNotification("Please select a format", "warning");
+        return;
+      }
+      if (!ytIsSong && ytPassDownloadPath && !trimmedDownloadPath) {
+        addNotification("Please enter a download path or disable the toggle", "warning");
+        return;
+      }
+      const videoId = ytFormatsResponse?.id?.trim() || "";
+      if (!videoId) {
+        addNotification(
+          "Unable to determine videoId. Please fetch formats again.",
+          "warning",
+        );
+        return;
+      }
+
+      setYtDownloadInProgress(true);
+      setYtDownloadError(null);
+
+      try {
+        const { url: addUrl, options: addOptions } = MovieHubService.addYtDownload({
+          videoId,
+          url: trimmedUrl,
+          title: ytFormatsResponse?.title || "",
+          format: {
+            quality: selectedYtFormat.quality,
+            ext: selectedYtFormat.ext || "mp4",
+          },
+          ...(ytIsSong ? { isSong: true } : {}),
+          ...(ytFilename.trim() ? { filename: ytFilename.trim() } : {}),
+          ...(!ytIsSong && ytPassDownloadPath && trimmedDownloadPath
+            ? { download_path: trimmedDownloadPath }
+            : {}),
+        });
+
+        const addResponse = await fetch(addUrl, addOptions);
+        const addBody = await addResponse.json().catch(() => null);
+        if (!addResponse.ok) {
+          const errorMessage =
+            addBody?.error || addBody?.message || "Failed to add YT download request";
+          setYtDownloadError(errorMessage);
+          addNotification(errorMessage, "error");
+          return;
+        }
+
+        const { url: startUrl, options: startOptions } =
+          MovieHubService.startYtDownload();
+        const startResponse = await fetch(startUrl, startOptions);
+        const startBody = await startResponse.json().catch(() => null);
+        if (!startResponse.ok) {
+          const errorMessage =
+            startBody?.error || startBody?.message || "Failed to trigger YT download start";
+          setYtDownloadError(errorMessage);
+          addNotification(errorMessage, "error");
+          return;
+        }
+        addNotification(
+          startBody?.response?.message || "Download request queued successfully",
+          "success",
+        );
+        loadYtDownloadRequests();
+        loadYtLibraryItems();
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to queue YT download request";
+        setYtDownloadError(message);
+        addNotification(message, "error");
+      } finally {
+        setYtDownloadInProgress(false);
+      }
+    };
+
+    void startDownload();
+  }, [
+    ytDownloadInProgress,
+    ytUrl,
+    ytDownloadPath,
+    ytIsSong,
+    ytPassDownloadPath,
+    selectedYtFormat,
+    ytFormatsResponse?.id,
+    ytFormatsResponse?.title,
+    ytFilename,
+    addNotification,
+    loadYtDownloadRequests,
+    loadYtLibraryItems,
+  ]);
+
+  const handleClearYtSearch = useCallback(() => {
+    setYtDownloadInProgress(false);
+    setYtUrl("");
+    setYtFilename("");
+    setYtPassDownloadPath(false);
+    setYtDownloadPath("");
+    setYtIsSong(false);
+    setYtFormatsResponse(null);
+    setSelectedYtFormat(null);
+    setYtDownloadError(null);
+    setYtStatusByVideoId({});
+  }, []);
+
+  const handleDeleteYtLibraryItem = useCallback(
+    (itemId: string) => {
+      if (!itemId) return;
+      setDeletingYtLibraryItemId(itemId);
+      const { url, options } = MovieHubService.deleteYtLibraryItem(itemId);
+      fetchDeleteYtLibraryItem(url, options);
+    },
+    [fetchDeleteYtLibraryItem],
+  );
+
+  const handleDeleteYtRequest = useCallback(
+    (requestId: string) => {
+      if (!requestId) return;
+      setDeletingYtRequestId(requestId);
+      const { url, options } = MovieHubService.deleteYtDownloadRequest(requestId);
+      fetchDeleteYtRequest(url, options);
+    },
+    [fetchDeleteYtRequest],
+  );
+
   const handleSelectSection = useCallback(
     (section: MovieHubSection) => {
       if (isChatPage) {
         navigate("/moviehub");
+      }
+      if (section === "admin_yt_download") {
+        navigate("/moviehub/yt");
+        return;
       }
       if (section === "status" && authToken && !isAuthLoading) {
         loadMyRequests();
@@ -1110,6 +1568,44 @@ export const MovieHub: React.FC = () => {
                   formatDateTime={formatDateTime}
                 />
               )}
+
+              {!isChatPage &&
+                activeSection === "admin_yt_download" &&
+                isAdmin && (
+                  <MovieHubYtAdminSection
+                    ytUrl={ytUrl}
+                    filename={ytFilename}
+                    passDownloadPath={ytPassDownloadPath}
+                    downloadPath={ytDownloadPath}
+                    isSong={ytIsSong}
+                    formatsLoading={ytFormatsLoading}
+                    downloadInProgress={ytDownloadInProgress}
+                    formatsResponse={ytFormatsResponse}
+                    selectedFormat={selectedYtFormat}
+                    downloadError={ytDownloadError}
+                    ytRequestsLoading={ytRequestsLoading}
+                    ytRequests={ytDownloadRequests}
+                    ytStatusByVideoId={ytStatusByVideoId}
+                    ytLibraryLoading={ytLibraryLoading}
+                    ytLibraryItems={ytLibraryItems}
+                    deletingYtRequestId={deletingYtRequestId}
+                    deletingYtLibraryItemId={deletingYtLibraryItemId}
+                    formatDateTime={formatDateTime}
+                    onYtUrlChange={setYtUrl}
+                    onFilenameChange={setYtFilename}
+                    onPassDownloadPathChange={handlePassDownloadPathChange}
+                    onDownloadPathChange={setYtDownloadPath}
+                    onSongChange={handleSongModeChange}
+                    onFetchFormats={handleFetchYtFormats}
+                    onClearSearch={handleClearYtSearch}
+                    onFormatChange={setSelectedYtFormat}
+                    onDownloadToServer={handleDownloadYtToServer}
+                    onRefreshRequests={loadYtDownloadRequests}
+                    onDeleteRequest={handleDeleteYtRequest}
+                    onRefreshLibraryItems={loadYtLibraryItems}
+                    onDeleteLibraryItem={handleDeleteYtLibraryItem}
+                  />
+                )}
 
               {!isChatPage && activeSection === "admin_users" && isAdmin && (
                 <MovieHubUsersAdminSection

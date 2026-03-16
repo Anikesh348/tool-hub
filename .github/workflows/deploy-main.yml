@@ -87,11 +87,17 @@ jobs:
             docker compose ps
             echo "====================================="
 
-            echo "🔨 Building Docker images"
-            docker compose build
+            echo "🔨 Building and starting backend"
+            docker compose build backend
+            docker compose up -d backend
 
-            echo "🚀 Starting containers"
-            docker compose up -d
+            echo "🔨 Building and starting frontend"
+            docker compose build frontend
+            docker compose up -d frontend
+
+            echo "🔨 Building and starting scraper"
+            docker compose build scraper-beautifulsoup
+            docker compose up -d scraper-beautifulsoup
 
             echo "====================================="
             echo "🐳 Docker Compose status (after)"

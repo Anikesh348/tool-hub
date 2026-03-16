@@ -131,6 +131,63 @@ export interface MovieHubAccessUser {
   isAdmin?: boolean;
 }
 
+export interface MovieHubYtRequestFormat {
+  quality: string;
+  ext?: string;
+}
+
+export interface MovieHubYtFormatItem {
+  label?: string;
+  quality: string;
+  height?: number;
+  ext?: string;
+  audio_combined?: boolean;
+  request_format?: MovieHubYtRequestFormat;
+}
+
+export interface MovieHubYtFormatsResponse {
+  id?: string;
+  title?: string;
+  duration?: number;
+  webpage_url?: string;
+  thumbnail?: string;
+  uploader?: string;
+  extractor?: string;
+  formats: MovieHubYtFormatItem[];
+}
+
+export interface MovieHubYtDownloadRequest {
+  requestId: string;
+  videoId: string;
+  userId?: string;
+  url?: string;
+  title?: string;
+  filename?: string;
+  download_path?: string;
+  format?: MovieHubYtRequestFormat;
+  status: string;
+  userEmail?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  startedAt?: string;
+  downloadedAt?: string;
+}
+
+export interface MovieHubYtLibraryItem {
+  Id: string;
+  Name: string;
+  Path?: string;
+  SortName?: string;
+  ChildCount?: number;
+  MediaSourceCount?: number;
+  Type?: string;
+  IsFolder?: boolean;
+  RunTimeTicks?: number;
+  Container?: string;
+  LocationType?: string;
+  MediaType?: string;
+}
+
 export const MovieHubService = {
   search: (term: string, mediaType: MovieHubMediaType) => {
     const encodedTerm = encodeURIComponent(term);
@@ -380,6 +437,150 @@ export const MovieHubService = {
       url: `${BASE_URL}/v2/moviehub/access/confirm-password-reset`,
       options: {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtFormats: (urlValue: string) => {
+    return {
+      url: `${BASE_URL}/v2/yt/formats`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify({
+          url: urlValue,
+        }),
+      },
+    };
+  },
+
+  addYtDownload: (payload: {
+    videoId: string;
+    format: MovieHubYtRequestFormat;
+    url?: string;
+    title?: string;
+    filename?: string;
+    download_path?: string;
+    isSong?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/add`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify(payload),
+      },
+    };
+  },
+
+  startYtDownload: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/start`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadRequests: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/requests`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  deleteYtDownloadRequest: (requestId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/requests/${encodeURIComponent(requestId)}`,
+      options: {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadStatus: (videoId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/status/${encodeURIComponent(videoId)}`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtDownloadStatusStream: (videoId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/download/status/stream/${encodeURIComponent(videoId)}`,
+      options: {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  getYtLibraryItems: (payload?: {
+    parentId?: string;
+    startIndex?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (payload?.parentId?.trim()) {
+      query.set("parentId", payload.parentId.trim());
+    }
+    if (typeof payload?.startIndex === "number" && payload.startIndex >= 0) {
+      query.set("startIndex", String(payload.startIndex));
+    }
+    if (typeof payload?.limit === "number" && payload.limit > 0) {
+      query.set("limit", String(payload.limit));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return {
+      url: `${BASE_URL}/v2/admin/yt/library/items${suffix}`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      },
+    };
+  },
+
+  deleteYtLibraryItem: (itemId: string) => {
+    return {
+      url: `${BASE_URL}/v2/admin/yt/library/items/${encodeURIComponent(itemId)}`,
+      options: {
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("authToken")}`,

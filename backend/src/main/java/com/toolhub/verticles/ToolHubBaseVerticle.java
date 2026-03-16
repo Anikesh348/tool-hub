@@ -9,6 +9,7 @@ import com.toolhub.services.products.DeleteProduct;
 import com.toolhub.services.products.GetPriceHistory;
 import com.toolhub.services.products.GetProducts;
 import com.toolhub.services.products.SaveProduct;
+import com.toolhub.services.ytdownload.YtDownloadProxyService;
 import com.toolhub.services.mongo.MongoDBClient;
 import com.toolhub.services.schedule.Schedule;
 import com.toolhub.services.user.UserManagement;
@@ -105,6 +106,7 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
 
                 UserManagement userManagement = new UserManagement(mongoDBClient);
                 SaveProduct saveProduct = new SaveProduct(mongoDBClient, client, vertx);
+                YtDownloadProxyService ytDownloadProxyService = new YtDownloadProxyService(client, vertx, mongoDBClient, dotenv);
 
                 router.post("/v2/login").handler(userManagement::handleLogin);
                 router.post("/v2/register").handler(userManagement::handleRegister);
@@ -130,6 +132,38 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                         .handler(new UpdateQuestionNotes(mongoDBClient)::handle);
                 protectedRouter.post("/leetcode/delete")
                         .handler(new DeleteQuestion(mongoDBClient)::handle);
+
+                protectedRouter.post("/yt/formats")
+                        .handler(ytDownloadProxyService::handleFormats);
+
+                //CRON ROUTES        
+                protectedRouter.post("/yt/download/cronStart")
+                        .handler(ytDownloadProxyService::handleCronStart);
+                protectedRouter.get("/yt/download/cronStart")
+                        .handler(ytDownloadProxyService::handleCronStart);
+                protectedRouter.post("/yt/download/check")
+                        .handler(ytDownloadProxyService::handleCheckAndUpdate);
+                protectedRouter.get("/yt/download/check")
+                        .handler(ytDownloadProxyService::handleCheckAndUpdate);
+                        
+                protectedRouter.get("/yt/download/status/stream/:videoId")
+                        .handler(ytDownloadProxyService::handleStatusStream);
+                adminRouter.post("/yt/download/start")
+                        .handler(ytDownloadProxyService::handleStart);
+                adminRouter.post("/yt/download/add")
+                        .handler(ytDownloadProxyService::handleAdd);
+                adminRouter.get("/yt/download/requests")
+                        .handler(ytDownloadProxyService::handleListRequests);
+                adminRouter.delete("/yt/download/requests/:requestId")
+                        .handler(ytDownloadProxyService::handleDeleteRequest);
+                adminRouter.get("/yt/download/status/:videoId")
+                        .handler(ytDownloadProxyService::handleStatus);
+                adminRouter.get("/yt/download/status/stream/:videoId")
+                        .handler(ytDownloadProxyService::handleStatusStream);
+                adminRouter.get("/yt/library/items")
+                        .handler(ytDownloadProxyService::handleListLibraryItems);
+                adminRouter.delete("/yt/library/items/:itemId")
+                        .handler(ytDownloadProxyService::handleDeleteLibraryItem);
 
                 vertx.deployVerticle(new PriceCheckSchedulerVerticle(mongoDBClient, client))
                         .onSuccess(id ->

@@ -13,7 +13,9 @@ public class AuthHandler implements Handler<RoutingContext> {
         String path = context.normalizedPath();
         if (path.equals("/v2/login")
                 || path.equals("/v2/register")
-                || path.equals("/v2/moviehub/reconcile-downloads")) {
+                || path.equals("/v2/moviehub/reconcile-downloads")
+                || path.equals("/v2/yt/download/cronStart")
+                || path.equals("/v2/yt/download/check")) {
             context.next();
             return;
         }
@@ -26,8 +28,10 @@ public class AuthHandler implements Handler<RoutingContext> {
                 DecodedJWT decodedJWT = JWTProvider.verifyToken(token);
                 String userId = decodedJWT.getClaim("userId").asString();
                 String role = decodedJWT.getClaim("role").asString();
+                String email = decodedJWT.getClaim("email").asString();
                 context.put("userId", userId);
                 context.put("role", role);
+                context.put("userEmail", email == null ? "" : email);
                 context.next();
             } catch (Exception e) {
                 Utility.buildResponse(context, 401, Utility.createErrorResponse("invalid Token in headers"));

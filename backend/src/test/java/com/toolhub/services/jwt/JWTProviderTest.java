@@ -9,11 +9,13 @@ class JWTProviderTest {
     @Test
     void testGenerateTokenAndVerifyToken() {
         String userId = "test-user";
+        String email = "test@example.com";
         Role role = Role.USER;
-        String token = JWTProvider.generateToken(userId, role.toString());
+        String token = JWTProvider.generateToken(userId, role.toString(), email);
         assertNotNull(token);
         DecodedJWT jwt = JWTProvider.verifyToken(token);
         assertEquals(userId, jwt.getClaim("userId").asString());
+        assertEquals(email, jwt.getClaim("email").asString());
         assertTrue(jwt.getExpiresAt().getTime() > System.currentTimeMillis());
     }
 }
