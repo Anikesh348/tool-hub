@@ -1,4 +1,5 @@
 const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
+
 export interface User {
   name: string;
   email: string;
@@ -7,6 +8,13 @@ export interface User {
   profilePicture: string | undefined;
   role: string;
 }
+
+export interface AuthTokens {
+  token: string;
+  accessToken: string;
+  refreshToken: string;
+}
+
 export const AuthService = {
   baseLogin: (email: string, password: string) => ({
     url: BASE_URL + "/v2/login",
@@ -33,6 +41,20 @@ export const AuthService = {
         body: JSON.stringify({
           token: token,
           type: "google",
+        }),
+      },
+    };
+  },
+  refreshToken: (refreshToken: string) => {
+    return {
+      url: BASE_URL + "/v2/token/refresh",
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          refreshToken,
         }),
       },
     };

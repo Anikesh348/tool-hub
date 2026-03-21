@@ -13,6 +13,7 @@ public class AuthHandler implements Handler<RoutingContext> {
         String path = context.normalizedPath();
         if (path.equals("/v2/login")
                 || path.equals("/v2/register")
+                || path.equals("/v2/token/refresh")
                 || path.equals("/v2/moviehub/reconcile-downloads")
                 || path.equals("/v2/yt/download/cronStart")
                 || path.equals("/v2/yt/download/check")) {
@@ -20,12 +21,12 @@ public class AuthHandler implements Handler<RoutingContext> {
             return;
         }
         String authHeader = context.request().getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer")) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             Utility.buildResponse(context, 401, Utility.createErrorResponse("missing auth token"));
         } else {
             String token = authHeader.substring("Bearer ".length());
             try {
-                DecodedJWT decodedJWT = JWTProvider.verifyToken(token);
+                DecodedJWT decodedJWT = JWTProvider.verifyAccessToken(token);
                 String userId = decodedJWT.getClaim("userId").asString();
                 String role = decodedJWT.getClaim("role").asString();
                 String email = decodedJWT.getClaim("email").asString();
@@ -34,7 +35,7 @@ public class AuthHandler implements Handler<RoutingContext> {
                 context.put("userEmail", email == null ? "" : email);
                 context.next();
             } catch (Exception e) {
-                Utility.buildResponse(context, 401, Utility.createErrorResponse("invalid Token in headers"));
+                Utility.buildResponse(context, 401, Utility.createErrorResponse("invalid access token in headers"));
             }
         }
 

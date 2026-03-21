@@ -1,4 +1,6 @@
-import { useEffect, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
+import { refreshAccessToken } from "../apis/auth/authSession";
+import { getAccessToken } from "../apis/auth/tokenStorage";
 
 interface ApiFetcherState {
   loading: boolean;
@@ -6,29 +8,65 @@ interface ApiFetcherState {
   error: string | null;
 }
 
+const hasAuthorizationHeader = (headers?: HeadersInit): boolean => {
+  if (!headers) return false;
+  const normalizedHeaders = new Headers(headers);
+  return normalizedHeaders.has("Authorization");
+};
+
+const withLatestAccessToken = (options?: RequestInit): RequestInit | undefined => {
+  if (!options) return options;
+
+  const headers = new Headers(options.headers || {});
+  if (headers.has("Authorization")) {
+    const accessToken = getAccessToken();
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+  }
+
+  return {
+    ...options,
+    headers,
+  };
+};
+
+const readResponseBody = async (response: Response): Promise<any | null> => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
 export const useApiFetcher = () => {
-  const [state, setState] = useState(<ApiFetcherState>{
+  const [state, setState] = useState<ApiFetcherState>({
     loading: false,
     data: null,
     error: null,
   });
 
   const fetchData = useCallback(async (url: string, options?: RequestInit) => {
-    setState((prev) => {
-      return {
-        ...prev,
-        loading: true,
-      };
-    });
-    try {
-      console.log("calling url: ", url);
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        let errorBody = null;
+    setState((prev) => ({
+      ...prev,
+      loading: true,
+    }));
 
-        try {
-          errorBody = await response.json();
-        } catch (_) {}
+    try {
+      let preparedOptions = withLatestAccessToken(options);
+      let response = await fetch(url, preparedOptions);
+
+      const canAttemptRefresh = response.status === 401 && hasAuthorizationHeader(preparedOptions?.headers);
+      if (canAttemptRefresh) {
+        const refreshedAccessToken = await refreshAccessToken();
+        if (refreshedAccessToken) {
+          preparedOptions = withLatestAccessToken(preparedOptions);
+          response = await fetch(url, preparedOptions);
+        }
+      }
+
+      if (!response.ok) {
+        const errorBody = await readResponseBody(response);
 
         setState({
           loading: false,
@@ -39,17 +77,17 @@ export const useApiFetcher = () => {
           error: errorBody?.error || errorBody?.message || response.statusText,
         });
         return;
-      } else {
-        const data = await response.json();
-        setState({
-          loading: false,
-          data: {
-            body: data,
-            status: response.status,
-          },
-          error: null,
-        });
       }
+
+      const data = await readResponseBody(response);
+      setState({
+        loading: false,
+        data: {
+          body: data,
+          status: response.status,
+        },
+        error: null,
+      });
     } catch (err: any) {
       setState({
         loading: false,
@@ -57,7 +95,7 @@ export const useApiFetcher = () => {
           body: null,
           status: 500,
         },
-        error: err.message || "error",
+        error: err?.message || "error",
       });
     }
   }, []);

@@ -1,8 +1,11 @@
 package com.toolhub.services.user;
 
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.toolhub.enums.user.Role;
 import com.toolhub.models.AuthProvider;
 import com.toolhub.models.User;
+import com.toolhub.services.jwt.AuthSessionService;
+import com.toolhub.services.jwt.JWTProvider;
 import com.toolhub.services.mongo.MongoDBClient;
 import com.toolhub.services.user.login.LoginFactory;
 import io.vertx.core.Future;
@@ -23,9 +26,11 @@ import static com.toolhub.Utils.Utility.*;
 public class UserManagement {
     private static final Logger log = LoggerFactory.getLogger(UserManagement.class);
     private final MongoDBClient mongoClient;
+    private final AuthSessionService authSessionService;
 
     public UserManagement(MongoDBClient mongoClient) {
         this.mongoClient = mongoClient;
+        this.authSessionService = new AuthSessionService(mongoClient);
     }
 
     public Future<List<JsonObject>> fetchUsersFromUserIds(List<String> userIds) {
@@ -52,6 +57,64 @@ public class UserManagement {
     public void handleLogin(RoutingContext context) {
         log.info("Handling login request");
         LoginFactory.createLogin(context, mongoClient).handleLogin();
+    }
+
+    public void handleRefreshToken(RoutingContext context) {
+        JsonObject requestBody = context.body().asJsonObject();
+        if (requestBody == null) {
+            buildResponse(context, 400, createErrorResponse("request body is required"));
+            return;
+        }
+
+        String refreshToken = requestBody.getString("refreshToken", "").trim();
+        if (refreshToken.isBlank()) {
+            buildResponse(context, 400, createErrorResponse("refresh token is required"));
+            return;
+        }
+
+        final DecodedJWT decodedRefreshToken;
+        try {
+            decodedRefreshToken = JWTProvider.verifyRefreshToken(refreshToken);
+        } catch (Exception e) {
+            buildResponse(context, 401, createErrorResponse("invalid refresh token"));
+            return;
+        }
+
+        String userId = decodedRefreshToken.getClaim("userId").asString();
+        if (userId == null || userId.isBlank()) {
+            buildResponse(context, 401, createErrorResponse("invalid refresh token"));
+            return;
+        }
+
+        authSessionService.isRefreshTokenValidInStore(userId, refreshToken).onSuccess(valid -> {
+            if (!valid) {
+                buildResponse(context, 401, createErrorResponse("refresh token not recognized"));
+                return;
+            }
+
+            mongoClient.queryRecords(new JsonObject().put("userId", userId), "users").onSuccess(users -> {
+                if (users == null || users.isEmpty()) {
+                    buildResponse(context, 401, createErrorResponse("user does not exist"));
+                    return;
+                }
+
+                JsonObject user = users.getFirst();
+                String role = user.getString("role", Role.USER.name());
+                String email = user.getString("email", "");
+
+                authSessionService.issueTokens(userId, role, email).onSuccess(tokens -> {
+                    buildResponse(context, 200, tokens);
+
+                    Instant now = Instant.now();
+                    JsonObject update = new JsonObject().put("updatedAt", now);
+                    JsonObject findUpdateQueryObj = new JsonObject().put("userId", userId);
+                    mongoClient.updateRecordAsync(findUpdateQueryObj, update, "users");
+                    mongoClient.updateRecordAsync(findUpdateQueryObj, update, "authprovider");
+                }).onFailure(err ->
+                        buildResponse(context, 500, createErrorResponse("failed to refresh token"))
+                );
+            }).onFailure(err -> buildResponse(context, 500, createErrorResponse("failed to refresh token")));
+        }).onFailure(err -> buildResponse(context, 500, createErrorResponse("failed to refresh token")));
     }
 
     public void handleRegister(RoutingContext context) {

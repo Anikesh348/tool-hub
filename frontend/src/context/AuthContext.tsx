@@ -1,18 +1,34 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
-  useState,
   useEffect,
+  useState,
   ReactNode,
 } from "react";
 import { Product } from "../apis/search/search";
 import { User } from "../apis/auth/auth";
+import {
+  clearStoredAuth,
+  getAccessToken,
+  getJwtExpiryEpochMs,
+  getRefreshToken,
+  getStoredUser,
+  isJwtExpired,
+  setStoredTokens,
+  setStoredUser,
+} from "../apis/auth/tokenStorage";
+import {
+  AUTH_LOGOUT_EVENT,
+  AUTH_TOKENS_UPDATED_EVENT,
+  refreshAccessToken,
+} from "../apis/auth/authSession";
 
 interface AuthContextObj {
   authToken: string | null | undefined;
   isAuthLoading: boolean;
   isAuthenticated: boolean;
-  login: (token: string, user: User) => void;
+  login: (accessToken: string, refreshToken: string, user: User) => void;
   logout: () => void;
   searchResults: Product[];
   user: User | undefined | null;
@@ -30,51 +46,114 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [searchResults, setSearchResults] = useState<Product[]>([]);
 
+  const logout = useCallback(() => {
+    clearStoredAuth();
+    setAuthToken(null);
+    setUser(undefined);
+  }, []);
+
+  const login = useCallback(
+    (accessToken: string, refreshToken: string, nextUser: User) => {
+      setStoredTokens(accessToken, refreshToken);
+      setStoredUser(nextUser);
+      setAuthToken(accessToken);
+      setUser(nextUser);
+    },
+    []
+  );
+
   useEffect(() => {
-    const storedToken = localStorage.getItem("authToken");
-    const userString = localStorage.getItem("user");
+    let cancelled = false;
 
-    if (storedToken) {
-      try {
-        const payload = JSON.parse(atob(storedToken.split(".")[1]));
-        const expiry = payload.exp;
-        const now = Math.floor(Date.now() / 1000);
+    const bootstrapAuth = async () => {
+      const storedUser = getStoredUser();
+      const storedToken = getAccessToken();
+      const storedRefreshToken = getRefreshToken();
 
-        if (expiry > now) {
+      if (storedToken && !isJwtExpired(storedToken, 10)) {
+        if (!cancelled) {
           setAuthToken(storedToken);
-          setUser(userString ? JSON.parse(userString) : undefined);
-        } else {
-          setAuthToken(null);
-          setUser(undefined);
+          setUser(storedUser ?? undefined);
         }
-      } catch (err) {
-        console.error("Invalid JWT token:", err);
+        return;
+      }
+
+      if (storedRefreshToken && !isJwtExpired(storedRefreshToken, 10)) {
+        const refreshedAccessToken = await refreshAccessToken();
+        if (!cancelled) {
+          if (refreshedAccessToken) {
+            setAuthToken(refreshedAccessToken);
+            setUser(storedUser ?? undefined);
+          } else {
+            setAuthToken(null);
+            setUser(undefined);
+          }
+        }
+        return;
+      }
+
+      clearStoredAuth();
+      if (!cancelled) {
         setAuthToken(null);
         setUser(undefined);
       }
-    } else {
-      setAuthToken(null);
-      setUser(undefined);
-    }
+    };
+
+    bootstrapAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = (token: string, user: User) => {
-    localStorage.setItem("authToken", token);
-    localStorage.setItem("user", JSON.stringify(user));
-    setAuthToken(token);
-    setUser(user);
-  };
+  useEffect(() => {
+    const onTokenUpdated = () => {
+      const latestAccessToken = getAccessToken();
+      if (latestAccessToken) {
+        setAuthToken(latestAccessToken);
+      }
+    };
 
-  const logout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("user");
-    setAuthToken(null);
-    setUser(undefined);
-  };
+    const onLogout = () => {
+      setAuthToken(null);
+      setUser(undefined);
+    };
 
-  const updateSearchState = (results: Product[]) => {
+    window.addEventListener(AUTH_TOKENS_UPDATED_EVENT, onTokenUpdated);
+    window.addEventListener(AUTH_LOGOUT_EVENT, onLogout);
+
+    return () => {
+      window.removeEventListener(AUTH_TOKENS_UPDATED_EVENT, onTokenUpdated);
+      window.removeEventListener(AUTH_LOGOUT_EVENT, onLogout);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    const expiryEpochMs = getJwtExpiryEpochMs(authToken);
+    if (!expiryEpochMs) return;
+
+    const refreshLeadTimeMs = 60 * 1000;
+    const refreshInMs = Math.max(expiryEpochMs - Date.now() - refreshLeadTimeMs, 1000);
+
+    const timeoutId = window.setTimeout(async () => {
+      const refreshedToken = await refreshAccessToken();
+      if (!refreshedToken) {
+        logout();
+        return;
+      }
+      setAuthToken(refreshedToken);
+    }, refreshInMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [authToken, logout]);
+
+  const updateSearchState = useCallback((results: Product[]) => {
     setSearchResults(results);
-  };
+  }, []);
 
   const isAuthenticated = !!authToken;
   const isAuthLoading = authToken === undefined;

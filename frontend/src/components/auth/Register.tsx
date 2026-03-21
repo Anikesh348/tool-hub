@@ -76,9 +76,11 @@ function Register() {
   useEffect(() => {
     if (data && data?.status === 200) {
       addNotification("Registration successful!", "success");
-      if (data.body?.token) {
+      const accessToken = data.body?.accessToken || data.body?.token;
+      const refreshToken = data.body?.refreshToken;
+      if (accessToken && refreshToken) {
         // If registration auto-logs in
-        login(data.body.token, data.body.user);
+        login(accessToken, refreshToken, data.body.user);
         navigate("/");
       } else {
         // If registration doesn't auto-login, redirect to login

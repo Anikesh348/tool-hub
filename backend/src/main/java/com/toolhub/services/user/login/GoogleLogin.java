@@ -1,12 +1,12 @@
 package com.toolhub.services.user.login;
 
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.interfaces.DecodedJWT;
 import com.toolhub.enums.user.Role;
 import com.toolhub.models.AuthProvider;
 import com.toolhub.models.User;
-import com.toolhub.services.jwt.JWTProvider;
+import com.toolhub.services.jwt.AuthSessionService;
 import com.toolhub.services.mongo.MongoDBClient;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
@@ -15,51 +15,110 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.UUID;
 
+import static com.toolhub.Utils.Constants.DEFAULT_PROFILE_PICTURE;
 import static com.toolhub.Utils.Utility.*;
 
 public class GoogleLogin implements Login {
     private static final Logger log = LoggerFactory.getLogger(GoogleLogin.class);
-    MongoDBClient mongoDBClient;
-    RoutingContext routingContext;
+
+    private final MongoDBClient mongoDBClient;
+    private final RoutingContext routingContext;
+    private final AuthSessionService authSessionService;
+    private final GoogleTokenValidator googleTokenValidator;
 
     public GoogleLogin(MongoDBClient client, RoutingContext context) {
         this.mongoDBClient = client;
         this.routingContext = context;
+        this.authSessionService = new AuthSessionService(client);
+        GoogleTokenValidator tokenValidator;
+        try {
+            tokenValidator = new GoogleTokenValidator();
+        } catch (Exception e) {
+            log.error("Google login is misconfigured: {}", e.getMessage());
+            tokenValidator = null;
+        }
+        this.googleTokenValidator = tokenValidator;
     }
 
-    private void fetchUser(RoutingContext routingContext, String userId) {
+    private void fetchUser(RoutingContext context, String userId) {
         log.info("Fetching user with userId: {}", userId);
         JsonObject userQuery = new JsonObject().put("userId", userId);
 
         mongoDBClient.queryRecords(userQuery, "users").onSuccess(userRes -> {
             if (userRes == null || userRes.isEmpty()) {
                 log.warn("No user found in users collection for userId: {}", userId);
-                buildResponse(routingContext, 404, createErrorResponse("user not found"));
+                buildResponse(context, 404, createErrorResponse("user not found"));
                 return;
             }
-            log.info("User fetched successfully from users collection for userId: {}", userId);
 
             JsonObject user = userRes.get(0);
             String userRole = user.getString("role", Role.USER.name());
-            String jwtToken = JWTProvider.generateToken(userId, userRole, user.getString("email", ""));
-            JsonObject response = new JsonObject().put("token", jwtToken);
-            response.put("user", extractRequiredUserInfo(user));
+            String email = user.getString("email", "");
 
-            log.info("JWT token generated for userId: {}", userId);
-            buildResponse(routingContext, 200, response);
+            authSessionService.issueTokens(userId, userRole, email).onSuccess(tokens -> {
+                JsonObject response = tokens.copy().put("user", extractRequiredUserInfo(user));
+                buildResponse(context, 200, response);
 
-            Instant now = Instant.now();
-            JsonObject update = new JsonObject().put("updatedAt", now);
-            JsonObject findUpdateQueryObj = new JsonObject().put("userId", userId);
-
-            mongoDBClient.updateRecordAsync(findUpdateQueryObj, update, "users");
-            mongoDBClient.updateRecordAsync(findUpdateQueryObj, update, "authprovider");
-            log.info("Updated 'updatedAt' field for userId: {} in users and authprovider collections", userId);
+                Instant now = Instant.now();
+                JsonObject update = new JsonObject().put("updatedAt", now);
+                JsonObject findUpdateQueryObj = new JsonObject().put("userId", userId);
+                mongoDBClient.updateRecordAsync(findUpdateQueryObj, update, "users");
+                mongoDBClient.updateRecordAsync(findUpdateQueryObj, update, "authprovider");
+                log.info("Updated 'updatedAt' field for userId: {} in users and authprovider collections", userId);
+            }).onFailure(tokenFail -> {
+                log.error("Failed to issue login tokens for userId: {}. Error: {}", userId, tokenFail.getMessage());
+                buildResponse(context, 500, createErrorResponse("failed to login"));
+            });
 
         }).onFailure(userFail -> {
             log.error("Failed to fetch user for userId: {}. Error: {}", userId, userFail.getMessage());
-            buildResponse(routingContext, 500, createErrorResponse("failed to login"));
+            buildResponse(context, 500, createErrorResponse("failed to login"));
         });
+    }
+
+    private Future<Void> upsertGoogleUser(String userId, String email, String name, String profilePicture) {
+        Promise<Void> promise = Promise.promise();
+        Instant now = Instant.now();
+        String normalizedName = name == null ? "" : name.trim();
+        String normalizedProfilePicture = profilePicture == null ? "" : profilePicture.trim();
+
+        JsonObject query = new JsonObject().put("userId", userId);
+        mongoDBClient.queryRecords(query, "users").onSuccess(existingUsers -> {
+            if (existingUsers == null || existingUsers.isEmpty()) {
+                String pictureToPersist = normalizedProfilePicture.isBlank()
+                        ? DEFAULT_PROFILE_PICTURE
+                        : normalizedProfilePicture;
+
+                User user = new User("", email, normalizedName, userId, now, now, pictureToPersist);
+                mongoDBClient.insertRecord(JsonObject.mapFrom(user), "users")
+                        .onSuccess(insertRes -> promise.complete())
+                        .onFailure(promise::fail);
+                return;
+            }
+
+            JsonObject existingUser = existingUsers.getFirst();
+            JsonObject setObject = new JsonObject()
+                    .put("email", email)
+                    .put("updatedAt", now);
+
+            if (!normalizedName.isBlank()) {
+                setObject.put("name", normalizedName);
+            }
+
+            // Keep existing image if Google did not include picture claim in this token.
+            if (!normalizedProfilePicture.isBlank()) {
+                setObject.put("profilePicture", normalizedProfilePicture);
+            } else if (existingUser.getString("profilePicture", "").isBlank()) {
+                setObject.put("profilePicture", DEFAULT_PROFILE_PICTURE);
+            }
+
+            JsonObject update = new JsonObject().put("$set", setObject);
+            mongoDBClient.updateRecord(query, update, "users")
+                    .onSuccess(updateRes -> promise.complete())
+                    .onFailure(promise::fail);
+        }).onFailure(promise::fail);
+
+        return promise.future();
     }
 
     @Override
@@ -69,99 +128,73 @@ public class GoogleLogin implements Login {
             buildResponse(routingContext, 400, createErrorResponse("request body is required"));
             return;
         }
-        String googleToken = requestBody.getString("token");
-        if (googleToken == null || googleToken.isBlank()) {
+
+        String googleToken = requestBody.getString("token", "").trim();
+        if (googleToken.isBlank()) {
             buildResponse(routingContext, 400, createErrorResponse("google token is required"));
             return;
         }
-        log.info("Received Google login token");
+        if (googleTokenValidator == null) {
+            buildResponse(routingContext, 500, createErrorResponse("google login is not configured"));
+            return;
+        }
 
+        final GoogleTokenValidator.GoogleUserClaims claims;
         try {
-            DecodedJWT jwt = JWT.decode(googleToken);
-            log.info("Decoded Google JWT token");
+            claims = googleTokenValidator.validate(googleToken);
+        } catch (Exception e) {
+            log.error("Google token validation failed: {}", e.getMessage());
+            buildResponse(routingContext, 401, createErrorResponse("Invalid Google token"));
+            return;
+        }
 
-            String email = jwt.getClaim("email").asString();
-            String name = jwt.getClaim("name").asString();
-            String profilePicture = jwt.getClaim("picture").asString();
+        String email = claims.email();
+        String name = claims.name();
+        String profilePicture = claims.profilePicture();
 
-            log.info("Extracted user details from token - Email: {}, Name: {}", email, name);
+        JsonObject query = new JsonObject().put("email", email);
+        mongoDBClient.queryRecords(query, "authprovider").onSuccess(res -> {
+            if (res.isEmpty()) {
+                String userId = UUID.randomUUID().toString();
+                Instant now = Instant.now();
 
-            JsonObject query = new JsonObject().put("email", email);
-            mongoDBClient.queryRecords(query, "authprovider").onSuccess(res -> {
-                log.info("Queried authprovider collection with email: {}", email);
+                AuthProvider authProvider = new AuthProvider(userId, "google", email, email, now, now, "");
 
-                if (res.isEmpty()) {
-                    log.info("User not found in authprovider, proceeding to register");
+                mongoDBClient.insertRecord(JsonObject.mapFrom(authProvider), "authprovider").onSuccess(authRes ->
+                        upsertGoogleUser(userId, email, name, profilePicture)
+                                .onSuccess(done -> fetchUser(routingContext, userId))
+                                .onFailure(fail -> {
+                                    log.error("Failed to upsert user for userId: {}. Error: {}", userId, fail.getMessage());
+                                    buildResponse(routingContext, 500, createErrorResponse("Failed to create user"));
 
-                    String userId = UUID.randomUUID().toString();
-                    Instant now = Instant.now();
+                                    JsonObject deleteQuery = new JsonObject().put("userId", userId);
+                                    mongoDBClient.deleteRecordAsync(deleteQuery, "authprovider");
+                                })
+                ).onFailure(fail -> {
+                    log.error("Failed to insert authProvider for userId: {}. Error: {}", userId, fail.getMessage());
+                    buildResponse(routingContext, 500, createErrorResponse("Failed to create auth provider"));
+                });
 
-                    AuthProvider authProvider = new AuthProvider(userId,
-                            "google", email, email, now, now, "");
+                return;
+            }
 
-                    User user = new User("", email, name, userId, now, now, profilePicture);
+            String userId = res.get(0).getString("userId", "");
+            if (userId.isBlank()) {
+                log.error("authprovider record missing userId for email: {}", email);
+                buildResponse(routingContext, 500, createErrorResponse("Invalid auth provider record"));
+                return;
+            }
 
-                    mongoDBClient.insertRecord(JsonObject.mapFrom(user), "users").onSuccess(userRes -> {
-                        log.info("Inserted new user into users collection: {}", userId);
-
-                        mongoDBClient.insertRecord(JsonObject.mapFrom(authProvider), "authprovider").onSuccess(authRes -> {
-                            log.info("Inserted new authProvider for userId: {}", userId);
-                            fetchUser(routingContext, userId);
-
-                        }).onFailure(fail -> {
-                            log.error("Failed to insert authProvider for userId: {}. Error: {}", userId, fail.getMessage());
-                            buildResponse(routingContext, 500,
-                                    createErrorResponse("Failed to create auth provider"));
-
-                            JsonObject deleteQuery = new JsonObject().put("userId", userId);
-                            mongoDBClient.deleteRecordAsync(deleteQuery, "users");
-                            log.info("Rolled back user insert for userId: {}", userId);
-                        });
-
-                    }).onFailure(fail -> {
-                        log.error("Failed to insert user record. Error: {}", fail.getMessage());
-                        buildResponse(routingContext, 500,
-                                createErrorResponse("Failed to create user"));
-                    });
-
-                } else {
-                    log.info("User already exists in authprovider: {}", email);
-                    String userId = res.get(0).getString("userId");
-                    if (userId == null || userId.isBlank()) {
-                        log.error("authprovider record missing userId for email: {}", email);
-                        buildResponse(routingContext, 500, createErrorResponse("Invalid auth provider record"));
-                        return;
-                    }
-                    JsonObject existingUserQuery = new JsonObject().put("userId", userId);
-                    mongoDBClient.queryRecords(existingUserQuery, "users").onSuccess(existingUsers -> {
-                        if (existingUsers == null || existingUsers.isEmpty()) {
-                            log.warn("Missing users record for authprovider userId: {}. Auto-healing.", userId);
-                            Instant now = Instant.now();
-                            User user = new User("", email, name, userId, now, now, profilePicture);
-                            mongoDBClient.insertRecord(JsonObject.mapFrom(user), "users").onSuccess(insertRes -> {
-                                log.info("Recovered missing user record for userId: {}", userId);
-                                fetchUser(routingContext, userId);
-                            }).onFailure(insertFail -> {
-                                log.error("Failed to recover missing user record for userId: {}. Error: {}", userId, insertFail.getMessage());
-                                buildResponse(routingContext, 500, createErrorResponse("Failed to recover user profile"));
-                            });
-                            return;
-                        }
-                        fetchUser(routingContext, userId);
-                    }).onFailure(userQueryFail -> {
-                        log.error("Failed to query users collection for userId: {}. Error: {}", userId, userQueryFail.getMessage());
-                        buildResponse(routingContext, 500, createErrorResponse("Internal error"));
-                    });
-                }
-
-            }).onFailure(err -> {
-                log.error("Failed to query authprovider for email: {}. Error: {}", email, err.getMessage());
-                buildResponse(routingContext, 500, createErrorResponse("Internal error"));
+            upsertGoogleUser(userId, email, name, profilePicture).onSuccess(done ->
+                    fetchUser(routingContext, userId)
+            ).onFailure(userFail -> {
+                log.error("Failed to upsert user for userId: {}. Error: {}", userId, userFail.getMessage());
+                buildResponse(routingContext, 500, createErrorResponse("Failed to update user profile"));
             });
 
-        } catch (Exception e) {
-            log.error("Exception while decoding Google token: {}", e.getMessage());
-            buildResponse(routingContext, 400, createErrorResponse("Invalid Google token"));
-        }
+        }).onFailure(err -> {
+            log.error("Failed to query authprovider for email: {}. Error: {}", email, err.getMessage());
+            buildResponse(routingContext, 500, createErrorResponse("Internal error"));
+        });
     }
 }
