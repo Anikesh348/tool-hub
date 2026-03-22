@@ -78,7 +78,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         return;
       }
 
-      if (storedRefreshToken && !isJwtExpired(storedRefreshToken, 10)) {
+      // Always attempt refresh when refresh token exists.
+      // Backend is the source of truth for refresh token validity/expiry.
+      if (storedRefreshToken) {
         const refreshedAccessToken = await refreshAccessToken();
         if (!cancelled) {
           if (refreshedAccessToken) {
