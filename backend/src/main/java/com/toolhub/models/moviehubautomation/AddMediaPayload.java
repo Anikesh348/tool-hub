@@ -21,6 +21,10 @@ public abstract class AddMediaPayload {
             put("1080p", 4);
             put("720p", 3);
             put("1080", 4);
+            put("4k", 5);
+            put("2160p", 5);
+            put("uhd", 5);
+            put("ultra-hd", 5);
         }
     };
 

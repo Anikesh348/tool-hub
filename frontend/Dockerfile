@@ -3,6 +3,7 @@ WORKDIR /app
 
 ARG ENVIRONMENT=dev
 ENV ENVIRONMENT=$ENVIRONMENT
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 COPY package.json package-lock.json ./
 RUN npm install

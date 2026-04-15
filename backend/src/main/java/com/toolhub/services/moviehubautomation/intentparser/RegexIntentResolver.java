@@ -15,6 +15,9 @@ public class RegexIntentResolver {
     private static final Pattern CHECK_MEDIA_EXISTS =
             Pattern.compile("(?i)(\\bdoes\\b.+\\bexist\\b|\\b(is|check|find|search|lookup|look\\s*up)\\b.+\\b(movie|movies|show|series|tv)\\b)");
 
+    private static final Pattern DELETE_MEDIA =
+            Pattern.compile("(?i)\\b(delete|remove|uninstall|erase)\\b.+\\b(movie|movies|show|series|tv|media|library)\\b");
+
     private static final Pattern CHECK_STATUS =
             Pattern.compile("(?i)\\b(status|progress|time left|eta|how much time)\\b");
 
@@ -35,6 +38,9 @@ public class RegexIntentResolver {
         }
         if (CONTROL_DOWNLOAD.matcher(input).find()) {
             return Intent.CONTROL_DOWNLOAD;
+        }
+        if (DELETE_MEDIA.matcher(input).find()) {
+            return Intent.DELETE_MEDIA;
         }
         if (CHECK_MEDIA_EXISTS.matcher(input).find()) {
             return Intent.CHECK_MEDIA_EXISTS;

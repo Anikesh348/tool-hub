@@ -11,6 +11,7 @@ import com.toolhub.services.moviehubautomation.mediacontrollers.AddShowControlle
 import com.toolhub.services.moviehubautomation.intentparser.AddMediaIntentStrategy;
 import com.toolhub.services.moviehubautomation.intentparser.DownloadStatusIntentStrategy;
 import com.toolhub.services.moviehubautomation.intentparser.IntentStrategyFactory;
+import com.toolhub.services.moviehubautomation.intentparser.DeleteMediaIntentStrategy;
 import com.toolhub.services.moviehubautomation.intentparser.MediaExistsIntentStrategy;
 import com.toolhub.services.moviehubautomation.llm.llimclient.AiClient;
 import com.toolhub.services.moviehubautomation.llm.llimclient.AiClientFactory;
@@ -108,6 +109,9 @@ public class MovieHubAutomationRoute {
                 ), new MediaExistsIntentStrategy(
                         aiClient,
                         movieHubRequestPortalService
+                ), new DeleteMediaIntentStrategy(
+                        aiClient,
+                        movieHubRequestPortalService
                 )));
 //        adminRouter.post("/content")
 //                .handler(context -> new AddMedia(addMediaControllerFactory).handle(context));
@@ -143,6 +147,14 @@ public class MovieHubAutomationRoute {
                 .handler(movieHubRequestPortalService::handleGetAllRequests);
         adminRouter.post("/moviehub/requests/:requestId/approve")
                 .handler(movieHubRequestPortalService::handleApproveRequest);
+        adminRouter.post("/moviehub/available/delete")
+                .handler(movieHubRequestPortalService::handleDeleteAvailableMedia);
+        adminRouter.post("/moviehub/downloads/pause")
+                .handler(movieHubRequestPortalService::handlePauseDownloads);
+        adminRouter.post("/moviehub/downloads/resume")
+                .handler(movieHubRequestPortalService::handleResumeDownloads);
+        adminRouter.post("/moviehub/downloads/delete")
+                .handler(movieHubRequestPortalService::handleDeleteDownload);
         adminRouter.get("/moviehub/access/requests")
                 .handler(movieHubAccessPortalService::handleGetAccessRequests);
         adminRouter.post("/moviehub/access/requests/:requestId/approve")

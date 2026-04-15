@@ -3,7 +3,7 @@ import { getBearerAuthHeader } from "../auth/tokenStorage";
 const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
 
 export type MovieHubMediaType = "MOVIES" | "SHOWS";
-export type MovieHubQuality = "any" | "720p" | "1080p";
+export type MovieHubQuality = "any" | "720p" | "1080p" | "4k";
 export type MovieHubAccessState = "NOT_REQUESTED" | "PENDING" | "APPROVED" | "REJECTED" | "ADMIN_BYPASS";
 
 export interface MovieHubSearchResult {
@@ -37,6 +37,8 @@ export interface MovieHubAvailableMedia {
   overview?: string;
   poster?: string;
   mediaType: MovieHubMediaType;
+  radarrId?: number;
+  sonarrId?: number;
   path?: string;
   qualityProfileId?: number;
   added?: string;
@@ -51,6 +53,14 @@ export interface MovieHubAvailableMedia {
 }
 
 export type MovieHubDownloadScope = "mine" | "all";
+
+export interface MovieHubDownloadHandlingState {
+  statusKnown?: boolean;
+  paused?: boolean;
+  partiallyPaused?: boolean;
+  radarrEnabled?: boolean | null;
+  sonarrEnabled?: boolean | null;
+}
 
 export interface MovieHubDownloadItem {
   queueItemId?: number | string;
@@ -250,6 +260,25 @@ export const MovieHubService = {
     };
   },
 
+  deleteAvailableMedia: (payload: {
+    id: number;
+    mediaType: MovieHubMediaType;
+    deleteFiles?: boolean;
+    addImportExclusion?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/available/delete`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(payload),
+      },
+    };
+  },
+
   getDownloadQueue: (scope: MovieHubDownloadScope = "mine") => {
     return {
       url: `${BASE_URL}/v2/moviehub/downloads?scope=${scope}`,
@@ -259,6 +288,53 @@ export const MovieHubService = {
           "Content-Type": "application/json",
           ...getBearerAuthHeader(),
         },
+      },
+    };
+  },
+
+  pauseDownloads: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/pause`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  resumeDownloads: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/resume`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  deleteDownload: (payload: {
+    queueItemId: number;
+    mediaType: MovieHubMediaType;
+    removeFromClient?: boolean;
+    blocklist?: boolean;
+    skipRedownload?: boolean;
+    changeCategory?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/delete`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(payload),
       },
     };
   },

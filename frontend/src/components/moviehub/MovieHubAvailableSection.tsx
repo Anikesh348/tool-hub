@@ -4,20 +4,26 @@ import { Loader } from "../Loader";
 
 type MovieHubAvailableSectionProps = {
   availableLoading: boolean;
+  isAdmin: boolean;
   availableMediaType: "MOVIES" | "SHOWS";
   sortedAvailableItems: MovieHubAvailableMedia[];
+  deletingMediaId: string | null;
   onSetMediaType: (type: "MOVIES" | "SHOWS") => void;
   onRefresh: () => void;
+  onDelete: (item: MovieHubAvailableMedia) => void;
   formatDateTime: (value?: string) => string;
 };
 
 export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> = React.memo(
   ({
     availableLoading,
+    isAdmin,
     availableMediaType,
     sortedAvailableItems,
+    deletingMediaId,
     onSetMediaType,
     onRefresh,
+    onDelete,
     formatDateTime,
   }) => {
     const [searchQuery, setSearchQuery] = useState("");
@@ -140,6 +146,8 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
                 </div>
 
                 <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  {item.added ? <p>Added: {formatDateTime(item.added)}</p> : null}
+                  {item.path ? <p className="break-all">Path: {item.path}</p> : null}
                   {item.mediaType === "SHOWS" ? (
                     <>
                       <p>
@@ -157,6 +165,24 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
                     </>
                   ) : null}
                 </div>
+
+                {isAdmin ? (
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={() => onDelete(item)}
+                      disabled={
+                        deletingMediaId ===
+                        `${item.mediaType}-${item.radarrId || item.sonarrId || idx}`
+                      }
+                      className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {deletingMediaId ===
+                      `${item.mediaType}-${item.radarrId || item.sonarrId || idx}`
+                        ? "Deleting..."
+                        : "Delete"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

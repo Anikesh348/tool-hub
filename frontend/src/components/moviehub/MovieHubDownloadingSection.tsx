@@ -1,6 +1,7 @@
 import React from "react";
 import {
   MovieHubCompletedDownloadItem,
+  MovieHubDownloadHandlingState,
   MovieHubDownloadItem,
   MovieHubDownloadScope,
 } from "../../apis/moviehub/moviehub";
@@ -10,10 +11,16 @@ type MovieHubDownloadingSectionProps = {
   downloadsLoading: boolean;
   isAdmin: boolean;
   downloadScope: MovieHubDownloadScope;
+  downloadHandling: MovieHubDownloadHandlingState | null;
+  downloadControlLoading: boolean;
+  deletingQueueItemKey: string | null;
   downloadItems: MovieHubDownloadItem[];
   completedDownloadItems: MovieHubCompletedDownloadItem[];
   onSetDownloadScope: (scope: MovieHubDownloadScope) => void;
   onRefresh: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onDeleteDownload: (item: MovieHubDownloadItem) => void;
   formatDateTime: (value?: string) => string;
 };
 
@@ -22,12 +29,21 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
     downloadsLoading,
     isAdmin,
     downloadScope,
+    downloadHandling,
+    downloadControlLoading,
+    deletingQueueItemKey,
     downloadItems,
     completedDownloadItems,
     onSetDownloadScope,
     onRefresh,
+    onPause,
+    onResume,
+    onDeleteDownload,
     formatDateTime,
   }) => {
+    const isPaused = Boolean(downloadHandling?.paused);
+    const isPartiallyPaused = Boolean(downloadHandling?.partiallyPaused);
+
     return (
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -68,8 +84,33 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
             >
               Refresh
             </button>
+            {isAdmin ? (
+              <button
+                onClick={isPaused ? onResume : onPause}
+                disabled={downloadControlLoading}
+                className="px-3 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-slate-950 disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+              >
+                {downloadControlLoading
+                  ? isPaused
+                    ? "Resuming..."
+                    : "Pausing..."
+                  : isPaused
+                    ? "Resume Downloads"
+                    : "Pause Downloads"}
+              </button>
+            ) : null}
           </div>
         </div>
+
+        {isAdmin && downloadHandling?.statusKnown ? (
+          <div className="rounded-xl border border-amber-200/70 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            {isPartiallyPaused
+              ? "Download automation is partially paused across Radarr/Sonarr."
+              : isPaused
+                ? "Download automation is paused across Radarr and Sonarr."
+                : "Download automation is active across Radarr and Sonarr."}
+          </div>
+        ) : null}
 
         {downloadsLoading ? (
           <Loader />
@@ -93,6 +134,7 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                     const progress = Number(item.progressPercent || 0);
                     const displayProgress = Number.isFinite(progress) ? progress : 0;
                     const key = item.downloadId || String(item.queueItemId || idx);
+                    const deleteKey = `${item.mediaType}-${String(item.queueItemId || key)}`;
                     return (
                       <div
                         key={key}
@@ -142,6 +184,18 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                           {item.indexer ? <p>Indexer: {item.indexer}</p> : null}
                           {item.added ? <p>Added: {formatDateTime(item.added)}</p> : null}
                         </div>
+
+                        {isAdmin && item.queueItemId !== undefined ? (
+                          <div className="mt-4 flex justify-end">
+                            <button
+                              onClick={() => onDeleteDownload(item)}
+                              disabled={deletingQueueItemKey === deleteKey}
+                              className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {deletingQueueItemKey === deleteKey ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

@@ -44,7 +44,7 @@ public class MovieHubRequestPortalService {
     private static final String DEFAULT_QUALITY_PROFILE = "any";
     private static final String DOWNLOAD_SCOPE_MINE = "mine";
     private static final String DOWNLOAD_SCOPE_ALL = "all";
-    private static final Set<String> ALLOWED_QUALITY_PROFILES = Set.of("any", "720p", "1080p");
+    private static final Set<String> ALLOWED_QUALITY_PROFILES = Set.of("any", "720p", "1080p", "4k");
 
     private final MongoDBClient mongoDBClient;
     private final AddMediaControllerFactory addMediaControllerFactory;
@@ -59,6 +59,8 @@ public class MovieHubRequestPortalService {
     private final String sonarrQueueUrl;
     private final String radarrCommandUrl;
     private final String sonarrCommandUrl;
+    private final String radarrDownloadClientConfigUrl;
+    private final String sonarrDownloadClientConfigUrl;
     private final String radarrApiKey;
     private final String sonarrApiKey;
 
@@ -84,6 +86,8 @@ public class MovieHubRequestPortalService {
         this.sonarrQueueUrl = sonarrBaseUrl + "/queue";
         this.radarrCommandUrl = radarrBaseUrl + "/command";
         this.sonarrCommandUrl = sonarrBaseUrl + "/command";
+        this.radarrDownloadClientConfigUrl = radarrBaseUrl + "/config/downloadclient";
+        this.sonarrDownloadClientConfigUrl = sonarrBaseUrl + "/config/downloadclient";
         this.movieLookupClient = LookUpClient.get(webClient, radarrApiKey, radarrBaseUrl + "/movie/lookup");
         this.showLookupClient = LookUpClient.get(webClient, sonarrApiKey, sonarrBaseUrl + "/series/lookup");
     }
@@ -549,6 +553,111 @@ public class MovieHubRequestPortalService {
                 });
     }
 
+    public void handleDeleteAvailableMedia(RoutingContext context) {
+        try {
+            JsonObject body = context.body().asJsonObject();
+            if (body == null) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("request body is required"));
+                return;
+            }
+            MediaType mediaType = parseMediaType(body.getString("mediaType"));
+            if (mediaType == MediaType.UNKNOWN) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("mediaType must be MOVIES or SHOWS"));
+                return;
+            }
+            Integer mediaId = parseInteger(body.getValue("id"));
+            if (mediaId == null || mediaId < 1) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("id must be a positive integer"));
+                return;
+            }
+            boolean deleteFiles = body.getBoolean("deleteFiles", true);
+            boolean addImportExclusion = body.getBoolean("addImportExclusion", false);
+            deleteAvailableMedia(mediaType, mediaId, deleteFiles, addImportExclusion)
+                    .onSuccess(payload -> Utility.buildResponse(
+                            context,
+                            200,
+                            Utility.createSuccessResponse(payload)
+                    ))
+                    .onFailure(fail -> {
+                        log.error("Failed to delete available media type={} id={}", mediaType, mediaId, fail);
+                        Utility.buildResponse(context, 500, Utility.createErrorResponse(fail.getMessage()));
+                    });
+        } catch (Exception e) {
+            log.error("Unexpected error while deleting available media", e);
+            Utility.buildResponse(context, 500, Utility.createErrorResponse(e.getMessage()));
+        }
+    }
+
+    public Future<JsonObject> deleteAvailableMediaItem(MediaType mediaType,
+                                                       int mediaId,
+                                                       boolean deleteFiles,
+                                                       boolean addImportExclusion) {
+        return deleteAvailableMedia(mediaType, mediaId, deleteFiles, addImportExclusion);
+    }
+
+    public void handlePauseDownloads(RoutingContext context) {
+        setDownloadHandlingEnabled(false)
+                .onSuccess(payload -> Utility.buildResponse(
+                        context,
+                        200,
+                        Utility.createSuccessResponse(payload.put("message", "Download automation paused"))
+                ))
+                .onFailure(fail -> {
+                    log.error("Failed to pause download automation", fail);
+                    Utility.buildResponse(context, 500, Utility.createErrorResponse(fail.getMessage()));
+                });
+    }
+
+    public void handleResumeDownloads(RoutingContext context) {
+        setDownloadHandlingEnabled(true)
+                .onSuccess(payload -> Utility.buildResponse(
+                        context,
+                        200,
+                        Utility.createSuccessResponse(payload.put("message", "Download automation resumed"))
+                ))
+                .onFailure(fail -> {
+                    log.error("Failed to resume download automation", fail);
+                    Utility.buildResponse(context, 500, Utility.createErrorResponse(fail.getMessage()));
+                });
+    }
+
+    public void handleDeleteDownload(RoutingContext context) {
+        try {
+            JsonObject body = context.body().asJsonObject();
+            if (body == null) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("request body is required"));
+                return;
+            }
+            MediaType mediaType = parseMediaType(body.getString("mediaType"));
+            if (mediaType == MediaType.UNKNOWN) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("mediaType must be MOVIES or SHOWS"));
+                return;
+            }
+            Integer queueItemId = parseInteger(body.getValue("queueItemId"));
+            if (queueItemId == null || queueItemId < 1) {
+                Utility.buildResponse(context, 400, Utility.createErrorResponse("queueItemId must be a positive integer"));
+                return;
+            }
+            boolean removeFromClient = body.getBoolean("removeFromClient", true);
+            boolean blocklist = body.getBoolean("blocklist", false);
+            boolean skipRedownload = body.getBoolean("skipRedownload", true);
+            boolean changeCategory = body.getBoolean("changeCategory", false);
+            deleteDownload(mediaType, queueItemId, removeFromClient, blocklist, skipRedownload, changeCategory)
+                    .onSuccess(payload -> Utility.buildResponse(
+                            context,
+                            200,
+                            Utility.createSuccessResponse(payload)
+                    ))
+                    .onFailure(fail -> {
+                        log.error("Failed to delete download type={} id={}", mediaType, queueItemId, fail);
+                        Utility.buildResponse(context, 500, Utility.createErrorResponse(fail.getMessage()));
+                    });
+        } catch (Exception e) {
+            log.error("Unexpected error while deleting download", e);
+            Utility.buildResponse(context, 500, Utility.createErrorResponse(e.getMessage()));
+        }
+    }
+
     public Future<JsonObject> getDownloadQueue(String userId, String userRole, String requestedScope) {
         boolean isAdmin = Role.ADMIN.name().equalsIgnoreCase(userRole);
         String normalizedScope = requestedScope == null ? DOWNLOAD_SCOPE_MINE : requestedScope.trim().toLowerCase();
@@ -562,11 +671,16 @@ public class MovieHubRequestPortalService {
                 .compose(v -> CompositeFuture.all(
                         fetchMovieQueueRecords(),
                         fetchSeriesQueueRecords(),
-                        requestScopeFuture
+                        requestScopeFuture,
+                        fetchDownloadHandlingState().recover(fail -> {
+                            log.warn("Failed to fetch download handling state: {}", fail.getMessage());
+                            return Future.succeededFuture(buildDownloadHandlingState(null, null, false));
+                        })
                 ).map(result -> {
                     JsonArray movieQueue = result.resultAt(0);
                     JsonArray seriesQueue = result.resultAt(1);
                     List<MediaDownloadRequest> userRequests = result.resultAt(2);
+                    JsonObject downloadHandling = result.resultAt(3);
 
                     JsonArray combinedQueue = combineAndNormalizeQueue(movieQueue, seriesQueue);
                     JsonArray scopedQueue = includeAllDownloads
@@ -575,6 +689,7 @@ public class MovieHubRequestPortalService {
 
                     return new JsonObject()
                             .put("scope", includeAllDownloads ? DOWNLOAD_SCOPE_ALL : DOWNLOAD_SCOPE_MINE)
+                            .put("downloadHandling", downloadHandling)
                             .put("downloads", scopedQueue);
                 }));
     }
@@ -642,6 +757,195 @@ public class MovieHubRequestPortalService {
                 })
                 .onFailure(fail -> promise.fail(fail.getMessage()));
         return promise.future();
+    }
+
+    private Future<JsonObject> deleteAvailableMedia(MediaType mediaType,
+                                                    int mediaId,
+                                                    boolean deleteFiles,
+                                                    boolean addImportExclusion) {
+        Promise<JsonObject> promise = Promise.promise();
+        String deleteUrl;
+        String apiKey;
+        String source;
+        String exclusionParamName;
+        if (mediaType == MediaType.MOVIES) {
+            deleteUrl = radarrMovieListUrl + "/" + mediaId;
+            apiKey = radarrApiKey;
+            source = "radarr";
+            exclusionParamName = "addImportExclusion";
+        } else if (mediaType == MediaType.SHOWS) {
+            deleteUrl = sonarrSeriesListUrl + "/" + mediaId;
+            apiKey = sonarrApiKey;
+            source = "sonarr";
+            exclusionParamName = "addImportListExclusion";
+        } else {
+            return Future.failedFuture("mediaType must be MOVIES or SHOWS");
+        }
+
+        webClient.deleteAbs(deleteUrl)
+                .addQueryParam("deleteFiles", String.valueOf(deleteFiles))
+                .addQueryParam(exclusionParamName, String.valueOf(addImportExclusion))
+                .putHeader("x-api-key", apiKey)
+                .send()
+                .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        promise.fail("failed to delete media from " + source + ": " + res.bodyAsString());
+                        return;
+                    }
+                    promise.complete(new JsonObject()
+                            .put("mediaType", mediaType.name())
+                            .put("id", mediaId)
+                            .put("deleteFiles", deleteFiles)
+                            .put("addImportExclusion", addImportExclusion)
+                            .put("message", "Media deleted successfully"));
+                })
+                .onFailure(fail -> promise.fail(fail.getMessage()));
+        return promise.future();
+    }
+
+    private Future<JsonObject> deleteDownload(MediaType mediaType,
+                                              int queueItemId,
+                                              boolean removeFromClient,
+                                              boolean blocklist,
+                                              boolean skipRedownload,
+                                              boolean changeCategory) {
+        Promise<JsonObject> promise = Promise.promise();
+        String queueUrl;
+        String apiKey;
+        String source;
+        if (mediaType == MediaType.MOVIES) {
+            queueUrl = radarrQueueUrl + "/" + queueItemId;
+            apiKey = radarrApiKey;
+            source = "radarr";
+        } else if (mediaType == MediaType.SHOWS) {
+            queueUrl = sonarrQueueUrl + "/" + queueItemId;
+            apiKey = sonarrApiKey;
+            source = "sonarr";
+        } else {
+            return Future.failedFuture("mediaType must be MOVIES or SHOWS");
+        }
+
+        webClient.deleteAbs(queueUrl)
+                .addQueryParam("removeFromClient", String.valueOf(removeFromClient))
+                .addQueryParam("blocklist", String.valueOf(blocklist))
+                .addQueryParam("skipRedownload", String.valueOf(skipRedownload))
+                .addQueryParam("changeCategory", String.valueOf(changeCategory))
+                .putHeader("x-api-key", apiKey)
+                .send()
+                .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        promise.fail("failed to delete queue item from " + source + ": " + res.bodyAsString());
+                        return;
+                    }
+                    promise.complete(new JsonObject()
+                            .put("mediaType", mediaType.name())
+                            .put("queueItemId", queueItemId)
+                            .put("removeFromClient", removeFromClient)
+                            .put("blocklist", blocklist)
+                            .put("skipRedownload", skipRedownload)
+                            .put("changeCategory", changeCategory)
+                            .put("message", "Download removed from queue"));
+                })
+                .onFailure(fail -> promise.fail(fail.getMessage()));
+        return promise.future();
+    }
+
+    private Future<JsonObject> setDownloadHandlingEnabled(boolean enabled) {
+        return CompositeFuture.all(
+                updateDownloadClientHandling(radarrDownloadClientConfigUrl, radarrApiKey, enabled, "radarr"),
+                updateDownloadClientHandling(sonarrDownloadClientConfigUrl, sonarrApiKey, enabled, "sonarr")
+        ).map(result -> buildDownloadHandlingState(
+                result.resultAt(0),
+                result.resultAt(1),
+                true
+        ));
+    }
+
+    private Future<JsonObject> fetchDownloadHandlingState() {
+        return CompositeFuture.all(
+                fetchDownloadClientConfig(radarrDownloadClientConfigUrl, radarrApiKey),
+                fetchDownloadClientConfig(sonarrDownloadClientConfigUrl, sonarrApiKey)
+        ).map(result -> buildDownloadHandlingState(
+                result.resultAt(0),
+                result.resultAt(1),
+                true
+        ));
+    }
+
+    private JsonObject buildDownloadHandlingState(JsonObject radarrConfig, JsonObject sonarrConfig, boolean statusKnown) {
+        Boolean radarrEnabled = extractBoolean(radarrConfig, "enableCompletedDownloadHandling", "EnableCompletedDownloadHandling");
+        Boolean sonarrEnabled = extractBoolean(sonarrConfig, "enableCompletedDownloadHandling", "EnableCompletedDownloadHandling");
+        boolean paused = (radarrEnabled != null && !radarrEnabled) || (sonarrEnabled != null && !sonarrEnabled);
+        boolean partiallyPaused = radarrEnabled != null
+                && sonarrEnabled != null
+                && !radarrEnabled.equals(sonarrEnabled);
+
+        return new JsonObject()
+                .put("statusKnown", statusKnown)
+                .put("paused", paused)
+                .put("partiallyPaused", partiallyPaused)
+                .put("radarrEnabled", radarrEnabled)
+                .put("sonarrEnabled", sonarrEnabled);
+    }
+
+    private Future<JsonObject> fetchDownloadClientConfig(String configUrl, String apiKey) {
+        Promise<JsonObject> promise = Promise.promise();
+        webClient.getAbs(configUrl)
+                .putHeader("x-api-key", apiKey)
+                .send()
+                .onSuccess(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        promise.fail("failed to fetch download client config: " + res.bodyAsString());
+                        return;
+                    }
+                    JsonObject body = res.bodyAsJsonObject();
+                    if (body == null) {
+                        promise.fail("download client config response was empty");
+                        return;
+                    }
+                    promise.complete(body);
+                })
+                .onFailure(fail -> promise.fail(fail.getMessage()));
+        return promise.future();
+    }
+
+    private Future<JsonObject> updateDownloadClientHandling(String configUrl,
+                                                            String apiKey,
+                                                            boolean enabled,
+                                                            String source) {
+        return fetchDownloadClientConfig(configUrl, apiKey)
+                .compose(currentConfig -> {
+                    JsonObject payload = currentConfig.copy();
+                    payload.put("EnableCompletedDownloadHandling", enabled);
+                    payload.put("enableCompletedDownloadHandling", enabled);
+                    Integer configId = payload.getInteger("id", 1);
+                    Promise<JsonObject> promise = Promise.promise();
+                    webClient.putAbs(configUrl + "/" + configId)
+                            .putHeader("x-api-key", apiKey)
+                            .sendJsonObject(payload)
+                            .onSuccess(res -> {
+                                if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                                    promise.fail("failed to update download handling for " + source + ": " + res.bodyAsString());
+                                    return;
+                                }
+                                payload.put("id", configId);
+                                promise.complete(payload);
+                            })
+                            .onFailure(fail -> promise.fail(fail.getMessage()));
+                    return promise.future();
+                });
+    }
+
+    private Boolean extractBoolean(JsonObject body, String... keys) {
+        if (body == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (key != null && body.containsKey(key)) {
+                return body.getBoolean(key);
+            }
+        }
+        return null;
     }
 
     public void handleReconcileDownloadedRequests(RoutingContext context) {
@@ -1529,6 +1833,7 @@ public class MovieHubRequestPortalService {
         return switch (qualityProfileId.trim().toLowerCase()) {
             case "720p" -> "HD 720p";
             case "1080p" -> "HD 1080p";
+            case "4k" -> "Ultra HD 4K";
             default -> "Any";
         };
     }
@@ -1639,9 +1944,9 @@ public class MovieHubRequestPortalService {
         if (mediaType == MediaType.UNKNOWN) {
             throw new IllegalArgumentException("mediaType must be MOVIES or SHOWS");
         }
-        String qualityProfileId = body.getString("qualityProfileId", DEFAULT_QUALITY_PROFILE).trim().toLowerCase();
+        String qualityProfileId = normalizeQualityProfileId(body.getString("qualityProfileId", DEFAULT_QUALITY_PROFILE));
         if (!ALLOWED_QUALITY_PROFILES.contains(qualityProfileId)) {
-            throw new IllegalArgumentException("qualityProfileId must be one of: any, 720p, 1080p");
+            throw new IllegalArgumentException("qualityProfileId must be one of: any, 720p, 1080p, 4k");
         }
         List<Integer> seasons = new ArrayList<>();
         if (mediaType == MediaType.SHOWS) {
@@ -1678,6 +1983,9 @@ public class MovieHubRequestPortalService {
 
     private String normalizeQualityProfileId(String qualityRaw) {
         String normalized = qualityRaw == null ? DEFAULT_QUALITY_PROFILE : qualityRaw.trim().toLowerCase();
+        if ("2160p".equals(normalized) || "uhd".equals(normalized) || "ultra-hd".equals(normalized)) {
+            normalized = "4k";
+        }
         if (!ALLOWED_QUALITY_PROFILES.contains(normalized)) {
             return DEFAULT_QUALITY_PROFILE;
         }

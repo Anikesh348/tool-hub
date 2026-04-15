@@ -17,6 +17,7 @@ public class OpenAiMessageFactory {
             Intent.CHECK_DOWNLOAD_STATUS, new DownloadStatusQueryMessageBuilder(),
             Intent.LIST_DOWNLOADS, new DownloadStatusQueryMessageBuilder(),
             Intent.CHECK_MEDIA_EXISTS, new MediaExistsQueryMessageBuilder(),
+            Intent.DELETE_MEDIA, new DeleteMediaQueryMessageBuilder(),
             Intent.UNKNOWN, new GetIntentMessageBuilder(),
             Intent.SUMMARIZE, new GetSummariseMessageBuilder());
 
