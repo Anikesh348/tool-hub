@@ -15,6 +15,9 @@ public class MediaDownloadRequest {
     private String userName;
     private String title;
     private MediaType mediaType;
+    private Integer tmdbId;
+    private Integer tvdbId;
+    private String imdbId;
     private String qualityProfileId;
     private List<Integer> season;
     private MediaRequestStatus status;
@@ -72,6 +75,30 @@ public class MediaDownloadRequest {
 
     public void setMediaType(MediaType mediaType) {
         this.mediaType = mediaType;
+    }
+
+    public Integer getTmdbId() {
+        return tmdbId;
+    }
+
+    public void setTmdbId(Integer tmdbId) {
+        this.tmdbId = tmdbId;
+    }
+
+    public Integer getTvdbId() {
+        return tvdbId;
+    }
+
+    public void setTvdbId(Integer tvdbId) {
+        this.tvdbId = tvdbId;
+    }
+
+    public String getImdbId() {
+        return imdbId;
+    }
+
+    public void setImdbId(String imdbId) {
+        this.imdbId = imdbId;
     }
 
     public String getQualityProfileId() {

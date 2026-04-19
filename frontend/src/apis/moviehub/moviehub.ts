@@ -12,6 +12,9 @@ export interface MovieHubSearchResult {
   overview?: string;
   poster?: string;
   mediaType: MovieHubMediaType;
+  tmdbId?: number;
+  tvdbId?: number;
+  imdbId?: string;
   seasonOptions?: number[];
 }
 
@@ -22,6 +25,9 @@ export interface MovieHubRequest {
   userName?: string;
   title: string;
   mediaType: MovieHubMediaType;
+  tmdbId?: number;
+  tvdbId?: number;
+  imdbId?: string;
   qualityProfileId: MovieHubQuality;
   season?: number[];
   status: "PENDING" | "APPROVED" | "DOWNLOADED";
@@ -218,6 +224,9 @@ export const MovieHubService = {
   createRequest: (payload: {
     title: string;
     mediaType: MovieHubMediaType;
+    tmdbId?: number;
+    tvdbId?: number;
+    imdbId?: string;
     qualityProfileId: MovieHubQuality;
     season?: number[];
   }) => {

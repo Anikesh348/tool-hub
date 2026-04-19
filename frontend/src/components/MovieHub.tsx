@@ -1136,7 +1136,10 @@ export const MovieHub: React.FC = () => {
   }, [query, addNotification, mediaType, fetchSearch]);
 
   const getResultKey = useCallback((result: MovieHubSearchResult) => {
-    return `${result.mediaType}-${result.title}-${result.year || "na"}`;
+    const identity = result.mediaType === "MOVIES"
+      ? result.tmdbId ?? result.imdbId ?? "na"
+      : result.tvdbId ?? result.imdbId ?? "na";
+    return `${result.mediaType}-${identity}-${result.title}-${result.year || "na"}`;
   }, []);
 
   const toggleSeason = useCallback((resultKey: string, season: number) => {
@@ -1164,6 +1167,9 @@ export const MovieHub: React.FC = () => {
       const { url, options } = MovieHubService.createRequest({
         title: result.title,
         mediaType: result.mediaType,
+        tmdbId: result.tmdbId,
+        tvdbId: result.tvdbId,
+        imdbId: result.imdbId,
         qualityProfileId: quality,
         ...(result.mediaType === "SHOWS" ? { season: selectedSeasons } : {}),
       });

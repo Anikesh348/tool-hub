@@ -157,7 +157,10 @@ public class MovieHubRequestPortalService {
                 title.trim(),
                 mediaType,
                 qualityProfileId,
-                seasons
+                seasons,
+                lookUpDTO.getTmdbId(),
+                lookUpDTO.getTvdbId(),
+                lookUpDTO.getImdbId()
         );
 
         return validateAvailabilityBeforeCreate(parsedCreateRequest)
@@ -176,6 +179,9 @@ public class MovieHubRequestPortalService {
                     mediaDownloadRequest.setUserName(user.getString("name", user.getString("userName", "")));
                     mediaDownloadRequest.setTitle(parsedCreateRequest.title());
                     mediaDownloadRequest.setMediaType(parsedCreateRequest.mediaType());
+                    mediaDownloadRequest.setTmdbId(parsedCreateRequest.tmdbId());
+                    mediaDownloadRequest.setTvdbId(parsedCreateRequest.tvdbId());
+                    mediaDownloadRequest.setImdbId(parsedCreateRequest.imdbId());
                     mediaDownloadRequest.setQualityProfileId(parsedCreateRequest.qualityProfileId());
                     mediaDownloadRequest.setSeason(parsedCreateRequest.season());
                     mediaDownloadRequest.setStatus(MediaRequestStatus.PENDING);
@@ -220,6 +226,9 @@ public class MovieHubRequestPortalService {
                     mediaDownloadRequest.setUserName(user.getString("name", user.getString("userName", "")));
                     mediaDownloadRequest.setTitle(title.trim());
                     mediaDownloadRequest.setMediaType(mediaType);
+                    mediaDownloadRequest.setTmdbId(lookUpDTO.getTmdbId());
+                    mediaDownloadRequest.setTvdbId(lookUpDTO.getTvdbId());
+                    mediaDownloadRequest.setImdbId(lookUpDTO.getImdbId());
                     mediaDownloadRequest.setQualityProfileId(qualityProfileId);
                     mediaDownloadRequest.setSeason(seasons);
                     mediaDownloadRequest.setStatus(MediaRequestStatus.APPROVED);
@@ -271,6 +280,9 @@ public class MovieHubRequestPortalService {
                             mediaDownloadRequest.setUserName(user.getString("name", user.getString("userName", "")));
                             mediaDownloadRequest.setTitle(parsedCreateRequest.title());
                             mediaDownloadRequest.setMediaType(parsedCreateRequest.mediaType());
+                            mediaDownloadRequest.setTmdbId(parsedCreateRequest.tmdbId());
+                            mediaDownloadRequest.setTvdbId(parsedCreateRequest.tvdbId());
+                            mediaDownloadRequest.setImdbId(parsedCreateRequest.imdbId());
                             mediaDownloadRequest.setQualityProfileId(parsedCreateRequest.qualityProfileId());
                             mediaDownloadRequest.setSeason(parsedCreateRequest.season());
                             mediaDownloadRequest.setStatus(MediaRequestStatus.PENDING);
@@ -402,6 +414,9 @@ public class MovieHubRequestPortalService {
             LookUpDTO lookUpDTO = new LookUpDTO();
             lookUpDTO.setTitle(request.getTitle());
             lookUpDTO.setMediaType(request.getMediaType());
+            lookUpDTO.setTmdbId(request.getTmdbId());
+            lookUpDTO.setTvdbId(request.getTvdbId());
+            lookUpDTO.setImdbId(request.getImdbId());
             lookUpDTO.setQuality(request.getQualityProfileId());
             lookUpDTO.setSeason(request.getSeason() == null ? List.of() : request.getSeason());
             try {
@@ -1948,6 +1963,9 @@ public class MovieHubRequestPortalService {
         if (!ALLOWED_QUALITY_PROFILES.contains(qualityProfileId)) {
             throw new IllegalArgumentException("qualityProfileId must be one of: any, 720p, 1080p, 4k");
         }
+        Integer tmdbId = body.getInteger("tmdbId");
+        Integer tvdbId = body.getInteger("tvdbId");
+        String imdbId = body.getString("imdbId");
         List<Integer> seasons = new ArrayList<>();
         if (mediaType == MediaType.SHOWS) {
             JsonArray seasonArray = body.getJsonArray("season");
@@ -1964,7 +1982,7 @@ public class MovieHubRequestPortalService {
             }
             seasons = seasonSet.stream().sorted().toList();
         }
-        return new ParsedCreateRequest(title.trim(), mediaType, qualityProfileId, seasons);
+        return new ParsedCreateRequest(title.trim(), mediaType, qualityProfileId, seasons, tmdbId, tvdbId, imdbId);
     }
 
     private Integer parseSeasonNumber(Object seasonObj) {
@@ -2080,7 +2098,10 @@ public class MovieHubRequestPortalService {
             String title,
             MediaType mediaType,
             String qualityProfileId,
-            List<Integer> season
+            List<Integer> season,
+            Integer tmdbId,
+            Integer tvdbId,
+            String imdbId
     ) {
     }
 
