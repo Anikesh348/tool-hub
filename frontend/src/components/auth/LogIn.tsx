@@ -147,8 +147,11 @@ export const LogIn = () => {
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
-    if (data && data.status === 200 && data.body?.token) {
-      login(data.body.token, data.body.user);
+    const accessToken = data?.body?.accessToken || data?.body?.token;
+    const refreshToken = data?.body?.refreshToken;
+
+    if (data && data.status === 200 && accessToken && refreshToken) {
+      login(accessToken, refreshToken, data.body.user);
       addNotification("Login successful!", "success");
       navigate("/");
     } else if (data && data.status !== 200) {

@@ -124,6 +124,7 @@ public class Templates {
                     "- DOWNLOAD_MEDIA (user wants to directly download, add, or get a movie or TV series)\n" +
                     "- RAISE_REQUEST (user wants to request/ask for a movie or TV series)\n" +
                     "- CHECK_MEDIA_EXISTS (user asks whether a movie or series exists or can be found)\n" +
+                    "- DELETE_MEDIA (user wants to remove an existing movie or series from the server)\n" +
                     "- CHECK_DOWNLOAD_STATUS (user asks about progress, ETA, or status)\n" +
                     "- LIST_DOWNLOADS (user asks what is downloading or queued)\n" +
                     "- CONTROL_DOWNLOAD (user wants to pause, resume, cancel, or retry a download)\n" +
@@ -133,6 +134,7 @@ public class Templates {
                     "- If the user asks if a movie/show exists, can be found, or asks to search/lookup a title, choose CHECK_MEDIA_EXISTS.\n" +
                     "- If the user asks to request or raise a request, choose RAISE_REQUEST.\n" +
                     "- If the user asks to download, add, get, or grab something, choose DOWNLOAD_MEDIA.\n" +
+                    "- If the user asks to delete, remove, or erase an existing movie/series from the server, choose DELETE_MEDIA.\n" +
                     "- Do NOT require the user to explicitly say movie or series.\n" +
                     "- Choose the single best intent.\n" +
                     "- If the request is unrelated to media downloads, return UNKNOWN.\n" +
@@ -140,7 +142,7 @@ public class Templates {
 
                     "Return JSON in this format:\n" +
                     "{\n" +
-                    "  \"intent\": \"DOWNLOAD_MEDIA | RAISE_REQUEST | CHECK_MEDIA_EXISTS | CHECK_DOWNLOAD_STATUS | LIST_DOWNLOADS | CONTROL_DOWNLOAD | UNKNOWN\"\n" +
+                    "  \"intent\": \"DOWNLOAD_MEDIA | RAISE_REQUEST | CHECK_MEDIA_EXISTS | DELETE_MEDIA | CHECK_DOWNLOAD_STATUS | LIST_DOWNLOADS | CONTROL_DOWNLOAD | UNKNOWN\"\n" +
                     "}\n\n" +
 
                     "User input:\n" +
@@ -203,6 +205,28 @@ public class Templates {
 
     public static final String MEDIA_EXISTS_QUERY_PROMPT =
             "Extract structured media-existence lookup fields from the user input.\n\n" +
+
+                    "Return ONLY JSON in this exact schema:\n" +
+                    "{\n" +
+                    "  \"query\": {\n" +
+                    "    \"title\": string,\n" +
+                    "    \"mediaType\": \"MOVIES\" | \"SHOWS\" | \"UNKNOWN\"\n" +
+                    "  }\n" +
+                    "}\n\n" +
+
+                    "Rules:\n" +
+                    "- Extract the intended movie/show title.\n" +
+                    "- If title is not present, set title to empty string.\n" +
+                    "- If user mentions movie, set mediaType=MOVIES.\n" +
+                    "- If user mentions show/series, set mediaType=SHOWS.\n" +
+                    "- If unclear, set mediaType=UNKNOWN.\n" +
+                    "- Do not add any extra fields.\n\n" +
+
+                    "User input:\n" +
+                    "{USER_INPUT}";
+
+    public static final String DELETE_MEDIA_QUERY_PROMPT =
+            "Extract structured media-delete lookup fields from the user input.\n\n" +
 
                     "Return ONLY JSON in this exact schema:\n" +
                     "{\n" +

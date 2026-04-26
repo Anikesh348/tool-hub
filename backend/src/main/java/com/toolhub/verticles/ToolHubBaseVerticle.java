@@ -109,6 +109,7 @@ public class ToolHubBaseVerticle extends AbstractVerticle {
                 YtDownloadProxyService ytDownloadProxyService = new YtDownloadProxyService(client, vertx, mongoDBClient, dotenv);
 
                 router.post("/v2/login").handler(userManagement::handleLogin);
+                router.post("/v2/token/refresh").handler(userManagement::handleRefreshToken);
                 router.post("/v2/register").handler(userManagement::handleRegister);
                 protectedRouter.post("/save-product").handler(saveProduct::saveProduct);
 

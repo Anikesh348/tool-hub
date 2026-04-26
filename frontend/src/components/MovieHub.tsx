@@ -8,6 +8,7 @@ import {
   MovieHubAccessUser,
   MovieHubAvailableMedia,
   MovieHubCompletedDownloadItem,
+  MovieHubDownloadHandlingState,
   MovieHubDownloadItem,
   MovieHubDownloadScope,
   MovieHubQuality,
@@ -94,6 +95,8 @@ export const MovieHub: React.FC = () => {
   const [completedDownloadItems, setCompletedDownloadItems] = useState<
     MovieHubCompletedDownloadItem[]
   >([]);
+  const [downloadHandling, setDownloadHandling] =
+    useState<MovieHubDownloadHandlingState | null>(null);
   const [requests, setRequests] = useState<MovieHubRequest[]>([]);
   const [adminRequests, setAdminRequests] = useState<MovieHubRequest[]>([]);
   const [qualityByResult, setQualityByResult] = useState<
@@ -109,6 +112,13 @@ export const MovieHub: React.FC = () => {
   const [deletingRequestId, setDeletingRequestId] = useState<string | null>(
     null,
   );
+  const [deletingAvailableMediaId, setDeletingAvailableMediaId] = useState<
+    string | null
+  >(null);
+  const [downloadControlLoading, setDownloadControlLoading] = useState(false);
+  const [deletingQueueItemKey, setDeletingQueueItemKey] = useState<
+    string | null
+  >(null);
   const [approvingAccessRequestId, setApprovingAccessRequestId] = useState<
     string | null
   >(null);
@@ -223,9 +233,29 @@ export const MovieHub: React.FC = () => {
     fetchData: fetchAvailableMedia,
   } = useApiFetcher();
   const {
+    loading: deleteAvailableLoading,
+    data: deleteAvailableData,
+    fetchData: fetchDeleteAvailableMedia,
+  } = useApiFetcher();
+  const {
     loading: downloadsLoading,
     data: downloadsData,
     fetchData: fetchDownloadQueue,
+  } = useApiFetcher();
+  const {
+    loading: pauseDownloadsLoading,
+    data: pauseDownloadsData,
+    fetchData: fetchPauseDownloads,
+  } = useApiFetcher();
+  const {
+    loading: resumeDownloadsLoading,
+    data: resumeDownloadsData,
+    fetchData: fetchResumeDownloads,
+  } = useApiFetcher();
+  const {
+    loading: deleteDownloadLoading,
+    data: deleteDownloadData,
+    fetchData: fetchDeleteDownload,
   } = useApiFetcher();
   const {
     loading: completedDownloadsLoading,
@@ -288,6 +318,10 @@ export const MovieHub: React.FC = () => {
     requestsLoading ||
     approveLoading ||
     deleteLoading ||
+    deleteAvailableLoading ||
+    pauseDownloadsLoading ||
+    resumeDownloadsLoading ||
+    deleteDownloadLoading ||
     ytRequestsLoading ||
     deleteYtRequestLoading ||
     deleteYtLibraryLoading ||
@@ -738,9 +772,29 @@ export const MovieHub: React.FC = () => {
   }, [availableData, addNotification]);
 
   useEffect(() => {
+    if (!deleteAvailableData) return;
+    setDeletingAvailableMediaId(null);
+    if (deleteAvailableData.status >= 200 && deleteAvailableData.status < 300) {
+      addNotification("Media deleted successfully", "success");
+      loadAvailableMedia(availableMediaType);
+      return;
+    }
+    addNotification(
+      deleteAvailableData.body?.error || "Failed to delete media",
+      "error",
+    );
+  }, [
+    deleteAvailableData,
+    addNotification,
+    loadAvailableMedia,
+    availableMediaType,
+  ]);
+
+  useEffect(() => {
     if (!downloadsData) return;
     if (downloadsData.status >= 200 && downloadsData.status < 300) {
       setDownloadItems(downloadsData.body?.response?.downloads || []);
+      setDownloadHandling(downloadsData.body?.response?.downloadHandling || null);
       return;
     }
     addNotification(
@@ -748,6 +802,78 @@ export const MovieHub: React.FC = () => {
       "error",
     );
   }, [downloadsData, addNotification]);
+
+  useEffect(() => {
+    if (!pauseDownloadsData) return;
+    setDownloadControlLoading(false);
+    if (
+      pauseDownloadsData.status >= 200 &&
+      pauseDownloadsData.status < 300
+    ) {
+      addNotification("Download automation paused", "success");
+      loadDownloadQueue(downloadScope);
+      loadCompletedDownloads(downloadScope);
+      return;
+    }
+    addNotification(
+      pauseDownloadsData.body?.error || "Failed to pause downloads",
+      "error",
+    );
+  }, [
+    pauseDownloadsData,
+    addNotification,
+    loadDownloadQueue,
+    loadCompletedDownloads,
+    downloadScope,
+  ]);
+
+  useEffect(() => {
+    if (!resumeDownloadsData) return;
+    setDownloadControlLoading(false);
+    if (
+      resumeDownloadsData.status >= 200 &&
+      resumeDownloadsData.status < 300
+    ) {
+      addNotification("Download automation resumed", "success");
+      loadDownloadQueue(downloadScope);
+      loadCompletedDownloads(downloadScope);
+      return;
+    }
+    addNotification(
+      resumeDownloadsData.body?.error || "Failed to resume downloads",
+      "error",
+    );
+  }, [
+    resumeDownloadsData,
+    addNotification,
+    loadDownloadQueue,
+    loadCompletedDownloads,
+    downloadScope,
+  ]);
+
+  useEffect(() => {
+    if (!deleteDownloadData) return;
+    setDeletingQueueItemKey(null);
+    if (
+      deleteDownloadData.status >= 200 &&
+      deleteDownloadData.status < 300
+    ) {
+      addNotification("Download removed from queue", "success");
+      loadDownloadQueue(downloadScope);
+      loadCompletedDownloads(downloadScope);
+      return;
+    }
+    addNotification(
+      deleteDownloadData.body?.error || "Failed to delete download",
+      "error",
+    );
+  }, [
+    deleteDownloadData,
+    addNotification,
+    loadDownloadQueue,
+    loadCompletedDownloads,
+    downloadScope,
+  ]);
 
   useEffect(() => {
     if (!completedDownloadsData) return;
@@ -1010,7 +1136,10 @@ export const MovieHub: React.FC = () => {
   }, [query, addNotification, mediaType, fetchSearch]);
 
   const getResultKey = useCallback((result: MovieHubSearchResult) => {
-    return `${result.mediaType}-${result.title}-${result.year || "na"}`;
+    const identity = result.mediaType === "MOVIES"
+      ? result.tmdbId ?? result.imdbId ?? "na"
+      : result.tvdbId ?? result.imdbId ?? "na";
+    return `${result.mediaType}-${identity}-${result.title}-${result.year || "na"}`;
   }, []);
 
   const toggleSeason = useCallback((resultKey: string, season: number) => {
@@ -1038,6 +1167,9 @@ export const MovieHub: React.FC = () => {
       const { url, options } = MovieHubService.createRequest({
         title: result.title,
         mediaType: result.mediaType,
+        tmdbId: result.tmdbId,
+        tvdbId: result.tvdbId,
+        imdbId: result.imdbId,
         qualityProfileId: quality,
         ...(result.mediaType === "SHOWS" ? { season: selectedSeasons } : {}),
       });
@@ -1068,6 +1200,72 @@ export const MovieHub: React.FC = () => {
       fetchDeleteRequest(url, options);
     },
     [fetchDeleteRequest],
+  );
+
+  const handleDeleteAvailableMedia = useCallback(
+    (item: MovieHubAvailableMedia) => {
+      const mediaId =
+        item.mediaType === "MOVIES" ? item.radarrId : item.sonarrId;
+      if (!mediaId) {
+        addNotification("Unable to determine library item id", "error");
+        return;
+      }
+      const confirmed = window.confirm(
+        `Delete ${item.title} from MovieHub and remove the files from disk?`,
+      );
+      if (!confirmed) return;
+      const deleteKey = `${item.mediaType}-${mediaId}`;
+      setDeletingAvailableMediaId(deleteKey);
+      const { url, options } = MovieHubService.deleteAvailableMedia({
+        id: mediaId,
+        mediaType: item.mediaType,
+        deleteFiles: true,
+      });
+      fetchDeleteAvailableMedia(url, options);
+    },
+    [addNotification, fetchDeleteAvailableMedia],
+  );
+
+  const handlePauseDownloads = useCallback(() => {
+    const confirmed = window.confirm(
+      "Pause MovieHub download automation across Radarr and Sonarr?",
+    );
+    if (!confirmed) return;
+    setDownloadControlLoading(true);
+    const { url, options } = MovieHubService.pauseDownloads();
+    fetchPauseDownloads(url, options);
+  }, [fetchPauseDownloads]);
+
+  const handleResumeDownloads = useCallback(() => {
+    setDownloadControlLoading(true);
+    const { url, options } = MovieHubService.resumeDownloads();
+    fetchResumeDownloads(url, options);
+  }, [fetchResumeDownloads]);
+
+  const handleDeleteDownload = useCallback(
+    (item: MovieHubDownloadItem) => {
+      const queueItemId = Number(item.queueItemId);
+      if (!Number.isFinite(queueItemId) || queueItemId <= 0) {
+        addNotification("Unable to determine queue item id", "error");
+        return;
+      }
+      const confirmed = window.confirm(
+        `Remove ${item.title} from the active download queue?`,
+      );
+      if (!confirmed) return;
+      const deleteKey = `${item.mediaType}-${queueItemId}`;
+      setDeletingQueueItemKey(deleteKey);
+      const { url, options } = MovieHubService.deleteDownload({
+        queueItemId,
+        mediaType: item.mediaType,
+        removeFromClient: true,
+        blocklist: false,
+        skipRedownload: true,
+        changeCategory: false,
+      });
+      fetchDeleteDownload(url, options);
+    },
+    [addNotification, fetchDeleteDownload],
   );
 
   const handleCreateAccessRequest = useCallback(() => {
@@ -1621,10 +1819,13 @@ export const MovieHub: React.FC = () => {
               {!isChatPage && activeSection === "available" && (
                 <MovieHubAvailableSection
                   availableLoading={availableLoading}
+                  isAdmin={isAdmin}
                   availableMediaType={availableMediaType}
                   sortedAvailableItems={sortedAvailableItems}
+                  deletingMediaId={deletingAvailableMediaId}
                   onSetMediaType={handleSetAvailableMediaType}
                   onRefresh={refreshAvailable}
+                  onDelete={handleDeleteAvailableMedia}
                   formatDateTime={formatDateTime}
                 />
               )}
@@ -1636,10 +1837,16 @@ export const MovieHub: React.FC = () => {
                   }
                   isAdmin={isAdmin}
                   downloadScope={downloadScope}
+                  downloadHandling={downloadHandling}
+                  downloadControlLoading={downloadControlLoading}
+                  deletingQueueItemKey={deletingQueueItemKey}
                   downloadItems={sortedDownloadItems}
                   completedDownloadItems={sortedCompletedDownloadItems}
                   onSetDownloadScope={handleSetDownloadScope}
                   onRefresh={refreshDownloadQueue}
+                  onPause={handlePauseDownloads}
+                  onResume={handleResumeDownloads}
+                  onDeleteDownload={handleDeleteDownload}
                   formatDateTime={formatDateTime}
                 />
               )}

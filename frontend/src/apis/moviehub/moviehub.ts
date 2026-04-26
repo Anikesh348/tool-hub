@@ -1,7 +1,9 @@
+import { getBearerAuthHeader } from "../auth/tokenStorage";
+
 const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
 
 export type MovieHubMediaType = "MOVIES" | "SHOWS";
-export type MovieHubQuality = "any" | "720p" | "1080p";
+export type MovieHubQuality = "any" | "720p" | "1080p" | "4k";
 export type MovieHubAccessState = "NOT_REQUESTED" | "PENDING" | "APPROVED" | "REJECTED" | "ADMIN_BYPASS";
 
 export interface MovieHubSearchResult {
@@ -10,6 +12,9 @@ export interface MovieHubSearchResult {
   overview?: string;
   poster?: string;
   mediaType: MovieHubMediaType;
+  tmdbId?: number;
+  tvdbId?: number;
+  imdbId?: string;
   seasonOptions?: number[];
 }
 
@@ -20,6 +25,9 @@ export interface MovieHubRequest {
   userName?: string;
   title: string;
   mediaType: MovieHubMediaType;
+  tmdbId?: number;
+  tvdbId?: number;
+  imdbId?: string;
   qualityProfileId: MovieHubQuality;
   season?: number[];
   status: "PENDING" | "APPROVED" | "DOWNLOADED";
@@ -35,6 +43,8 @@ export interface MovieHubAvailableMedia {
   overview?: string;
   poster?: string;
   mediaType: MovieHubMediaType;
+  radarrId?: number;
+  sonarrId?: number;
   path?: string;
   qualityProfileId?: number;
   added?: string;
@@ -49,6 +59,14 @@ export interface MovieHubAvailableMedia {
 }
 
 export type MovieHubDownloadScope = "mine" | "all";
+
+export interface MovieHubDownloadHandlingState {
+  statusKnown?: boolean;
+  paused?: boolean;
+  partiallyPaused?: boolean;
+  radarrEnabled?: boolean | null;
+  sonarrEnabled?: boolean | null;
+}
 
 export interface MovieHubDownloadItem {
   queueItemId?: number | string;
@@ -197,7 +215,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -206,6 +224,9 @@ export const MovieHubService = {
   createRequest: (payload: {
     title: string;
     mediaType: MovieHubMediaType;
+    tmdbId?: number;
+    tvdbId?: number;
+    imdbId?: string;
     qualityProfileId: MovieHubQuality;
     season?: number[];
   }) => {
@@ -215,7 +236,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify(payload),
       },
@@ -229,7 +250,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -242,8 +263,27 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
+      },
+    };
+  },
+
+  deleteAvailableMedia: (payload: {
+    id: number;
+    mediaType: MovieHubMediaType;
+    deleteFiles?: boolean;
+    addImportExclusion?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/available/delete`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(payload),
       },
     };
   },
@@ -255,8 +295,55 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
+      },
+    };
+  },
+
+  pauseDownloads: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/pause`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  resumeDownloads: () => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/resume`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  deleteDownload: (payload: {
+    queueItemId: number;
+    mediaType: MovieHubMediaType;
+    removeFromClient?: boolean;
+    blocklist?: boolean;
+    skipRedownload?: boolean;
+    changeCategory?: boolean;
+  }) => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/downloads/delete`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(payload),
       },
     };
   },
@@ -268,7 +355,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -281,7 +368,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -294,7 +381,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -307,7 +394,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -320,7 +407,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -333,7 +420,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({ movieHubUserName }),
       },
@@ -347,7 +434,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -361,7 +448,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -374,7 +461,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -387,7 +474,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -400,7 +487,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -413,7 +500,7 @@ export const MovieHubService = {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -426,7 +513,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -439,7 +526,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -452,7 +539,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({
           url: urlValue,
@@ -476,7 +563,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify(payload),
       },
@@ -490,7 +577,7 @@ export const MovieHubService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -503,7 +590,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -516,7 +603,7 @@ export const MovieHubService = {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -529,7 +616,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -542,7 +629,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           Accept: "text/event-stream",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -570,7 +657,7 @@ export const MovieHubService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -583,7 +670,7 @@ export const MovieHubService = {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };

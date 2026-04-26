@@ -64,7 +64,12 @@ public class AddShowController implements AddMediaController {
     public Future<Void> addContent(LookUpDTO lookUpDTO) {
         Promise<Void> addContentPromise = Promise.promise();
         log.debug("addContent called for title={} seasons={}", lookUpDTO.getTitle(), lookUpDTO.getSeason());
-        lookUpClient.callLookUpUrl(lookUpDTO.getTitle()).onSuccess(lookUpResponse -> {
+        lookUpClient.callLookUpUrlList(lookUpDTO.getTitle()).onSuccess(lookupResults -> {
+            JsonObject lookUpResponse = selectShowLookupResult(lookupResults, lookUpDTO);
+            if (lookUpResponse == null) {
+                addContentPromise.fail("Unable to resolve the requested show from lookup results");
+                return;
+            }
             log.debug("Lookup successful for title={}", lookUpDTO.getTitle());
             try {
                 Integer tvdbId = lookUpResponse.getInteger("tvdbId");
@@ -142,6 +147,45 @@ public class AddShowController implements AddMediaController {
             addContentPromise.fail(msg);
         });
         return addContentPromise.future();
+    }
+
+    private JsonObject selectShowLookupResult(JsonArray lookupResults, LookUpDTO lookUpDTO) {
+        if (lookupResults == null || lookupResults.isEmpty()) {
+            return null;
+        }
+
+        Integer requestedTvdbId = lookUpDTO.getTvdbId();
+        String requestedImdbId = lookUpDTO.getImdbId();
+
+        if (requestedTvdbId != null) {
+            for (Object item : lookupResults) {
+                if (!(item instanceof JsonObject candidate)) {
+                    continue;
+                }
+                Integer tvdbId = candidate.getInteger("tvdbId");
+                if (requestedTvdbId.equals(tvdbId)) {
+                    return candidate;
+                }
+            }
+            log.warn("No show lookup match found for tvdbId={} title={}", requestedTvdbId, lookUpDTO.getTitle());
+            return null;
+        }
+
+        if (requestedImdbId != null && !requestedImdbId.isBlank()) {
+            for (Object item : lookupResults) {
+                if (!(item instanceof JsonObject candidate)) {
+                    continue;
+                }
+                String imdbId = candidate.getString("imdbId");
+                if (requestedImdbId.equalsIgnoreCase(imdbId)) {
+                    return candidate;
+                }
+            }
+            log.warn("No show lookup match found for imdbId={} title={}", requestedImdbId, lookUpDTO.getTitle());
+            return null;
+        }
+
+        return lookupResults.getJsonObject(0);
     }
 
     private String safeMessage(Throwable t) {

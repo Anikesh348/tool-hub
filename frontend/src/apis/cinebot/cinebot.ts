@@ -1,3 +1,5 @@
+import { getBearerAuthHeader } from "../auth/tokenStorage";
+
 const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
 
 export const CinePilotService = {
@@ -8,7 +10,7 @@ export const CinePilotService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({
           userInput,

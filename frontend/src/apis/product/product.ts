@@ -1,3 +1,5 @@
+import { getBearerAuthHeader } from "../auth/tokenStorage";
+
 const BASE_URL = import.meta.env.VITE_BASE_BACKEND_URL;
 
 export const ProductService = {
@@ -8,7 +10,7 @@ export const ProductService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({
           productUrl: productUrl,
@@ -25,7 +27,7 @@ export const ProductService = {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
       },
     };
@@ -38,7 +40,7 @@ export const ProductService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({
           productId: productId,
@@ -55,7 +57,7 @@ export const ProductService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          ...getBearerAuthHeader(),
         },
         body: JSON.stringify({ productId }),
       },

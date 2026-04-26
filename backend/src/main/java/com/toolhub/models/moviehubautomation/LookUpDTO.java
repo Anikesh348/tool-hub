@@ -18,6 +18,9 @@ public class LookUpDTO {
     private MediaType mediaType;
     private String quality;
     private List<Integer> season;
+    private Integer tmdbId;
+    private Integer tvdbId;
+    private String imdbId;
 
     public List<Integer> getSeason() {
         return season;
@@ -33,6 +36,12 @@ public class LookUpDTO {
     public void setMediaType(MediaType mediaType) { this.mediaType = mediaType; }
     public String getQuality() { return quality; }
     public void setQuality(String quality) { this.quality = quality; }
+    public Integer getTmdbId() { return tmdbId; }
+    public void setTmdbId(Integer tmdbId) { this.tmdbId = tmdbId; }
+    public Integer getTvdbId() { return tvdbId; }
+    public void setTvdbId(Integer tvdbId) { this.tvdbId = tvdbId; }
+    public String getImdbId() { return imdbId; }
+    public void setImdbId(String imdbId) { this.imdbId = imdbId; }
     private static String normalizeTitle(String title) {
         return title
                 .trim()
@@ -71,6 +80,9 @@ public class LookUpDTO {
         }
 
         String qualityProfileId = json.getString("qualityProfileId");
+        Integer tmdbId = json.getInteger("tmdbId");
+        Integer tvdbId = json.getInteger("tvdbId");
+        String imdbId = json.getString("imdbId");
         if (!errors.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", errors));
         }
@@ -81,6 +93,9 @@ public class LookUpDTO {
         dto.setMediaType(mediaType);
         dto.setQuality(qualityProfileId);
         dto.setSeason(season);
+        dto.setTmdbId(tmdbId);
+        dto.setTvdbId(tvdbId);
+        dto.setImdbId(imdbId);
         return dto;
     }
 }

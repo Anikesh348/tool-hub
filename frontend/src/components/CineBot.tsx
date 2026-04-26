@@ -50,6 +50,12 @@ const ADMIN_FEATURES: FeatureItem[] = [
     description: "Check if a movie/series already exists on the server library.",
   },
   {
+    id: "admin-delete",
+    label: "Delete existing media",
+    value: "Delete Blade Runner from the server",
+    description: "Remove a movie or series from Radarr or Sonarr.",
+  },
+  {
     id: "admin-status",
     label: "Check download status",
     value: "Show all downloads status",
