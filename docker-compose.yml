@@ -9,21 +9,24 @@ services:
     container_name: frontend
     ports:
       - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: always
 
   backend:
     build:
-      context: ./backend
-      args:
-        ENVIRONMENT: ${ENVIRONMENT}
+      context: ./backend-python
     container_name: backend
+    env_file:
+      - ./backend/.env.dev
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
       interval: 30s
       timeout: 5s
       retries: 3
