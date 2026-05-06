@@ -9,7 +9,7 @@ import time
 from typing import Optional
 
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
 from platforms import HANDLERS, get_handler_for_url
@@ -51,7 +51,7 @@ BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0 Safari/537.36"
+        "Chrome/122.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml",
@@ -68,13 +68,14 @@ def log_timing(label: str, start: float) -> float:
 
 
 def is_blocked_page(html: str) -> bool:
+    if len(html) > 10000:
+        return False
+
     blocked_markers = [
-        "captcha",
         "Enter the characters you see below",
         "Robot Check",
         "Sorry, we just need to make sure",
         "Access denied",
-        "enable javascript",
         "request could not be satisfied",
     ]
 
@@ -88,6 +89,14 @@ def is_blocked_page(html: str) -> bool:
 
 def supported_platform_names() -> list[str]:
     return sorted({handler.name for handler in HANDLERS})
+
+
+def get_handler_for_platform(platform: str):
+    normalized = (platform or "").strip().lower()
+    for handler in HANDLERS:
+        if handler.name == normalized:
+            return handler
+    return None
 
 
 # =========================================================
@@ -127,51 +136,72 @@ def scrape_product(request: ScrapeProductRequest):
     except Exception:
         logger.exception("Pre-fetch setup failed for platform: %s", handler.name)
 
-    for attempt in range(2):  # retry once
-        logger.info("Fetch attempt %s for platform=%s", attempt + 1, handler.name)
+    last_error = "Blocked or unable to scrape after retries"
+    fetch_urls = handler.fetch_urls(url)
 
-        try:
-            start = time.time()
-            response = session.get(url, headers=request_headers, timeout=10)
-            fetch_time = log_timing("HTTP fetch", start)
-
-            logger.info("HTTP status: %s", response.status_code)
-            if response.status_code != 200:
-                if response.status_code in (403, 429, 503):
-                    time.sleep(0.75 + random.random())
-                logger.warning("Non-200 response, retrying")
-                continue
-
-            if is_blocked_page(response.text):
-                logger.warning("Blocked page detected, backing off")
-                time.sleep(1 + random.random())
-                continue
-
-            parsed = handler.extract_product_data(response.text)
-            parsed.setdefault("timings", {})
-            parsed["timings"]["fetch"] = fetch_time
-            parsed["timings"]["pincode"] = pincode_timing
-            parsed["timings"]["total"] = round(time.time() - total_start, 3)
-            parsed["attempt"] = attempt + 1
-            parsed["platform"] = handler.name
-            parsed["domain"] = domain
-            parsed["pincode"] = pincode
-            parsed["pincode_applied"] = pincode_applied
-
+    for fetch_url in fetch_urls:
+        for attempt in range(2):  # retry once per URL variant
             logger.info(
-                "Scrape completed: platform=%s status=%s price=%s",
+                "Fetch attempt %s for platform=%s url=%s",
+                attempt + 1,
                 handler.name,
-                parsed.get("status"),
-                parsed.get("price"),
+                fetch_url,
             )
-            return parsed
-        except Exception:
-            logger.exception("Unexpected error on attempt %s", attempt + 1)
+
+            try:
+                if handler.name == "flipkart":
+                    session.cookies.clear()
+
+                start = time.time()
+                response = session.get(fetch_url, headers=request_headers, timeout=10)
+                fetch_time = log_timing("HTTP fetch", start)
+
+                logger.info("HTTP status: %s", response.status_code)
+                if response.status_code != 200:
+                    last_error = f"Non-200 response from scraper target: {response.status_code}"
+                    if response.status_code in (403, 429, 503):
+                        time.sleep(0.75 + random.random())
+                    logger.warning("Non-200 response, retrying")
+                    continue
+
+                if is_blocked_page(response.text):
+                    last_error = "Blocked page detected by target site"
+                    logger.warning("Blocked page detected, backing off")
+                    time.sleep(0.75 + random.random())
+                    continue
+
+                parsed = handler.extract_product_data(response.text)
+                if parsed.get("status") == "failure":
+                    last_error = parsed.get("error") or "Unable to parse product data"
+                    logger.warning("Parse failed for url=%s: %s", fetch_url, last_error)
+                    continue
+
+                parsed.setdefault("timings", {})
+                parsed["timings"]["fetch"] = fetch_time
+                parsed["timings"]["pincode"] = pincode_timing
+                parsed["timings"]["total"] = round(time.time() - total_start, 3)
+                parsed["attempt"] = attempt + 1
+                parsed["platform"] = handler.name
+                parsed["domain"] = domain
+                parsed["requested_url"] = url
+                parsed["fetched_url"] = response.url or fetch_url
+                parsed["pincode"] = pincode
+                parsed["pincode_applied"] = pincode_applied
+
+                logger.info(
+                    "Scrape completed: platform=%s status=%s price=%s",
+                    handler.name,
+                    parsed.get("status"),
+                    parsed.get("price"),
+                )
+                return parsed
+            except Exception:
+                logger.exception("Unexpected error on attempt %s", attempt + 1)
 
     logger.error("Scraping failed after all retries for platform=%s", handler.name)
     return {
         "status": "failure",
-        "error": "Blocked or unable to scrape after retries",
+        "error": last_error,
         "timings": {
             "pincode": pincode_timing,
             "total": round(time.time() - total_start, 3),
@@ -181,6 +211,53 @@ def scrape_product(request: ScrapeProductRequest):
         "pincode": pincode,
         "pincode_applied": pincode_applied,
     }
+
+
+@app.get("/search")
+@app.get("/v2/search")
+def search_products(query: str = Query(..., min_length=1), platform: str = Query(...)):
+    handler = get_handler_for_platform(platform)
+    if not handler:
+        return {
+            "error": (
+                f"Unsupported platform: {platform}. "
+                f"Supported platforms: {', '.join(supported_platform_names())}"
+            ),
+            "results": [],
+        }
+
+    normalized_query = query.strip()
+    search_start = time.time()
+    logger.info("Incoming search request: platform=%s query=%s", handler.name, normalized_query)
+
+    try:
+        request_headers = handler.request_headers(BASE_HEADERS, f"https://www.{handler.name}.com/", None)
+        results = handler.search_products(session, request_headers, normalized_query)
+        return {
+            "platform": handler.name,
+            "query": normalized_query,
+            "results": results,
+            "time_taken": round(time.time() - search_start, 2),
+        }
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        logger.warning("Search upstream request failed: platform=%s status=%s", handler.name, status_code)
+        return {
+            "platform": handler.name,
+            "query": normalized_query,
+            "results": [],
+            "error": f"Search upstream returned {status_code or 'an error'}",
+            "time_taken": round(time.time() - search_start, 2),
+        }
+    except Exception as exc:
+        logger.exception("Search failed: platform=%s", handler.name)
+        return {
+            "platform": handler.name,
+            "query": normalized_query,
+            "results": [],
+            "error": str(exc),
+            "time_taken": round(time.time() - search_start, 2),
+        }
 
 
 # =========================================================

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 import uuid
 from html import escape
 from datetime import datetime, timedelta, timezone
@@ -250,6 +251,29 @@ def get_arr_json(method: str, url: str, api_key: str, **kwargs) -> Any:
     return res.json()
 
 
+def wait_for_sonarr_series_ready(base: str, api_key: str, series_id: int, requested_seasons: List[int]) -> Dict[str, Any]:
+    deadline = time.monotonic() + 30
+    last_series: Dict[str, Any] = {}
+    requested = set(sorted_unique_positive_numbers(requested_seasons))
+    while time.monotonic() < deadline:
+        series = get_arr_json("GET", f"{base}/series/{series_id}", api_key)
+        if isinstance(series, dict):
+            last_series = series
+            seasons = [season for season in series.get("seasons") or [] if isinstance(season, dict)]
+            available_seasons = {parse_int(season.get("seasonNumber")) for season in seasons}
+            has_requested_seasons = not requested or requested.issubset(available_seasons)
+            has_episode_metadata = any(
+                (parse_int((season.get("statistics") or {}).get("episodeCount")) or 0) > 0
+                for season in seasons
+            )
+            if seasons and has_requested_seasons and has_episode_metadata:
+                return series
+        time.sleep(1.5)
+    if last_series:
+        return last_series
+    raise RuntimeError("Sonarr series was added but could not be fetched for search")
+
+
 def delete_show_seasons(series_id: int, seasons: List[int], delete_files: bool) -> Dict[str, Any]:
     base = base_url("SONARR_API_URL")
     key = os.getenv("SONARR_API_KEY") or ""
@@ -380,6 +404,7 @@ def queue_media_download(request_record: Dict[str, Any]) -> None:
     series = get_arr_json("GET", f"{base}/series", key)
     existing = next((item for item in series if isinstance(item, dict) and item.get("tvdbId") == tvdb_id), None) if isinstance(series, list) else None
     series_id = existing.get("id") if existing else None
+    requested_seasons = sorted_unique_positive_numbers(request_record.get("season") or [])
     if series_id is None:
         payload = {
             "title": lookup.get("title"),
@@ -398,8 +423,13 @@ def queue_media_download(request_record: Dict[str, Any]) -> None:
         series_id = added.get("id") if isinstance(added, dict) else None
     if not series_id:
         raise RuntimeError("Unable to add this show")
-    for season in sorted_unique_positive_numbers(request_record.get("season") or []):
-        get_arr_json("POST", f"{base}/command", key, json={"name": "SeasonSearch", "seasonNumber": season, "seriesId": series_id})
+    if series_id is not None:
+        wait_for_sonarr_series_ready(base, key, int(series_id), requested_seasons)
+    if requested_seasons:
+        for season in requested_seasons:
+            get_arr_json("POST", f"{base}/command", key, json={"name": "SeasonSearch", "seasonNumber": season, "seriesId": series_id})
+    else:
+        get_arr_json("POST", f"{base}/command", key, json={"name": "SeriesSearch", "seriesId": series_id})
 
 
 def fetch_queue_records(media_type: str) -> List[Dict[str, Any]]:
@@ -716,4 +746,3 @@ def create_approved_request_from_automation(user_id: str, payload: Dict[str, Any
     except Exception:
         record["notification"] = "failed"
     return record
-

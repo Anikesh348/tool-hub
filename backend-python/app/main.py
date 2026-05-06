@@ -1,14 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.middlewares.moviehub_access import moviehub_access_middleware
 from app.routes import health_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, product_routes, user_routes, yt_download_routes
+from app.services.schedule import price_check_scheduler
 from app.utils.responses import error
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    price_check_scheduler.start()
+    try:
+        yield
+    finally:
+        await price_check_scheduler.stop()
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="ToolHub Backend Python", version="1.0.0")
+    app = FastAPI(title="ToolHub Backend Python", version="1.0.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

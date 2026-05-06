@@ -775,7 +775,10 @@ export const MovieHub: React.FC = () => {
     if (!deleteAvailableData) return;
     setDeletingAvailableMediaId(null);
     if (deleteAvailableData.status >= 200 && deleteAvailableData.status < 300) {
-      addNotification("Media deleted successfully", "success");
+      addNotification(
+        deleteAvailableData.body?.response?.message || "Media deleted successfully",
+        "success",
+      );
       loadAvailableMedia(availableMediaType);
       return;
     }
@@ -1203,23 +1206,29 @@ export const MovieHub: React.FC = () => {
   );
 
   const handleDeleteAvailableMedia = useCallback(
-    (item: MovieHubAvailableMedia) => {
+    (item: MovieHubAvailableMedia, season?: number) => {
       const mediaId =
         item.mediaType === "MOVIES" ? item.radarrId : item.sonarrId;
       if (!mediaId) {
         addNotification("Unable to determine library item id", "error");
         return;
       }
+      const isSeasonDelete = item.mediaType === "SHOWS" && season !== undefined;
       const confirmed = window.confirm(
-        `Delete ${item.title} from MovieHub and remove the files from disk?`,
+        isSeasonDelete
+          ? `Delete season ${season} of ${item.title} from MovieHub and remove the season files from disk?`
+          : `Delete ${item.title} from MovieHub and remove the files from disk?`,
       );
       if (!confirmed) return;
-      const deleteKey = `${item.mediaType}-${mediaId}`;
+      const deleteKey = isSeasonDelete
+        ? `${item.mediaType}-${mediaId}-S${season}`
+        : `${item.mediaType}-${mediaId}`;
       setDeletingAvailableMediaId(deleteKey);
       const { url, options } = MovieHubService.deleteAvailableMedia({
         id: mediaId,
         mediaType: item.mediaType,
         deleteFiles: true,
+        ...(isSeasonDelete ? { season: [season] } : {}),
       });
       fetchDeleteAvailableMedia(url, options);
     },

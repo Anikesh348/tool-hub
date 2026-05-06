@@ -13,6 +13,19 @@ const amazonIcon =
 const flipkartIcon =
   "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/flipkart-icon.png";
 
+const platformLabels: Record<string, string> = {
+  amazon: "Amazon",
+  flipkart: "Flipkart",
+  myntra: "Myntra",
+  nykaa: "Nykaa",
+  ajio: "Ajio",
+  tatacliq: "Tata CLiQ",
+  croma: "Croma",
+  meesho: "Meesho",
+};
+
+const getPlatformKey = (productId: string): string => productId.split("_")[0] || "product";
+
 interface Product {
   productImageUrl: string;
   productTitle: string;
@@ -109,8 +122,8 @@ const Dashboard: React.FC = () => {
             </h1>
             <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
               View real-time price changes and analytics for all your tracked
-              products. Manage price drops and price history across Amazon and
-              Flipkart.
+              products. Manage price drops and price history across popular
+              ecommerce stores.
             </p>
           </div>
 
@@ -139,24 +152,22 @@ const Dashboard: React.FC = () => {
                       <div className="w-6 h-6 rounded-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
                         <img
                           src={
-                            product.productId.startsWith("amazon")
+                            getPlatformKey(product.productId) === "amazon"
                               ? amazonIcon
-                              : product.productId.startsWith("flipkart")
+                              : getPlatformKey(product.productId) === "flipkart"
                               ? flipkartIcon
                               : undefined
                           }
                           alt="platform"
                           className={`w-4 h-4 ${
-                            product.productId.startsWith("amazon")
+                            getPlatformKey(product.productId) === "amazon"
                               ? "dark:invert"
                               : ""
                           }`}
                         />
                       </div>
                       <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                        {product.productId.startsWith("amazon")
-                          ? "Amazon"
-                          : "Flipkart"}
+                        {platformLabels[getPlatformKey(product.productId)] || "Product"}
                       </span>
                     </div>
 

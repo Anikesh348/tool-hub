@@ -274,6 +274,7 @@ export const MovieHubService = {
     mediaType: MovieHubMediaType;
     deleteFiles?: boolean;
     addImportExclusion?: boolean;
+    season?: number[];
   }) => {
     return {
       url: `${BASE_URL}/v2/admin/moviehub/available/delete`,

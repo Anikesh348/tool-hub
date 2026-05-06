@@ -10,6 +10,25 @@ import { PromptModel } from "./PromptModal";
 import { useNavigate } from "react-router-dom";
 import { BarChart3 } from "lucide-react";
 import { useNotification } from "../context/NotificationContext";
+import type { SearchPlatform } from "../apis/search/search";
+
+const searchPlatforms: { id: SearchPlatform; label: string; tone: string }[] = [
+  { id: "amazon", label: "Amazon", tone: "yellow" },
+  { id: "flipkart", label: "Flipkart", tone: "blue" },
+  { id: "myntra", label: "Myntra", tone: "pink" },
+  { id: "nykaa", label: "Nykaa", tone: "rose" },
+  { id: "ajio", label: "Ajio", tone: "indigo" },
+  { id: "tatacliq", label: "Tata CLiQ", tone: "red" },
+  { id: "croma", label: "Croma", tone: "green" },
+  { id: "meesho", label: "Meesho", tone: "purple" },
+  { id: "shopsy", label: "Shopsy", tone: "blue" },
+  { id: "snapdeal", label: "Snapdeal", tone: "red" },
+  { id: "firstcry", label: "FirstCry", tone: "yellow" },
+  { id: "bigbasket", label: "BigBasket", tone: "green" },
+  { id: "reliancedigital", label: "Reliance Digital", tone: "indigo" },
+  { id: "vijaysales", label: "Vijay Sales", tone: "rose" },
+  { id: "jiomart", label: "JioMart", tone: "purple" },
+];
 
 const PriceTracker = () => {
   const { isAuthenticated, updateSearchState, searchResults } = useAuth();
@@ -27,9 +46,7 @@ const PriceTracker = () => {
   const [viewMode, setViewMode] = useState<"search" | "paste">("paste");
   const [productUrl, setProductUrl] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
-  const [selectedPlatform, setSelectedPlatform] = useState<
-    "amazon" | "flipkart" | ""
-  >("");
+  const [selectedPlatform, setSelectedPlatform] = useState<SearchPlatform | "">("");
 
   const [modelInfo, setModelInfo] = useState({
     modelType: "",
@@ -118,8 +135,8 @@ const PriceTracker = () => {
             Amazon Price Drop Tracker - Real-Time Price Monitoring
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-            Track price drops on Amazon and Flipkart. Paste product URLs or
-            search to monitor prices in real-time and receive instant
+            Track price drops across popular ecommerce sites. Paste product URLs
+            or search to monitor prices in real-time and receive instant
             notifications when prices drop. Your ultimate price tracking tool.
           </p>
         </header>
@@ -166,37 +183,25 @@ const PriceTracker = () => {
               <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-3">
                 Select Platform
               </p>
-              <div className="flex justify-center gap-3">
-                <button
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-xs ${
-                    selectedPlatform === "amazon"
-                      ? "border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 shadow-md"
-                      : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                  }`}
-                  onClick={() => setSelectedPlatform("amazon")}
-                >
-                  <span className="w-4 h-4 flex items-center justify-center font-bold text-yellow-600 dark:text-yellow-400 text-sm">
-                    A
-                  </span>
-                  <span className="font-medium text-gray-700 dark:text-gray-300">
-                    Amazon
-                  </span>
-                </button>
-                <button
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-xs ${
-                    selectedPlatform === "flipkart"
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md"
-                      : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                  }`}
-                  onClick={() => setSelectedPlatform("flipkart")}
-                >
-                  <span className="w-4 h-4 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 text-sm">
-                    F
-                  </span>
-                  <span className="font-medium text-gray-700 dark:text-gray-300">
-                    Flipkart
-                  </span>
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {searchPlatforms.map((platform) => (
+                  <button
+                    key={platform.id}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-xs ${
+                      selectedPlatform === platform.id
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md"
+                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    }`}
+                    onClick={() => setSelectedPlatform(platform.id)}
+                  >
+                    <span className="w-4 h-4 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 text-sm">
+                      {platform.label.charAt(0)}
+                    </span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {platform.label}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -242,13 +247,14 @@ const PriceTracker = () => {
               </label>
               <input
                 type="text"
-                placeholder="https://www.amazon.com/product/... or https://www.flipkart.com/..."
+                placeholder="Paste Amazon, Flipkart, Myntra, Nykaa, Ajio, Tata CLiQ, Croma, or Meesho URL"
                 value={productUrl}
                 onChange={(e) => setProductUrl(e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Supported: Amazon.in, Flipkart.com
+                Supported: Amazon, Flipkart, Myntra, Nykaa, Ajio, Tata CLiQ,
+                Croma, Meesho
               </p>
             </div>
 

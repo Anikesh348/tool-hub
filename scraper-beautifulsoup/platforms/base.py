@@ -30,6 +30,12 @@ class PlatformHandler(ABC):
     ) -> dict[str, Any]:
         return {"pincode_applied": False, "pincode_timing": 0.0}
 
+    def fetch_urls(self, url: str) -> list[str]:
+        return [url]
+
+    def search_products(self, session: Session, headers: dict[str, str], query: str) -> list[dict[str, Any]]:
+        return []
+
     @abstractmethod
     def extract_product_data(self, html: str) -> dict[str, Any]:
         pass

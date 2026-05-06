@@ -12,14 +12,48 @@ import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.core.config import MEDIA_REQUESTS_COLLECTION, moviehub_conversations
+from app.core.config import MEDIA_REQUESTS_COLLECTION, MOVIEHUB_ACCESS_REQUESTS_COLLECTION, MOVIEHUB_ACCESS_USERS_COLLECTION, YT_DOWNLOADS_COLLECTION, moviehub_conversations
 from app.middlewares.auth import admin_user, current_user
-from app.services.mongo import find
+from app.services.mongo import col, delete_one_or_404, find, find_one, insert, update_one_or_404
 from app.services.moviehub_automation import *
+from app.services import yt_download as yt_service
 from app.utils.http import base_url
-from app.utils.responses import error, success
+from app.utils.responses import error, now_iso, success
 
 router = APIRouter()
+
+CHAT_INTENTS = {
+    "DOWNLOAD_MEDIA",
+    "RAISE_REQUEST",
+    "CHECK_MEDIA_EXISTS",
+    "SEARCH_MEDIA",
+    "LIST_AVAILABLE",
+    "DELETE_MEDIA",
+    "CHECK_DOWNLOAD_STATUS",
+    "LIST_DOWNLOADS",
+    "LIST_REQUESTS",
+    "APPROVE_REQUEST",
+    "DELETE_REQUEST",
+    "PAUSE_DOWNLOADS",
+    "RESUME_DOWNLOADS",
+    "DELETE_DOWNLOAD",
+    "ACCESS_REQUEST",
+    "ACCESS_LIST_REQUESTS",
+    "ACCESS_APPROVE_REQUEST",
+    "ACCESS_REJECT_REQUEST",
+    "ACCESS_LIST_USERS",
+    "ACCESS_DELETE_USER",
+    "ACCESS_RESEND_PASSWORD",
+    "ACCESS_CONFIRM_PASSWORD",
+    "YT_ADD_DOWNLOAD",
+    "YT_GET_FORMATS",
+    "YT_START_DOWNLOAD",
+    "YT_LIST_REQUESTS",
+    "YT_STATUS",
+    "YT_DELETE_REQUEST",
+    "YT_LIST_LIBRARY",
+    "YT_DELETE_LIBRARY_ITEM",
+}
 
 def chat_success(payload: Dict[str, Any]) -> Dict[str, Any]:
     return success({key: value for key, value in payload.items() if value is not None})
@@ -46,9 +80,33 @@ def reset_chat_context(context: Dict[str, Any]) -> None:
 
 def resolve_chat_intent(text: str) -> str:
     checks = [
-        ("CHECK_DOWNLOAD_STATUS", r"(?i)\b(status|progress|time left|eta|how much time)\b"),
-        ("LIST_DOWNLOADS", r"(?i)\b(what.*downloading|list downloads|show downloads)\b"),
+        ("YT_ADD_DOWNLOAD", r"(?i)\b(youtube|yt)\b.*\b(download|add|queue)\b"),
+        ("YT_GET_FORMATS", r"(?i)\b(youtube|yt)\b.*\b(format|formats|quality|qualities)\b"),
+        ("YT_START_DOWNLOAD", r"(?i)\b(youtube|yt)\b.*\b(start|run|process)\b"),
+        ("YT_DELETE_LIBRARY_ITEM", r"(?i)\b(youtube|yt)\b.*\b(delete|remove)\b.*\b(library|item|video)\b"),
+        ("YT_DELETE_REQUEST", r"(?i)\b(youtube|yt)\b.*\b(delete|remove|cancel)\b.*\b(request|queue)\b"),
+        ("YT_LIST_LIBRARY", r"(?i)\b(youtube|yt)\b.*\b(library|items|files|videos)\b"),
+        ("YT_LIST_REQUESTS", r"(?i)\b(youtube|yt)\b.*\b(requests|queue|downloads)\b"),
+        ("YT_STATUS", r"(?i)\b(youtube|yt)\b.*\b(status|progress)\b"),
+        ("ACCESS_CONFIRM_PASSWORD", r"(?i)\b(confirm|done)\b.*\b(password|temporary password|reset)\b"),
+        ("ACCESS_RESEND_PASSWORD", r"(?i)\b(resend|send)\b.*\b(password|temporary password)\b"),
+        ("ACCESS_DELETE_USER", r"(?i)\b(delete|remove)\b.*\b(moviehub user|access user|jellyfin user)\b"),
+        ("ACCESS_APPROVE_REQUEST", r"(?i)\bapprove\b.*\b(access|moviehub access|jellyfin)\b"),
+        ("ACCESS_REJECT_REQUEST", r"(?i)\b(reject|deny)\b.*\b(access|moviehub access|jellyfin)\b"),
+        ("ACCESS_LIST_USERS", r"(?i)\b(list|show)\b.*\b(access users|moviehub users|jellyfin users)\b"),
+        ("ACCESS_LIST_REQUESTS", r"(?i)\b(list|show)\b.*\b(access requests|moviehub access requests|jellyfin requests)\b"),
+        ("ACCESS_REQUEST", r"(?i)\b(request|ask for|need)\b.*\b(access|moviehub access|jellyfin)\b"),
+        ("APPROVE_REQUEST", r"(?i)\bapprove\b.*\b(media request|request)\b"),
+        ("DELETE_REQUEST", r"(?i)\b(delete|remove|cancel)\b.*\b(media request|request)\b"),
+        ("LIST_REQUESTS", r"(?i)\b(list|show|my|all)\b.*\b(media requests|movie requests|requests)\b"),
+        ("PAUSE_DOWNLOADS", r"(?i)\b(pause|stop|disable)\b.*\b(download|downloads|automation)\b"),
+        ("RESUME_DOWNLOADS", r"(?i)\b(resume|start|enable)\b.*\b(download|downloads|automation)\b"),
+        ("DELETE_DOWNLOAD", r"(?i)\b(delete|remove|cancel)\b.*\b(download|queue item|queue)\b"),
+        ("LIST_DOWNLOADS", r"(?i)\b(what.*downloading|what.*downloads?|currently downloading|downloading now|active downloads?|list downloads|show downloads|download queue)\b"),
+        ("CHECK_DOWNLOAD_STATUS", r"(?i)\b(downloaded|download status|status|progress|time left|eta|how much time|finished|complete)\b"),
         ("DELETE_MEDIA", r"(?i)\b(delete|remove|uninstall|erase)\b.+\b(movie|movies|show|series|tv|media|library)\b"),
+        ("LIST_AVAILABLE", r"(?i)\b(list|show)\b.*\b(available|library)\b.*\b(movie|movies|show|shows|series|tv)\b"),
+        ("SEARCH_MEDIA", r"(?i)\b(search|lookup|look\s*up|find)\b.+\b(movie|movies|show|series|tv)\b"),
         ("CHECK_MEDIA_EXISTS", r"(?i)(\bdoes\b.+\bexist\b|\b(is|check|find|search|lookup|look\s*up)\b.+\b(movie|movies|show|series|tv)\b)"),
         ("RAISE_REQUEST", r"(?i)\b(request|raise request|submit request|ask admin)\b"),
         ("DOWNLOAD_MEDIA", r"(?i)\b(download|add|get|grab)\b"),
@@ -87,6 +145,41 @@ def openai_json(prompt: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def openai_text(prompt: str, max_tokens: int = 220) -> Optional[str]:
+    url = os.getenv("OPEN_AI_URL") or "https://api.openai.com/v1/chat/completions"
+    key = os.getenv("OPEN_AI_API_KEY") or ""
+    if not key:
+        return None
+    try:
+        res = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o-mini",
+                "temperature": 0,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You summarize MovieHub download status for end users. "
+                            "Use only the supplied facts. Do not invent titles, progress, ETA, or completion state."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=45,
+        )
+        if res.status_code < 200 or res.status_code >= 300:
+            return None
+        content = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = str(content or "").strip()
+        return content or None
+    except Exception:
+        return None
+
+
 def infer_media_type(text: str) -> str:
     lowered = (text or "").lower()
     if re.search(r"\b(show|shows|series|tv)\b", lowered):
@@ -117,7 +210,7 @@ def infer_seasons(text: str) -> List[int]:
 
 
 def cleanup_extracted_title(text: str) -> str:
-    title = re.sub(r"(?i)\b(download|downloads|downloading|add|get|grab|request|raise|submit|ask admin|check|find|search|lookup|look up|delete|remove|exists?|status|progress|eta|time left|server|library|movie|movies|show|shows|series|tv|in|on|from|the|a|an|my|all|what|are|is|please|if|whether|of)\b", " ", text or "")
+    title = re.sub(r"(?i)\b(download|downloads|downloaded|downloading|add|get|grab|request|raise|submit|ask admin|check|find|search|lookup|look up|delete|remove|exists?|status|progress|eta|time left|server|library|queue|movie|movies|show|shows|series|tv|in|on|from|the|a|an|my|all|what|are|is|has|have|was|were|this|that|these|those|now|currently|active|please|if|whether|of|finished|complete|completed)\b", " ", text or "")
     title = re.sub(r"(?i)\b(720p|1080p|1080|720|4k|2160p|uhd|hd|season|s)\s*\d*\b", " ", title)
     title = re.sub(r"[^a-zA-Z0-9:'&. -]+", " ", title)
     title = re.sub(r"\s+", " ", title).strip(" -")
@@ -174,6 +267,90 @@ def parse_query_input(user_input: str, include_scope: bool = False) -> Dict[str,
     if include_scope:
         result["scope"] = "all" if re.search(r"(?i)\b(all|everyone|team|users)\b", user_input or "") or str(query.get("scope")).lower() == "all" else "mine"
     return result
+
+
+def is_generic_download_title(title: str) -> bool:
+    normalized = normalize_title_for_match(title)
+    if not normalized:
+        return True
+    generic_titles = {
+        "download",
+        "downloads",
+        "downloading",
+        "downloadingnow",
+        "currentlydownloading",
+        "activedownload",
+        "activedownloads",
+        "downloadqueue",
+        "queue",
+        "now",
+        "this",
+        "that",
+        "thisshow",
+        "thatshow",
+        "thismovie",
+        "thatmovie",
+    }
+    return normalized in generic_titles
+
+
+def looks_like_queue_wide_download_question(user_input: str) -> bool:
+    text = user_input or ""
+    if re.search(r"(?i)\b(is|has|have|was|were)\b.+\b(downloaded|finished|complete|completed)\b", text):
+        return False
+    return bool(re.search(
+        r"(?i)(^\s*(what|which)\b.*\b(download(ing|s)?|queue)\b|\b(currently downloading|downloading now|active downloads?|download queue|list downloads|show downloads)\b)",
+        text,
+    ))
+
+
+def explicit_download_media_type(user_input: str, current_media_type: str) -> str:
+    text = user_input or ""
+    if re.search(r"(?i)\b(movie|movies|film)\b", text):
+        return "MOVIES"
+    if re.search(r"(?i)\b(shows|series|tv)\b", text):
+        return "SHOWS"
+    if re.search(r"(?i)^\s*show\s+(active|all|current|currently|downloads?|download queue)\b", text):
+        return "UNKNOWN"
+    return current_media_type
+
+
+def parse_download_query_input(user_input: str, intent: str) -> Dict[str, Any]:
+    prompt = (
+        "Classify this MovieHub download-status prompt before extracting a title. "
+        "Return JSON: {\"query\":{\"action\":\"ACTIVE_QUEUE|DOWNLOADED_CHECK|STATUS_REPORT\","
+        "\"title\":string,\"mediaType\":\"MOVIES|SHOWS|UNKNOWN\",\"scope\":\"mine|all\"}}. "
+        "Use ACTIVE_QUEUE for queue-wide questions like 'what is downloading now'. "
+        "Only set title when the user explicitly names a movie or show; never use phrases like "
+        "'downloading now', 'active downloads', 'download queue', 'this show', or 'this movie' as a title. "
+        f"User input: {user_input}"
+    )
+    parsed = openai_json(prompt) or {}
+    llm_query = parsed.get("query") if isinstance(parsed.get("query"), dict) else {}
+    fallback = parse_query_input(user_input, include_scope=True)
+
+    query = {
+        "title": str(llm_query.get("title") or fallback.get("title") or "").strip(),
+        "mediaType": parse_media_type(llm_query.get("mediaType")) if llm_query.get("mediaType") else fallback.get("mediaType", "UNKNOWN"),
+        "scope": "all" if str(llm_query.get("scope") or fallback.get("scope")).lower() == "all" else "mine",
+        "action": str(llm_query.get("action") or "").upper(),
+    }
+    if query["mediaType"] == "UNKNOWN":
+        query["mediaType"] = fallback.get("mediaType", "UNKNOWN")
+    if not query["action"]:
+        if looks_like_queue_wide_download_question(user_input) or intent == "LIST_DOWNLOADS":
+            query["action"] = "ACTIVE_QUEUE"
+        elif is_downloaded_question(user_input):
+            query["action"] = "DOWNLOADED_CHECK"
+        else:
+            query["action"] = "STATUS_REPORT"
+
+    if query["action"] == "ACTIVE_QUEUE" and (looks_like_queue_wide_download_question(user_input) or is_generic_download_title(query["title"])):
+        query["title"] = ""
+        query["mediaType"] = explicit_download_media_type(user_input, query["mediaType"])
+    elif is_generic_download_title(query["title"]):
+        query["title"] = ""
+    return query
 
 
 def build_selection_prompt(options: List[Dict[str, Any]], media_type: str) -> str:
@@ -290,6 +467,35 @@ def handle_exists_chat(context: Dict[str, Any], user_input: str) -> Dict[str, An
     return {"message": "\n".join(lines), "options": options}
 
 
+def handle_search_chat(context: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+    query = parse_query_input(user_input)
+    if query["mediaType"] == "UNKNOWN":
+        return {"message": "Should I search movies or shows?"}
+    if not query["title"]:
+        return {"message": "Which title should I search for?"}
+    options = lookup_options(query["title"], query["mediaType"], 10)
+    context["completed"] = True
+    if not options:
+        return {"message": f"No {query['mediaType'].lower()} results found for \"{query['title']}\"."}
+    return {"message": build_selection_prompt(options, query["mediaType"]), "options": build_ui_options(options)}
+
+
+def handle_available_list_chat(context: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+    media_type = infer_media_type(user_input)
+    if media_type == "UNKNOWN":
+        return {"message": "Should I list available movies or shows?"}
+    items = fetch_arr_available(media_type)
+    context["completed"] = True
+    if not items:
+        return {"message": f"No available {media_type.lower()} found."}
+    lines = [f"Available {media_type.lower()}: {len(items)}"]
+    for index, item in enumerate(items[:20], start=1):
+        year = f" ({item.get('year')})" if item.get("year") else ""
+        seasons = f" | {format_available_seasons(item)}" if media_type == "SHOWS" else ""
+        lines.append(f"{index}. {item.get('title', 'Unknown')}{year}{seasons}")
+    return {"message": "\n".join(lines)}
+
+
 def handle_delete_chat(context: Dict[str, Any], user_input: str) -> Dict[str, Any]:
     if context.get("awaitingSelection"):
         options = context.get("selectionOptions") or []
@@ -333,6 +539,43 @@ def filter_downloads_for_chat(downloads: List[Dict[str, Any]], title: str, media
     return result
 
 
+def download_item_facts(item: Dict[str, Any]) -> Dict[str, Any]:
+    facts = {
+        "title": item.get("title") or "Unknown title",
+        "mediaType": parse_media_type(item.get("mediaType")),
+        "status": item.get("status"),
+        "state": item.get("trackedDownloadState"),
+        "progressPercent": item.get("progressPercent"),
+        "timeLeft": item.get("timeleft"),
+        "downloadedAt": item.get("downloadedAt"),
+        "year": item.get("year"),
+    }
+    if facts["mediaType"] == "SHOWS":
+        facts["seasons"] = sorted_unique_positive_numbers(item.get("seasonNumbers") or item.get("season") or [])
+    return {key: value for key, value in facts.items() if value not in (None, "", [], "UNKNOWN")}
+
+
+def summarize_download_response(user_input: str, query: Dict[str, Any], scope: str, active: List[Dict[str, Any]], completed: List[Dict[str, Any]], fallback: str) -> str:
+    facts = {
+        "userQuestion": user_input,
+        "scope": scope,
+        "query": query,
+        "authoritativeAnswer": fallback,
+        "activeCount": len(active),
+        "completedCount": len(completed),
+        "activeDownloads": [download_item_facts(item) for item in active[:15]],
+        "completedDownloads": [download_item_facts(item) for item in completed[:15]],
+    }
+    prompt = (
+        "Summarize these MovieHub download facts as a concise chat answer. "
+        "Treat authoritativeAnswer as the source of truth for yes/no downloaded checks. "
+        "Answer the user's question directly. Mention warnings or stalled/problem states when present. "
+        "If nothing matches, say that plainly. Keep it under 4 short sentences and avoid raw table/list syntax.\n\n"
+        f"Facts JSON:\n{json.dumps(facts, default=str)}"
+    )
+    return openai_text(prompt) or fallback
+
+
 def build_download_summary(scope: str, title: str, media_type: str, active: List[Dict[str, Any]], completed: List[Dict[str, Any]]) -> str:
     lines = [f"Download status report", f"Scope: {scope}"]
     if title:
@@ -358,9 +601,78 @@ def build_download_summary(scope: str, title: str, media_type: str, active: List
     return "\n".join(lines)
 
 
-def handle_status_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str]) -> Dict[str, Any]:
-    query = parse_query_input(user_input, include_scope=True)
-    scope = "all" if user.get("role", "").upper() == "ADMIN" and query.get("scope") == "all" else "mine"
+def build_active_downloads_summary(scope: str, active: List[Dict[str, Any]], title: str, media_type: str) -> str:
+    if not active:
+        return "Nothing is actively downloading right now." if not title else f"No active downloads found for \"{title}\"."
+    lines = [f"Active downloads: {len(active)}", f"Scope: {scope}"]
+    if title:
+        lines.append(f"Title filter: {title}")
+    if media_type != "UNKNOWN":
+        lines.append(f"Media type filter: {media_type}")
+    for index, item in enumerate(active[:15], start=1):
+        progress = item.get("progressPercent")
+        progress_text = f" | progress={float(progress):.1f}%" if isinstance(progress, (int, float)) else ""
+        time_left = f" | timeLeft={item.get('timeleft')}" if item.get("timeleft") else ""
+        seasons = ""
+        if parse_media_type(item.get("mediaType")) == "SHOWS":
+            season_numbers = sorted_unique_positive_numbers(item.get("seasonNumbers") or [])
+            seasons = f" | seasons={format_seasons(season_numbers)}" if season_numbers else ""
+        lines.append(f"{index}. [{item.get('mediaType', 'UNKNOWN')}] {item.get('title', 'Unknown title')}{seasons} | status={item.get('status', 'unknown')} | state={item.get('trackedDownloadState', 'unknown')}{progress_text}{time_left}")
+    return "\n".join(lines)
+
+
+def is_active_download_question(user_input: str, intent: str) -> bool:
+    return intent == "LIST_DOWNLOADS" or bool(re.search(r"(?i)\b(what.*downloading|currently downloading|downloading now|active downloads?|download queue)\b", user_input or ""))
+
+
+def is_downloaded_question(user_input: str) -> bool:
+    return bool(re.search(r"(?i)\b(downloaded|finished|complete|completed)\b", user_input or ""))
+
+
+def build_downloaded_answer(title: str, media_type: str, seasons: List[int], active: List[Dict[str, Any]], completed: List[Dict[str, Any]]) -> str:
+    if not title:
+        return "Please share the exact movie or series title you want me to check."
+    live_matches = available_matches(title, media_type)
+    if not live_matches:
+        if active:
+            return f"No, \"{title}\" is not downloaded yet. It is currently downloading."
+        if completed:
+            return f"I found a completed request for \"{title}\", but the live library check did not find it downloaded right now."
+        suffix = " as a movie" if media_type == "MOVIES" else " as a series" if media_type == "SHOWS" else ""
+        return f"No, \"{title}\" is not downloaded{suffix}."
+
+    lines = []
+    for item in live_matches[:5]:
+        item_type = parse_media_type(item.get("mediaType"))
+        item_title = item.get("title") or title
+        year = f" ({item.get('year')})" if item.get("year") else ""
+        if item_type == "MOVIES":
+            lines.append(f"Yes, \"{item_title}\"{year} is downloaded.")
+            continue
+        available_seasons = sorted_unique_positive_numbers(item.get("availableSeasons") or [])
+        if seasons:
+            missing = [season for season in seasons if season not in available_seasons]
+            if not missing:
+                lines.append(f"Yes, \"{item_title}\"{year} has the requested season(s) downloaded: {format_seasons(seasons)}.")
+            elif len(missing) == len(seasons):
+                lines.append(f"No, \"{item_title}\"{year} does not have the requested season(s) downloaded. {format_available_seasons(item)}.")
+            else:
+                present = [season for season in seasons if season in available_seasons]
+                lines.append(f"Partially downloaded: \"{item_title}\"{year} has season(s) {format_seasons(present)}, missing {format_seasons(missing)}.")
+        elif available_seasons:
+            lines.append(f"Yes, \"{item_title}\"{year} has downloaded episodes. {format_available_seasons(item)}.")
+        else:
+            lines.append(f"Yes, \"{item_title}\"{year} has downloaded episodes, but season details are unavailable.")
+    return "\n".join(lines)
+
+
+def handle_status_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str], intent: str) -> Dict[str, Any]:
+    query = parse_download_query_input(user_input, intent)
+    if not query["title"]:
+        prior_title = str((context.get("mediaState") or {}).get("title") or "").strip()
+        if prior_title and query.get("action") != "ACTIVE_QUEUE":
+            query["title"] = prior_title
+    scope = "all" if user.get("role", "").upper() == "ADMIN" else "mine"
     include_all = scope == "all"
     active = combined_queue_records()
     if not include_all:
@@ -371,7 +683,267 @@ def handle_status_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
     active = filter_downloads_for_chat(active, query["title"], query["mediaType"])
     completed = filter_downloads_for_chat(completed, query["title"], query["mediaType"])
     context["completed"] = True
-    return {"message": build_download_summary(scope, query["title"], query["mediaType"], active, completed)}
+    if query.get("action") == "ACTIVE_QUEUE" or is_active_download_question(user_input, intent):
+        fallback = build_active_downloads_summary(scope, active, query["title"], query["mediaType"])
+        return {"message": summarize_download_response(user_input, query, scope, active, completed, fallback)}
+    if query.get("action") == "DOWNLOADED_CHECK" or is_downloaded_question(user_input):
+        fallback = build_downloaded_answer(query["title"], query["mediaType"], infer_seasons(user_input), active, completed)
+        return {"message": summarize_download_response(user_input, query, scope, active, completed, fallback)}
+    fallback = build_download_summary(scope, query["title"], query["mediaType"], active, completed)
+    return {"message": summarize_download_response(user_input, query, scope, active, completed, fallback)}
+
+
+def is_admin(user: Dict[str, str]) -> bool:
+    return user.get("role", "").upper() == "ADMIN"
+
+
+def require_admin_chat(user: Dict[str, str], context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if is_admin(user):
+        return None
+    context["completed"] = True
+    return {"message": "That MovieHub action is admin-only."}
+
+
+def first_uuid_or_token(text: str) -> str:
+    match = re.search(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", text or "", re.I)
+    if match:
+        return match.group(0)
+    match = re.search(r"(?i)\b(?:id|request|mapping|item|video)\s*[:#-]?\s*([A-Za-z0-9._-]{6,})\b", text or "")
+    return match.group(1) if match else ""
+
+
+def first_number(text: str) -> Optional[int]:
+    match = re.search(r"\b\d+\b", text or "")
+    return int(match.group(0)) if match else None
+
+
+def format_media_requests(records: List[Dict[str, Any]], include_user: bool) -> str:
+    if not records:
+        return "No media requests found."
+    lines = [f"Media requests: {len(records)}"]
+    for index, record in enumerate(records[:15], start=1):
+        seasons = ""
+        if parse_media_type(record.get("mediaType")) == "SHOWS":
+            seasons = f" | seasons={format_seasons(record.get('season') or [])}"
+        requester = f" | user={record.get('userEmail') or record.get('userName') or record.get('userId')}" if include_user else ""
+        lines.append(f"{index}. {record.get('title', 'Unknown title')} [{record.get('mediaType', 'UNKNOWN')}] | status={record.get('status', 'UNKNOWN')}{seasons}{requester} | id={record.get('requestId')}")
+    return "\n".join(lines)
+
+
+def handle_request_admin_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str], intent: str) -> Dict[str, Any]:
+    if intent == "LIST_REQUESTS":
+        include_all = is_admin(user) and re.search(r"(?i)\b(all|everyone|users|admin)\b", user_input or "")
+        query = {} if include_all else {"userId": user["userId"]}
+        context["completed"] = True
+        records = sorted(find(MEDIA_REQUESTS_COLLECTION, query), key=lambda r: r.get("createdAt", ""), reverse=True)
+        return {"message": format_media_requests(records, include_all)}
+    if intent == "APPROVE_REQUEST":
+        denied = require_admin_chat(user, context)
+        if denied:
+            return denied
+        request_id = first_uuid_or_token(user_input)
+        if not request_id:
+            return {"message": "Please provide the media request id to approve."}
+        record = find_one(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
+        if not record:
+            context["completed"] = True
+            return {"message": "Media request not found."}
+        if record.get("status") != "PENDING":
+            context["completed"] = True
+            return {"message": "Only pending media requests can be approved."}
+        queue_media_download(record)
+        now = now_iso()
+        update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "updatedAt": now}})
+        context["completed"] = True
+        return {"message": f"{record.get('title', 'Request')} approved and queued for download."}
+    request_id = first_uuid_or_token(user_input)
+    if not request_id:
+        return {"message": "Please provide the media request id to delete."}
+    record = find_one(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
+    if not record:
+        context["completed"] = True
+        return {"message": "Media request not found."}
+    if record.get("status") == "APPROVED" and not is_admin(user):
+        context["completed"] = True
+        return {"message": "Only admins can delete approved requests."}
+    if record.get("status") == "PENDING" and not (is_admin(user) or record.get("userId") == user["userId"]):
+        context["completed"] = True
+        return {"message": "You are not allowed to delete this request."}
+    delete_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
+    context["completed"] = True
+    return {"message": f"Deleted media request for {record.get('title', request_id)}."}
+
+
+def handle_download_admin_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str], intent: str) -> Dict[str, Any]:
+    denied = require_admin_chat(user, context)
+    if denied:
+        return denied
+    if intent == "PAUSE_DOWNLOADS":
+        context["completed"] = True
+        return {"message": set_download_handling_enabled(False).get("message", "Download automation paused")}
+    if intent == "RESUME_DOWNLOADS":
+        context["completed"] = True
+        return {"message": set_download_handling_enabled(True).get("message", "Download automation resumed")}
+    queue_id = first_number(user_input)
+    mt = infer_media_type(user_input)
+    if mt == "UNKNOWN":
+        return {"message": "Please provide whether the queued download is a movie or show."}
+    if not queue_id:
+        return {"message": "Please provide the queue item id to delete."}
+    base = base_url("RADARR_API_URL") if mt == "MOVIES" else base_url("SONARR_API_URL")
+    key = os.getenv("RADARR_API_KEY") if mt == "MOVIES" else os.getenv("SONARR_API_KEY")
+    res = arr_get("DELETE", f"{base}/queue/{queue_id}", key or "", params={"removeFromClient": True, "blocklist": False, "skipRedownload": True, "changeCategory": False})
+    context["completed"] = True
+    if res.status_code < 200 or res.status_code >= 300:
+        return {"message": f"Failed to delete queue item {queue_id}: {res.text}"}
+    return {"message": f"Download queue item {queue_id} removed."}
+
+
+def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str], intent: str) -> Dict[str, Any]:
+    if intent == "ACCESS_REQUEST":
+        username_match = re.search(r"(?i)\b(?:username|user|as)\s+([a-zA-Z0-9._-]{3,32})\b", user_input or "")
+        username = username_match.group(1) if username_match else ""
+        if not username:
+            return {"message": "Which MovieHub username should I request? Use letters, numbers, dot, underscore, or hyphen."}
+        db_user = find_one("users", {"userId": user["userId"]}) or {}
+        email = db_user.get("email") or user.get("email", "")
+        if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": email, "active": True}):
+            context["completed"] = True
+            return {"message": "MovieHub access is already approved for this user."}
+        if find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"userEmail": email, "status": "PENDING"}):
+            context["completed"] = True
+            return {"message": "A MovieHub access request is already pending approval."}
+        request_id = str(uuid.uuid4())
+        insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()})
+        context["completed"] = True
+        return {"message": f"MovieHub access request submitted for {username}. Request id: {request_id}"}
+    if intent in {"ACCESS_RESEND_PASSWORD", "ACCESS_CONFIRM_PASSWORD"}:
+        db_user = find_one("users", {"userId": user["userId"]}) or {}
+        email = db_user.get("email") or user.get("email", "")
+        if intent == "ACCESS_CONFIRM_PASSWORD":
+            col(MOVIEHUB_ACCESS_USERS_COLLECTION).update_one({"userEmail": email}, {"$set": {"passwordResetConfirmedAt": now_iso(), "updatedAt": now_iso()}})
+            context["completed"] = True
+            return {"message": "Password reset confirmed."}
+        context["completed"] = True
+        return {"message": "Temporary password resend requested."}
+    denied = require_admin_chat(user, context)
+    if denied:
+        return denied
+    if intent == "ACCESS_LIST_REQUESTS":
+        records = sorted(find(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"status": "PENDING"}), key=lambda r: r.get("createdAt", ""), reverse=True)
+        context["completed"] = True
+        return {"message": "No pending access requests found." if not records else "\n".join(["Pending access requests:"] + [f"{i}. {r.get('movieHubUserName')} | {r.get('userEmail')} | id={r.get('requestId')}" for i, r in enumerate(records[:15], 1)])}
+    if intent == "ACCESS_LIST_USERS":
+        records = sorted(find(MOVIEHUB_ACCESS_USERS_COLLECTION, {"active": True}), key=lambda r: r.get("createdAt", ""), reverse=True)
+        context["completed"] = True
+        return {"message": "No active MovieHub users found." if not records else "\n".join(["Active MovieHub users:"] + [f"{i}. {r.get('movieHubUserName')} | {r.get('userEmail')} | id={r.get('mappingId')}" for i, r in enumerate(records[:15], 1)])}
+    target_id = first_uuid_or_token(user_input)
+    if not target_id:
+        return {"message": "Please provide the request or mapping id."}
+    if intent == "ACCESS_APPROVE_REQUEST":
+        req = find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": target_id})
+        if not req:
+            context["completed"] = True
+            return {"message": "Access request not found."}
+        if req.get("status") != "PENDING":
+            context["completed"] = True
+            return {"message": "Only pending MovieHub access requests can be approved."}
+        mapping_id = str(uuid.uuid4())
+        insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": target_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "movieHubUserName": req.get("movieHubUserName"), "active": True, "createdAt": now_iso(), "updatedAt": now_iso()})
+        col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": target_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now_iso(), "updatedAt": now_iso()}})
+        context["completed"] = True
+        return {"message": f"MovieHub access approved for {req.get('movieHubUserName')}."}
+    if intent == "ACCESS_REJECT_REQUEST":
+        update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": target_id}, {"$set": {"status": "REJECTED", "rejectedBy": user["userId"], "rejectedAt": now_iso(), "updatedAt": now_iso()}})
+        context["completed"] = True
+        return {"message": "MovieHub access request rejected."}
+    delete_one_or_404(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": target_id})
+    context["completed"] = True
+    return {"message": "MovieHub user deleted."}
+
+
+def json_response_message(result: Any, fallback: str) -> str:
+    payload = result
+    if isinstance(result, JSONResponse):
+        try:
+            payload = json.loads(result.body.decode("utf-8"))
+        except Exception:
+            return fallback
+    response = payload.get("response") if isinstance(payload, dict) else payload
+    if isinstance(response, dict):
+        return response.get("message") or json.dumps(response, default=str)
+    return str(response or fallback)
+
+
+def yt_video_id_from_text(text: str) -> str:
+    url_match = re.search(r"https?://\S+", text or "")
+    if url_match:
+        video_id_match = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{6,})", url_match.group(0))
+        if video_id_match:
+            return video_id_match.group(1)
+    video_match = re.search(r"(?i)\b(?:videoId|video|id)\s*[:#-]?\s*([A-Za-z0-9_-]{6,})\b", text or "")
+    if video_match:
+        return video_match.group(1)
+    loose = re.search(r"\b[A-Za-z0-9_-]{11}\b", text or "")
+    return loose.group(0) if loose else ""
+
+
+def handle_yt_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str], intent: str) -> Dict[str, Any]:
+    denied = require_admin_chat(user, context)
+    if denied:
+        return denied
+    if intent == "YT_LIST_REQUESTS":
+        records = sorted(find(YT_DOWNLOADS_COLLECTION, {}), key=lambda r: r.get("createdAt", ""), reverse=True)
+        context["completed"] = True
+        return {"message": "No YouTube requests found." if not records else "\n".join(["YouTube download requests:"] + [f"{i}. {r.get('title') or r.get('videoId')} | status={r.get('status')} | id={r.get('requestId')} | videoId={r.get('videoId')}" for i, r in enumerate(records[:15], 1)])}
+    if intent == "YT_START_DOWNLOAD":
+        context["completed"] = True
+        return {"message": json_response_message(yt_service.start_download(), "YouTube download start requested.")}
+    if intent == "YT_GET_FORMATS":
+        url_match = re.search(r"https?://\S+", user_input or "")
+        if not url_match:
+            return {"message": "Please provide the YouTube URL to list formats."}
+        result = yt_service.get_formats({"url": url_match.group(0)})
+        payload = json.loads(result.body.decode("utf-8")) if isinstance(result, JSONResponse) else result
+        response = payload.get("response", payload) if isinstance(payload, dict) else {}
+        formats = response.get("formats") if isinstance(response, dict) else []
+        context["completed"] = True
+        if not formats:
+            return {"message": json_response_message(result, "No YouTube formats found.")}
+        return {"message": "\n".join(["YouTube formats:"] + [f"{i}. {fmt.get('label') or fmt.get('quality')} | ext={fmt.get('ext', 'mp4')}" for i, fmt in enumerate(formats[:15], 1)])}
+    if intent == "YT_STATUS":
+        video_id = yt_video_id_from_text(user_input)
+        if not video_id:
+            return {"message": "Please provide the YouTube video id to check."}
+        context["completed"] = True
+        return {"message": json_response_message(yt_service.get_status(video_id), "YouTube status checked.")}
+    if intent == "YT_DELETE_REQUEST":
+        request_id = first_uuid_or_token(user_input)
+        if not request_id:
+            return {"message": "Please provide the YouTube request id to delete."}
+        context["completed"] = True
+        return {"message": json_response_message(yt_service.delete_request(request_id), "YouTube request deleted.")}
+    if intent == "YT_LIST_LIBRARY":
+        result = yt_service.list_library_items(0, 15, None)
+        payload = json.loads(result.body.decode("utf-8")) if isinstance(result, JSONResponse) else result
+        response = payload.get("response", {}) if isinstance(payload, dict) else {}
+        items = response.get("items") or []
+        context["completed"] = True
+        return {"message": "No YouTube library items found." if not items else "\n".join(["YouTube library items:"] + [f"{i}. {item.get('Name')} | id={item.get('Id')}" for i, item in enumerate(items[:15], 1)])}
+    if intent == "YT_DELETE_LIBRARY_ITEM":
+        item_id = first_uuid_or_token(user_input)
+        if not item_id:
+            return {"message": "Please provide the YouTube library item id to delete."}
+        context["completed"] = True
+        return {"message": json_response_message(yt_service.delete_library_item(item_id), "YouTube library item deleted.")}
+    url_match = re.search(r"https?://\S+", user_input or "")
+    video_id = yt_video_id_from_text(user_input)
+    quality = infer_quality(user_input) or "1080p"
+    if not video_id:
+        return {"message": "Please provide a YouTube URL or video id to queue."}
+    result = yt_service.add_download({"videoId": video_id, "url": url_match.group(0) if url_match else "", "format": {"quality": quality, "ext": "mp4"}}, user)
+    context["completed"] = True
+    return {"message": json_response_message(result, "YouTube download queued.")}
 
 
 async def moviehub_chat_response(request: Request, user: Dict[str, str], admin_route: bool = False):
@@ -387,14 +959,18 @@ async def moviehub_chat_response(request: Request, user: Dict[str, str], admin_r
     if intent == "UNKNOWN":
         intent = resolve_chat_intent(user_input)
         if intent == "UNKNOWN":
-            parsed = openai_json(f"Classify this media assistant intent as DOWNLOAD_MEDIA, RAISE_REQUEST, CHECK_MEDIA_EXISTS, DELETE_MEDIA, CHECK_DOWNLOAD_STATUS, LIST_DOWNLOADS, or UNKNOWN. Return JSON {{\"intent\":string}}. Input: {user_input}") or {}
-            intent = parsed.get("intent") if parsed.get("intent") in {"DOWNLOAD_MEDIA", "RAISE_REQUEST", "CHECK_MEDIA_EXISTS", "DELETE_MEDIA", "CHECK_DOWNLOAD_STATUS", "LIST_DOWNLOADS"} else "UNKNOWN"
+            parsed = openai_json(f"Classify this MovieHub assistant intent as one of {sorted(CHAT_INTENTS)} or UNKNOWN. Return JSON {{\"intent\":string}}. Input: {user_input}") or {}
+            intent = parsed.get("intent") if parsed.get("intent") in CHAT_INTENTS else "UNKNOWN"
         if intent == "UNKNOWN":
             return chat_success({"message": "I'm not sure I understood that. You can ask me to download or request a movie/TV show."})
         context["intent"] = intent
     try:
         if intent in {"DOWNLOAD_MEDIA", "RAISE_REQUEST"}:
             response = handle_add_media_chat(context, user_input, user, intent)
+        elif intent == "SEARCH_MEDIA":
+            response = handle_search_chat(context, user_input)
+        elif intent == "LIST_AVAILABLE":
+            response = handle_available_list_chat(context, user_input)
         elif intent == "CHECK_MEDIA_EXISTS":
             response = handle_exists_chat(context, user_input)
         elif intent == "DELETE_MEDIA":
@@ -404,7 +980,15 @@ async def moviehub_chat_response(request: Request, user: Dict[str, str], admin_r
             else:
                 response = handle_delete_chat(context, user_input)
         elif intent in {"CHECK_DOWNLOAD_STATUS", "LIST_DOWNLOADS"}:
-            response = handle_status_chat(context, user_input, user)
+            response = handle_status_chat(context, user_input, user, intent)
+        elif intent in {"LIST_REQUESTS", "APPROVE_REQUEST", "DELETE_REQUEST"}:
+            response = handle_request_admin_chat(context, user_input, user, intent)
+        elif intent in {"PAUSE_DOWNLOADS", "RESUME_DOWNLOADS", "DELETE_DOWNLOAD"}:
+            response = handle_download_admin_chat(context, user_input, user, intent)
+        elif intent in {"ACCESS_REQUEST", "ACCESS_LIST_REQUESTS", "ACCESS_APPROVE_REQUEST", "ACCESS_REJECT_REQUEST", "ACCESS_LIST_USERS", "ACCESS_DELETE_USER", "ACCESS_RESEND_PASSWORD", "ACCESS_CONFIRM_PASSWORD"}:
+            response = handle_access_chat(context, user_input, user, intent)
+        elif intent in {"YT_ADD_DOWNLOAD", "YT_GET_FORMATS", "YT_START_DOWNLOAD", "YT_LIST_REQUESTS", "YT_STATUS", "YT_DELETE_REQUEST", "YT_LIST_LIBRARY", "YT_DELETE_LIBRARY_ITEM"}:
+            response = handle_yt_chat(context, user_input, user, intent)
         else:
             response = {"message": "I'm not sure I understood that. You can ask me to download or request a movie/TV show."}
         response["intent"] = intent
