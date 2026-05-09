@@ -41,6 +41,7 @@ import { CinePilotLauncher } from "./CineBotLauncher";
 import { CinePilotChat } from "./CineBot";
 
 const DEFAULT_QUALITY: MovieHubQuality = "any";
+const MOVIEHUB_PORTAL_URL = "https://openmovies.hostingfrompurva.xyz";
 
 const formatDateTime = (value?: string) => {
   if (!value) return "-";
@@ -1316,7 +1317,7 @@ export const MovieHub: React.FC = () => {
 
   const handleOpenMovieHub = useCallback(() => {
     window.open(
-      "https://openmovies.hostingfrompurva.xyz",
+      MOVIEHUB_PORTAL_URL,
       "_blank",
       "noopener,noreferrer",
     );
@@ -1697,12 +1698,13 @@ export const MovieHub: React.FC = () => {
                   isAdmin={isAdmin}
                   username={portalUserName}
                   userEmail={accessStatus?.email || ""}
+                  portalUrl={MOVIEHUB_PORTAL_URL}
                   showTemporaryPasswordNotice={Boolean(
                     accessStatus?.showTemporaryPasswordNotice,
                   )}
                   resending={resendPasswordLoading}
                   confirmingPasswordReset={confirmPasswordResetLoading}
-                  onOpen={handleOpenMovieHub}
+                  onOpenExternal={handleOpenMovieHub}
                   onResendPassword={handleResendPassword}
                   onConfirmPasswordReset={handleConfirmPasswordReset}
                 />

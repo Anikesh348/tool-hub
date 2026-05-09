@@ -1,14 +1,16 @@
 import React from "react";
+import { ExternalLink } from "lucide-react";
 import { Loader } from "../Loader";
 
 type MovieHubOpenSectionProps = {
   isAdmin: boolean;
   username: string;
   userEmail: string;
+  portalUrl: string;
   showTemporaryPasswordNotice: boolean;
   resending: boolean;
   confirmingPasswordReset: boolean;
-  onOpen: () => void;
+  onOpenExternal: () => void;
   onResendPassword: () => void;
   onConfirmPasswordReset: () => void;
 };
@@ -17,10 +19,11 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
   isAdmin,
   username,
   userEmail,
+  portalUrl,
   showTemporaryPasswordNotice,
   resending,
   confirmingPasswordReset,
-  onOpen,
+  onOpenExternal,
   onResendPassword,
   onConfirmPasswordReset,
 }) => {
@@ -28,10 +31,10 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Open MovieHub
+          MovieHub Streaming Portal
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-          Open MovieHub and sign in using your assigned credentials.
+          Stream inside ToolHub or open MovieHub in a separate page.
         </p>
       </div>
 
@@ -49,10 +52,11 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          onClick={onOpen}
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold"
+          onClick={onOpenExternal}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold"
         >
-          Open MovieHub
+          <ExternalLink className="h-4 w-4" />
+          Open in New Page
         </button>
 
         {!isAdmin && showTemporaryPasswordNotice && (
@@ -86,6 +90,16 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
             )}
           </button>
         )}
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+        <iframe
+          src={portalUrl}
+          title="MovieHub streaming portal"
+          className="block h-[72vh] min-h-[560px] w-full bg-white"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
       </div>
     </div>
   );
