@@ -1623,6 +1623,7 @@ export const MovieHub: React.FC = () => {
   const activeSectionConfig = sectionConfig.find(
     (section) => section.id === activeSection,
   );
+  const isOpenPortalView = !isChatPage && activeSection === "open";
 
   if (isAuthLoading || isUnauthenticated) {
     return <Loader />;
@@ -1648,13 +1649,15 @@ export const MovieHub: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-4 overflow-x-hidden">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-3 sm:px-4 overflow-x-hidden">
+      <div className={`${isOpenPortalView ? "max-w-[1760px]" : "max-w-7xl"} mx-auto`}>
         <div
           className={`grid grid-cols-1 gap-4 md:gap-6 md:items-start ${
             isSidebarCollapsed
               ? "md:grid-cols-[72px_minmax(0,1fr)]"
-              : "md:grid-cols-[300px_minmax(0,1fr)]"
+              : isOpenPortalView
+                ? "md:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]"
+                : "md:grid-cols-[300px_minmax(0,1fr)]"
           }`}
         >
           <MovieHubNav
@@ -1680,7 +1683,11 @@ export const MovieHub: React.FC = () => {
               onOpenMobileNav={openMobileNav}
             />
 
-            <div className="moviehub-panel rounded-2xl p-4 sm:p-6 min-h-[520px] overflow-x-hidden relative">
+            <div
+              className={`moviehub-panel rounded-2xl min-h-[520px] overflow-x-hidden relative ${
+                isOpenPortalView ? "p-2 sm:p-3" : "p-4 sm:p-6"
+              }`}
+            >
               <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/70 to-transparent" />
               {isChatPage && (
                 <CinePilotChat
