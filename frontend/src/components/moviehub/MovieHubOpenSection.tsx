@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Loader } from "../Loader";
 
@@ -7,12 +7,32 @@ type MovieHubOpenSectionProps = {
   username: string;
   userEmail: string;
   portalUrl: string;
+  sessionKey: string;
   showTemporaryPasswordNotice: boolean;
   resending: boolean;
   confirmingPasswordReset: boolean;
-  onOpenExternal: () => void;
+  onOpenExternal: (url: string) => void;
   onResendPassword: () => void;
   onConfirmPasswordReset: () => void;
+};
+
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+
+const buildJellyfinWebUrl = (
+  portalUrl: string,
+  route: "login.html" | "logout.html",
+  sessionKey: string,
+  username: string,
+) => {
+  const params = new URLSearchParams({
+    toolhubSession: sessionKey || "unknown",
+    t: String(Date.now()),
+  });
+  if (username.trim()) {
+    params.set("username", username.trim());
+  }
+
+  return `${trimTrailingSlash(portalUrl)}/web/#/${route}?${params.toString()}`;
 };
 
 export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
@@ -20,6 +40,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
   username,
   userEmail,
   portalUrl,
+  sessionKey,
   showTemporaryPasswordNotice,
   resending,
   confirmingPasswordReset,
@@ -27,6 +48,32 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
   onResendPassword,
   onConfirmPasswordReset,
 }) => {
+  const [iframeUrl, setIframeUrl] = useState("");
+  const [logoutFrameUrl, setLogoutFrameUrl] = useState("");
+  const [isPreparingSession, setIsPreparingSession] = useState(true);
+
+  const loginUrl = useMemo(
+    () => buildJellyfinWebUrl(portalUrl, "login.html", sessionKey, username),
+    [portalUrl, sessionKey, username],
+  );
+
+  useEffect(() => {
+    setIsPreparingSession(true);
+    setIframeUrl("about:blank");
+    setLogoutFrameUrl(
+      buildJellyfinWebUrl(portalUrl, "logout.html", sessionKey, username),
+    );
+
+    const timeoutId = window.setTimeout(() => {
+      setIframeUrl(loginUrl);
+      setIsPreparingSession(false);
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loginUrl, portalUrl, sessionKey, username]);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -41,7 +88,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <button
-            onClick={onOpenExternal}
+            onClick={() => onOpenExternal(loginUrl)}
             className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold"
           >
             <ExternalLink className="h-4 w-4" />
@@ -95,10 +142,27 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-2xl shadow-slate-900/10 dark:shadow-black/30">
+        {logoutFrameUrl && (
+          <iframe
+            src={logoutFrameUrl}
+            title="MovieHub session reset"
+            className="hidden"
+            aria-hidden="true"
+          />
+        )}
+        {isPreparingSession && (
+          <div className="flex h-[calc(100vh-15.5rem)] min-h-[640px] w-full items-center justify-center gap-3 text-sm font-semibold text-gray-700 dark:text-gray-200 max-sm:h-[70vh] max-sm:min-h-[520px]">
+            <Loader size="sm" />
+            Preparing MovieHub session
+          </div>
+        )}
         <iframe
-          src={portalUrl}
+          key={sessionKey}
+          src={iframeUrl}
           title="MovieHub streaming portal"
-          className="block h-[calc(100vh-15.5rem)] min-h-[640px] w-full bg-white max-sm:h-[70vh] max-sm:min-h-[520px]"
+          className={`h-[calc(100vh-15.5rem)] min-h-[640px] w-full bg-white max-sm:h-[70vh] max-sm:min-h-[520px] ${
+            isPreparingSession ? "hidden" : "block"
+          }`}
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           referrerPolicy="no-referrer-when-downgrade"
         />

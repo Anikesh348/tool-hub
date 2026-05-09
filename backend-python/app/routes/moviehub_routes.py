@@ -307,8 +307,8 @@ def moviehub_access_user(user: Dict[str, str] = Depends(current_user)):
     mapping = find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": email, "active": True})
     latest = col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).find_one({"userEmail": email}, sort=[("createdAt", -1)])
     if not mapping:
-        return success({"exists": False, "email": email, "movieHubUserName": (latest or {}).get("movieHubUserName", ""), "status": (latest or {}).get("status", "NOT_REQUESTED"), "showTemporaryPasswordNotice": False})
-    return success({"exists": True, "email": mapping.get("userEmail", email), "movieHubUserName": mapping.get("movieHubUserName", ""), "status": "APPROVED", "showTemporaryPasswordNotice": mapping.get("passwordResetConfirmedAt") is None})
+        return success({"userId": user["userId"], "exists": False, "email": email, "movieHubUserName": (latest or {}).get("movieHubUserName", ""), "status": (latest or {}).get("status", "NOT_REQUESTED"), "showTemporaryPasswordNotice": False})
+    return success({"userId": user["userId"], "exists": True, "email": mapping.get("userEmail", email), "movieHubUserName": mapping.get("movieHubUserName", ""), "status": "APPROVED", "showTemporaryPasswordNotice": mapping.get("passwordResetConfirmedAt") is None})
 
 
 @router.post("/v2/moviehub/access/request")
@@ -379,4 +379,3 @@ def moviehub_confirm_password_reset(user: Dict[str, str] = Depends(current_user)
     email = db_user.get("email") or user.get("email", "")
     col(MOVIEHUB_ACCESS_USERS_COLLECTION).update_one({"userEmail": email}, {"$set": {"passwordResetConfirmedAt": now_iso(), "updatedAt": now_iso()}})
     return success({"message": "password reset confirmed"})
-

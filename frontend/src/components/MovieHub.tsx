@@ -74,6 +74,10 @@ export const MovieHub: React.FC = () => {
   const { addNotification } = useNotification();
   const isAdmin = user?.role === "ADMIN";
   const isChatPage = location.pathname.startsWith("/moviehub/chat");
+  const toolHubSessionKey = useMemo(
+    () => user?.userId || user?.email || authToken || "anonymous",
+    [authToken, user?.email, user?.userId],
+  );
 
   const [activeSection, setActiveSection] = useState<MovieHubSection>("open");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -167,6 +171,11 @@ export const MovieHub: React.FC = () => {
   );
   const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
   const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccessStatus(null);
+    setPortalUserName("");
+  }, [toolHubSessionKey]);
 
   const {
     loading: accessStatusLoading,
@@ -563,9 +572,13 @@ export const MovieHub: React.FC = () => {
     if (!accessStatusData) return;
     if (accessStatusData.status >= 200 && accessStatusData.status < 300) {
       const response = accessStatusData.body?.response || {};
+      if (response.userId && user?.userId && response.userId !== user.userId) {
+        return;
+      }
       const resolvedStatus =
         response.status || (response.exists ? "APPROVED" : "NOT_REQUESTED");
       const status: MovieHubAccessStatus = {
+        userId: response.userId || user?.userId || "",
         hasAccess: Boolean(response.exists),
         exists: Boolean(response.exists),
         status: resolvedStatus,
@@ -574,16 +587,14 @@ export const MovieHub: React.FC = () => {
         showTemporaryPasswordNotice: Boolean(response.showTemporaryPasswordNotice),
       };
       setAccessStatus(status);
-      if (status?.movieHubUserName && !portalUserName) {
-        setPortalUserName(status.movieHubUserName);
-      }
+      setPortalUserName(status.movieHubUserName || "");
       return;
     }
     addNotification(
       accessStatusData.body?.error || "Failed to fetch moviehub access status",
       "error",
     );
-  }, [accessStatusData, portalUserName, addNotification]);
+  }, [accessStatusData, addNotification, user?.userId]);
 
   useEffect(() => {
     if (!createAccessRequestData) return;
@@ -1315,9 +1326,9 @@ export const MovieHub: React.FC = () => {
     [fetchDeleteAccessUser],
   );
 
-  const handleOpenMovieHub = useCallback(() => {
+  const handleOpenMovieHub = useCallback((url: string) => {
     window.open(
-      MOVIEHUB_PORTAL_URL,
+      url,
       "_blank",
       "noopener,noreferrer",
     );
@@ -1706,6 +1717,7 @@ export const MovieHub: React.FC = () => {
                   username={portalUserName}
                   userEmail={accessStatus?.email || ""}
                   portalUrl={MOVIEHUB_PORTAL_URL}
+                  sessionKey={`${toolHubSessionKey}:${portalUserName || "pending"}`}
                   showTemporaryPasswordNotice={Boolean(
                     accessStatus?.showTemporaryPasswordNotice,
                   )}

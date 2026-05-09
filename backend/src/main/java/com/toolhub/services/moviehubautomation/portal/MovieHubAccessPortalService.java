@@ -141,6 +141,7 @@ public class MovieHubAccessPortalService {
                     String email = user.getString("email", "").trim();
                     if (email.isBlank()) {
                         return Future.succeededFuture(new JsonObject()
+                                .put("userId", userId)
                                 .put("exists", false)
                                 .put("email", "")
                                 .put("movieHubUserName", "")
@@ -157,6 +158,7 @@ public class MovieHubAccessPortalService {
                                     ? "NOT_REQUESTED"
                                     : latestRequest.getString("status", "NOT_REQUESTED");
                             return new JsonObject()
+                                    .put("userId", userId)
                                     .put("exists", false)
                                     .put("email", email)
                                     .put("movieHubUserName", latestRequest == null ? "" :
@@ -166,6 +168,7 @@ public class MovieHubAccessPortalService {
                         }
                         boolean showTemporaryPasswordNotice = mapping.getValue("passwordResetConfirmedAt") == null;
                         return new JsonObject()
+                                .put("userId", userId)
                                 .put("exists", true)
                                 .put("email", mapping.getString("userEmail", email))
                                 .put("movieHubUserName", mapping.getString("movieHubUserName", ""))

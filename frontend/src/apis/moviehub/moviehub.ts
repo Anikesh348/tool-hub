@@ -107,6 +107,7 @@ export interface MovieHubCompletedDownloadItem {
 }
 
 export interface MovieHubAccessStatus {
+  userId?: string;
   hasAccess: boolean;
   isAdmin?: boolean;
   status: MovieHubAccessState;
