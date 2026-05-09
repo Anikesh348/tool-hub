@@ -21,7 +21,7 @@ RUN if [ "$ENVIRONMENT" = "prod" ]; then \
     fi
 
 
-RUN npm run build
+RUN npm run build -- --minify false
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

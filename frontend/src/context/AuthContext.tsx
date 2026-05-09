@@ -48,6 +48,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
   const logout = useCallback(() => {
     clearStoredAuth();
+    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
     setAuthToken(null);
     setUser(undefined);
   }, []);

@@ -1711,22 +1711,24 @@ export const MovieHub: React.FC = () => {
                 />
               )}
 
-              {!isChatPage && activeSection === "open" && (
-                <MovieHubOpenSection
-                  isAdmin={isAdmin}
-                  username={portalUserName}
-                  userEmail={accessStatus?.email || ""}
-                  portalUrl={MOVIEHUB_PORTAL_URL}
-                  sessionKey={`${toolHubSessionKey}:${portalUserName || "pending"}`}
-                  showTemporaryPasswordNotice={Boolean(
-                    accessStatus?.showTemporaryPasswordNotice,
-                  )}
-                  resending={resendPasswordLoading}
-                  confirmingPasswordReset={confirmPasswordResetLoading}
-                  onOpenExternal={handleOpenMovieHub}
-                  onResendPassword={handleResendPassword}
-                  onConfirmPasswordReset={handleConfirmPasswordReset}
-                />
+              {!isChatPage && (
+                <div className={activeSection === "open" ? "block" : "hidden"}>
+                  <MovieHubOpenSection
+                    isAdmin={isAdmin}
+                    username={portalUserName}
+                    userEmail={accessStatus?.email || ""}
+                    portalUrl={MOVIEHUB_PORTAL_URL}
+                    sessionKey={`${toolHubSessionKey}:${portalUserName || "pending"}`}
+                    showTemporaryPasswordNotice={Boolean(
+                      accessStatus?.showTemporaryPasswordNotice,
+                    )}
+                    resending={resendPasswordLoading}
+                    confirmingPasswordReset={confirmPasswordResetLoading}
+                    onOpenExternal={handleOpenMovieHub}
+                    onResendPassword={handleResendPassword}
+                    onConfirmPasswordReset={handleConfirmPasswordReset}
+                  />
+                </div>
               )}
 
               {!isChatPage && activeSection === "request" && (

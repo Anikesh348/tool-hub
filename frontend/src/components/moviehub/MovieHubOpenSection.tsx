@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Loader } from "../Loader";
+import { AUTH_LOGOUT_EVENT } from "../../apis/auth/authSession";
+
+const MOVIEHUB_EXPECTED_USERNAME_KEY = "toolhub:moviehub:expected-username";
+const MOVIEHUB_SESSION_GUARD_KEY = "toolhub:moviehub:session-guard-v1";
 
 type MovieHubOpenSectionProps = {
   isAdmin: boolean;
@@ -20,14 +24,17 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 const buildJellyfinWebUrl = (
   portalUrl: string,
-  route: "login.html" | "logout.html",
+  route: "home.html" | "login.html" | "logout.html",
   sessionKey: string,
   username: string,
+  includeCacheBust = false,
 ) => {
   const params = new URLSearchParams({
     toolhubSession: sessionKey || "unknown",
-    t: String(Date.now()),
   });
+  if (includeCacheBust) {
+    params.set("t", String(Date.now()));
+  }
   if (username.trim()) {
     params.set("username", username.trim());
   }
@@ -51,28 +58,103 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
   const [iframeUrl, setIframeUrl] = useState("");
   const [logoutFrameUrl, setLogoutFrameUrl] = useState("");
   const [isPreparingSession, setIsPreparingSession] = useState(true);
+  const normalizedUsername = username.trim();
+
+  const portalHomeUrl = useMemo(
+    () =>
+      buildJellyfinWebUrl(
+        portalUrl,
+        "home.html",
+        sessionKey,
+        normalizedUsername,
+      ),
+    [portalUrl, sessionKey, normalizedUsername],
+  );
 
   const loginUrl = useMemo(
-    () => buildJellyfinWebUrl(portalUrl, "login.html", sessionKey, username),
-    [portalUrl, sessionKey, username],
+    () =>
+      buildJellyfinWebUrl(
+        portalUrl,
+        "login.html",
+        sessionKey,
+        normalizedUsername,
+        true,
+      ),
+    [portalUrl, sessionKey, normalizedUsername],
   );
 
   useEffect(() => {
-    setIsPreparingSession(true);
-    setIframeUrl("about:blank");
-    setLogoutFrameUrl(
-      buildJellyfinWebUrl(portalUrl, "logout.html", sessionKey, username),
-    );
+    if (!normalizedUsername) {
+      setIframeUrl("about:blank");
+      setLogoutFrameUrl("");
+      setIsPreparingSession(false);
+      return;
+    }
+
+    const previousUsername =
+      window.localStorage.getItem(MOVIEHUB_EXPECTED_USERNAME_KEY) || "";
+    const hasSessionGuard =
+      window.localStorage.getItem(MOVIEHUB_SESSION_GUARD_KEY) === "ready";
+    const shouldResetJellyfinSession =
+      !hasSessionGuard ||
+      (previousUsername.length > 0 &&
+        previousUsername.toLowerCase() !== normalizedUsername.toLowerCase());
+
+    setIsPreparingSession(shouldResetJellyfinSession);
+    setLogoutFrameUrl("");
+
+    if (shouldResetJellyfinSession) {
+      setIframeUrl("about:blank");
+      setLogoutFrameUrl(
+        buildJellyfinWebUrl(
+          portalUrl,
+          "logout.html",
+          sessionKey,
+          previousUsername,
+          true,
+        ),
+      );
+    } else {
+      setIframeUrl((currentUrl) => currentUrl || portalHomeUrl);
+    }
 
     const timeoutId = window.setTimeout(() => {
-      setIframeUrl(loginUrl);
+      setIframeUrl(shouldResetJellyfinSession ? loginUrl : portalHomeUrl);
       setIsPreparingSession(false);
-    }, 900);
+      setLogoutFrameUrl("");
+      window.localStorage.setItem(
+        MOVIEHUB_EXPECTED_USERNAME_KEY,
+        normalizedUsername,
+      );
+      window.localStorage.setItem(MOVIEHUB_SESSION_GUARD_KEY, "ready");
+    }, shouldResetJellyfinSession ? 900 : 0);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [loginUrl, portalUrl, sessionKey, username]);
+  }, [loginUrl, normalizedUsername, portalHomeUrl, portalUrl, sessionKey]);
+
+  useEffect(() => {
+    const handleToolHubLogout = () => {
+      window.localStorage.removeItem(MOVIEHUB_EXPECTED_USERNAME_KEY);
+      window.localStorage.removeItem(MOVIEHUB_SESSION_GUARD_KEY);
+      if (!normalizedUsername) return;
+      setLogoutFrameUrl(
+        buildJellyfinWebUrl(
+          portalUrl,
+          "logout.html",
+          sessionKey,
+          normalizedUsername,
+          true,
+        ),
+      );
+    };
+
+    window.addEventListener(AUTH_LOGOUT_EVENT, handleToolHubLogout);
+    return () => {
+      window.removeEventListener(AUTH_LOGOUT_EVENT, handleToolHubLogout);
+    };
+  }, [normalizedUsername, portalUrl, sessionKey]);
 
   return (
     <div className="space-y-3">
@@ -157,7 +239,6 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
           </div>
         )}
         <iframe
-          key={sessionKey}
           src={iframeUrl}
           title="MovieHub streaming portal"
           className={`h-[calc(100vh-15.5rem)] min-h-[640px] w-full bg-white max-sm:h-[70vh] max-sm:min-h-[520px] ${
