@@ -14,6 +14,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.config import MEDIA_REQUESTS_COLLECTION, MOVIEHUB_ACCESS_REQUESTS_COLLECTION, MOVIEHUB_ACCESS_USERS_COLLECTION, YT_DOWNLOADS_COLLECTION, moviehub_conversations
 from app.middlewares.auth import admin_user, current_user
+from app.routes.moviehub_routes import (
+    create_jellyfin_user,
+    decrypt_temp_password,
+    encrypt_temp_password,
+    enforce_jellyfin_limited_library_access,
+    generate_temp_password,
+    send_moviehub_credentials_email,
+)
 from app.services.mongo import col, delete_one_or_404, find, find_one, insert, update_one_or_404
 from app.services.moviehub_automation import *
 from app.services import yt_download as yt_service
@@ -813,8 +821,16 @@ def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
         if find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"userEmail": email, "status": "PENDING"}):
             context["completed"] = True
             return {"message": "A MovieHub access request is already pending approval."}
+        if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"movieHubUserNameLower": username.lower(), "active": True}) or find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"movieHubUserNameLower": username.lower(), "status": "PENDING"}):
+            context["completed"] = True
+            return {"message": "That MovieHub username is already in use."}
+        try:
+            encrypted_password = encrypt_temp_password(generate_temp_password())
+        except Exception as exc:
+            context["completed"] = True
+            return {"message": f"Failed to secure temporary password: {exc}"}
         request_id = str(uuid.uuid4())
-        insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()})
+        insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "encryptedPassword": encrypted_password, "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()})
         context["completed"] = True
         return {"message": f"MovieHub access request submitted for {username}. Request id: {request_id}"}
     if intent in {"ACCESS_RESEND_PASSWORD", "ACCESS_CONFIRM_PASSWORD"}:
@@ -824,8 +840,27 @@ def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
             col(MOVIEHUB_ACCESS_USERS_COLLECTION).update_one({"userEmail": email}, {"$set": {"passwordResetConfirmedAt": now_iso(), "updatedAt": now_iso()}})
             context["completed"] = True
             return {"message": "Password reset confirmed."}
+        mapping = find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": email, "active": True})
+        if not mapping:
+            context["completed"] = True
+            return {"message": "MovieHub access is not approved for this user."}
+        req = col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).find_one({"userEmail": email, "status": "APPROVED"}, sort=[("createdAt", -1)])
+        if not req:
+            context["completed"] = True
+            return {"message": "No approved MovieHub access request found."}
+        try:
+            password = decrypt_temp_password(req.get("encryptedPassword"))
+            req = json.loads(json.dumps(req, default=str))
+            req["movieHubUserName"] = mapping.get("movieHubUserName", req.get("movieHubUserName"))
+            send_moviehub_credentials_email(req, password)
+            now = now_iso()
+            col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": req.get("requestId")}, {"$set": {"credentialsSentAt": now, "updatedAt": now}})
+            col(MOVIEHUB_ACCESS_USERS_COLLECTION).update_one({"mappingId": mapping.get("mappingId")}, {"$set": {"passwordResetConfirmedAt": None, "updatedAt": now}})
+        except Exception as exc:
+            context["completed"] = True
+            return {"message": f"Failed to resend temporary password: {exc}"}
         context["completed"] = True
-        return {"message": "Temporary password resend requested."}
+        return {"message": "Temporary password resent to your email."}
     denied = require_admin_chat(user, context)
     if denied:
         return denied
@@ -848,11 +883,35 @@ def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
         if req.get("status") != "PENDING":
             context["completed"] = True
             return {"message": "Only pending MovieHub access requests can be approved."}
+        if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": req.get("userEmail"), "active": True}):
+            context["completed"] = True
+            return {"message": "User already has MovieHub access."}
+        if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"movieHubUserNameLower": req.get("movieHubUserNameLower"), "active": True}):
+            context["completed"] = True
+            return {"message": "That MovieHub username is already in use."}
+        try:
+            if req.get("encryptedPassword"):
+                password = decrypt_temp_password(req.get("encryptedPassword"))
+            else:
+                password = generate_temp_password()
+                encrypted_password = encrypt_temp_password(password)
+                col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": target_id}, {"$set": {"encryptedPassword": encrypted_password, "updatedAt": now_iso()}})
+                req["encryptedPassword"] = encrypted_password
+            jellyfin_user = create_jellyfin_user(req.get("movieHubUserName", ""), password)
+            jellyfin_user_id = jellyfin_user.get("Id")
+            if not jellyfin_user_id:
+                raise RuntimeError("jellyfin user id is missing")
+            enforce_jellyfin_limited_library_access(jellyfin_user_id)
+            send_moviehub_credentials_email(req, password)
+        except Exception as exc:
+            context["completed"] = True
+            return {"message": f"Failed to approve MovieHub access: {exc}"}
         mapping_id = str(uuid.uuid4())
-        insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": target_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "movieHubUserName": req.get("movieHubUserName"), "active": True, "createdAt": now_iso(), "updatedAt": now_iso()})
-        col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": target_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now_iso(), "updatedAt": now_iso()}})
+        now = now_iso()
+        insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": target_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "userName": req.get("userName"), "movieHubUserName": req.get("movieHubUserName"), "movieHubUserNameLower": req.get("movieHubUserNameLower"), "jellyfinUserId": jellyfin_user_id, "approvedBy": user["userId"], "approvedAt": now, "passwordResetConfirmedAt": None, "active": True, "createdAt": now, "updatedAt": now})
+        col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": target_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "jellyfinUserId": jellyfin_user_id, "credentialsSentAt": now, "updatedAt": now}})
         context["completed"] = True
-        return {"message": f"MovieHub access approved for {req.get('movieHubUserName')}."}
+        return {"message": f"MovieHub access approved for {req.get('movieHubUserName')} and credentials were emailed."}
     if intent == "ACCESS_REJECT_REQUEST":
         update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": target_id}, {"$set": {"status": "REJECTED", "rejectedBy": user["userId"], "rejectedAt": now_iso(), "updatedAt": now_iso()}})
         context["completed"] = True

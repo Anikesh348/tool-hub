@@ -1,6 +1,9 @@
 import json
+import base64
+import hashlib
 import os
 import re
+import secrets
 import uuid
 from html import escape
 from datetime import datetime, timedelta, timezone
@@ -9,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import bcrypt
 import jwt
 import requests
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -16,6 +20,7 @@ from app.core.config import MEDIA_REQUESTS_COLLECTION, MOVIEHUB_ACCESS_REQUESTS_
 from app.middlewares.auth import admin_user, current_user
 from app.services.mongo import col, find, find_one, insert, update_one_or_404, delete_one_or_404
 from app.services.moviehub_automation import *
+from app.services.mail import send_brevo_email
 from app.utils.http import api_headers, base_url
 from app.utils.responses import error, now_iso, success
 
@@ -293,6 +298,177 @@ def has_moviehub_access(user: Dict[str, str]) -> bool:
     return bool(find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": email, "active": True}))
 
 
+def moviehub_crypto_key() -> bytes:
+    secret = (os.getenv("MOVIEHUB_ACCESS_SECRET") or os.getenv("JWT_SECRET") or "").strip()
+    if not secret:
+        raise RuntimeError("MOVIEHUB_ACCESS_SECRET is not configured")
+    return hashlib.sha256(secret.encode("utf-8")).digest()
+
+
+def encrypt_temp_password(password: str) -> str:
+    nonce = secrets.token_bytes(12)
+    encrypted = AESGCM(moviehub_crypto_key()).encrypt(nonce, password.encode("utf-8"), None)
+    return f"{base64.b64encode(nonce).decode('ascii')}:{base64.b64encode(encrypted).decode('ascii')}"
+
+
+def decrypt_temp_password(payload: str) -> str:
+    if not payload or ":" not in payload:
+        raise RuntimeError("temporary password is missing")
+    nonce_text, encrypted_text = payload.split(":", 1)
+    nonce = base64.b64decode(nonce_text)
+    encrypted = base64.b64decode(encrypted_text)
+    return AESGCM(moviehub_crypto_key()).decrypt(nonce, encrypted, None).decode("utf-8")
+
+
+def generate_temp_password() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def jellyfin_headers() -> Dict[str, str]:
+    api_key = os.getenv("JELLYFIN_API_KEY", "")
+    return {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "authorization": (
+            'MediaBrowser Client="ToolHub", Device="ToolHub", '
+            f'DeviceId="toolhub-web", Version="10.11.5", Token="{api_key}"'
+        ),
+        "X-Emby-Token": api_key,
+        "X-MediaBrowser-Token": api_key,
+        "X-Api-Key": api_key,
+    }
+
+
+def require_jellyfin_config() -> str:
+    jellyfin = base_url("JELLYFIN_BASE_URL")
+    if not jellyfin or not os.getenv("JELLYFIN_API_KEY"):
+        raise RuntimeError("JELLYFIN_BASE_URL/JELLYFIN_API_KEY is not configured")
+    return jellyfin
+
+
+def fetch_jellyfin_user_by_name(username: str) -> Optional[Dict[str, Any]]:
+    jellyfin = require_jellyfin_config()
+    res = requests.get(f"{jellyfin}/Users", headers=jellyfin_headers(), timeout=30)
+    if res.status_code < 200 or res.status_code >= 300:
+        raise RuntimeError(f"failed to fetch jellyfin users: {res.text[:300]}")
+    for item in res.json() or []:
+        if str(item.get("Name") or "").lower() == username.lower():
+            return item
+    return None
+
+
+def create_jellyfin_user(username: str, password: str) -> Dict[str, Any]:
+    jellyfin = require_jellyfin_config()
+    res = requests.post(
+        f"{jellyfin}/Users/New",
+        headers=jellyfin_headers(),
+        json={"Name": username, "Password": password},
+        timeout=30,
+    )
+    if 200 <= res.status_code < 300:
+        body = res.json() if res.text else {}
+        if body.get("Id"):
+            return body
+        existing = fetch_jellyfin_user_by_name(username)
+        if existing:
+            return existing
+        raise RuntimeError("created jellyfin user but user id was not returned")
+    response_text = res.text or ""
+    if res.status_code in {400, 409} and any(token in response_text.lower() for token in ("already exists", "already in use", "duplicate")):
+        existing = fetch_jellyfin_user_by_name(username)
+        if existing:
+            return existing
+    raise RuntimeError(f"failed to create jellyfin user: {response_text[:300]}")
+
+
+def enforce_jellyfin_limited_library_access(user_id: str) -> None:
+    jellyfin = require_jellyfin_config()
+    folders_res = requests.get(f"{jellyfin}/Library/VirtualFolders", headers=jellyfin_headers(), timeout=30)
+    if folders_res.status_code < 200 or folders_res.status_code >= 300:
+        raise RuntimeError(f"failed to fetch jellyfin libraries: {folders_res.text[:300]}")
+    folders = folders_res.json() or []
+    allowed: List[str] = []
+    has_movies = False
+    has_tv = False
+    for folder in folders:
+        name = str(folder.get("Name") or "").strip().lower()
+        item_id = folder.get("ItemId") or folder.get("Id")
+        if not item_id:
+            continue
+        if not has_movies and "movie" in name:
+            allowed.append(item_id)
+            has_movies = True
+            continue
+        if not has_tv and ("series" in name or ("tv" in name and "show" in name)):
+            allowed.append(item_id)
+            has_tv = True
+    if not has_movies or not has_tv:
+        raise RuntimeError("failed to locate Movies/TV Shows libraries in Jellyfin")
+    blocked = [
+        folder.get("ItemId") or folder.get("Id")
+        for folder in folders
+        if (folder.get("ItemId") or folder.get("Id")) and (folder.get("ItemId") or folder.get("Id")) not in set(allowed)
+    ]
+    user_res = requests.get(f"{jellyfin}/Users/{user_id}", headers=jellyfin_headers(), timeout=30)
+    if user_res.status_code < 200 or user_res.status_code >= 300:
+        raise RuntimeError(f"failed to fetch jellyfin user policy: {user_res.text[:300]}")
+    policy = (user_res.json() or {}).get("Policy") or {}
+    policy.update({
+        "EnableAllFolders": False,
+        "EnabledFolders": allowed,
+        "BlockedMediaFolders": blocked,
+        "EnableLiveTvAccess": False,
+        "EnableLiveTvManagement": False,
+        "EnableAllChannels": False,
+        "EnabledChannels": [],
+    })
+    policy_res = requests.post(f"{jellyfin}/Users/{user_id}/Policy", headers=jellyfin_headers(), json=policy, timeout=30)
+    if policy_res.status_code < 200 or policy_res.status_code >= 300:
+        raise RuntimeError(f"failed to update jellyfin user policy: {policy_res.text[:300]}")
+
+
+def moviehub_portal_url() -> str:
+    return (os.getenv("JELLYFIN_PUBLIC_URL") or os.getenv("JELLYFIN_BASE_URL") or "https://openmovies.hostingfrompurva.xyz").strip().rstrip("/")
+
+
+def toolhub_moviehub_url() -> str:
+    return (os.getenv("MOVIEHUB_PORTAL_URL") or "https://toolhub.hostingfrompurva.com/moviehub").strip().rstrip("/")
+
+
+def build_moviehub_access_email(req: Dict[str, Any], password: str) -> str:
+    name = escape(req.get("userName") or "there")
+    username = escape(req.get("movieHubUserName") or "")
+    safe_password = escape(password)
+    jellyfin_url = escape(moviehub_portal_url())
+    toolhub_url = escape(toolhub_moviehub_url())
+    return f"""
+    <html><body style="margin:0;padding:0;background:#edf2f7;font-family:Segoe UI,Arial,sans-serif;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#edf2f7;padding:16px 8px;">
+        <tr><td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;border-radius:16px;overflow:hidden;border:1px solid #d9e2f1;background:#ffffff;">
+            <tr><td style="padding:20px 20px 8px;"><span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#1d4ed8;font-size:12px;font-weight:700;color:#fff;">MovieHub Access Approved</span></td></tr>
+            <tr><td style="padding:0 20px 8px;font-size:32px;line-height:1.25;color:#0f172a;font-weight:700;">Welcome to MovieHub, {name}</td></tr>
+            <tr><td style="padding:0 20px 16px;font-size:17px;line-height:1.6;color:#334155;">Your access request has been approved. Use the credentials below to sign in to your Jellyfin media portal.</td></tr>
+            <tr><td style="padding:0 20px 10px;font-size:18px;line-height:1.5;color:#334155;"><strong>MovieHub Username:</strong> {username}</td></tr>
+            <tr><td style="padding:0 20px 10px;font-size:18px;line-height:1.5;color:#334155;"><strong>Temporary Password:</strong> {safe_password}</td></tr>
+            <tr><td style="padding:0 20px 10px;font-size:16px;line-height:1.5;color:#334155;"><strong>Portal URL:</strong> <a href="{jellyfin_url}" style="color:#1d4ed8;">{jellyfin_url}</a></td></tr>
+            <tr><td style="padding:0 20px 10px;font-size:16px;line-height:1.5;color:#334155;">For requests, status, and chat automation, visit <a href="{toolhub_url}" style="color:#1d4ed8;">{toolhub_url}</a>.</td></tr>
+            <tr><td style="padding:8px 20px 20px;font-size:14px;line-height:1.5;color:#64748b;">For security, please reset your password after your first login.</td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body></html>
+    """
+
+
+def send_moviehub_credentials_email(req: Dict[str, Any], password: str) -> None:
+    recipient = req.get("userEmail")
+    if not recipient:
+        raise RuntimeError("request email missing")
+    send_brevo_email("MovieHub access approved", recipient, build_moviehub_access_email(req, password))
+
+
 @router.get("/v2/moviehub/access/me")
 def moviehub_access_me(user: Dict[str, str] = Depends(current_user)):
     if user.get("role") == "ADMIN":
@@ -323,8 +499,17 @@ async def moviehub_access_request(request: Request, user: Dict[str, str] = Depen
         return JSONResponse(status_code=409, content=error("moviehub access is already approved for this user"))
     if find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"userEmail": email, "status": "PENDING"}):
         return JSONResponse(status_code=409, content=error("moviehub access request is already pending approval"))
+    if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"movieHubUserNameLower": username.lower(), "active": True}):
+        return JSONResponse(status_code=409, content=error("moviehub username is already in use"))
+    if find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"movieHubUserNameLower": username.lower(), "status": "PENDING"}):
+        return JSONResponse(status_code=409, content=error("moviehub username is already in use"))
+    try:
+        temporary_password = generate_temp_password()
+        encrypted_password = encrypt_temp_password(temporary_password)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(f"failed to secure temporary password: {exc}"))
     req_id = str(uuid.uuid4())
-    record = {"requestId": req_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()}
+    record = {"requestId": req_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "encryptedPassword": encrypted_password, "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()}
     insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, record)
     return JSONResponse(status_code=201, content=success({"message": "moviehub access request submitted", "requestId": req_id, "status": "PENDING", "movieHubUserName": username}))
 
@@ -344,10 +529,34 @@ def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admi
         return JSONResponse(status_code=404, content=error("request not found"))
     if req.get("status") != "PENDING":
         return JSONResponse(status_code=400, content=error("only pending moviehub access requests can be approved"))
+    if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": req.get("userEmail"), "active": True}):
+        return JSONResponse(status_code=409, content=error("user already has moviehub access"))
+    if find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"movieHubUserNameLower": req.get("movieHubUserNameLower"), "active": True}):
+        return JSONResponse(status_code=409, content=error("moviehub username is already in use"))
+    try:
+        if req.get("encryptedPassword"):
+            temporary_password = decrypt_temp_password(req.get("encryptedPassword"))
+        else:
+            temporary_password = generate_temp_password()
+            encrypted_password = encrypt_temp_password(temporary_password)
+            col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"encryptedPassword": encrypted_password, "updatedAt": now_iso()}})
+            req["encryptedPassword"] = encrypted_password
+        jellyfin_user = create_jellyfin_user(req.get("movieHubUserName", ""), temporary_password)
+        jellyfin_user_id = jellyfin_user.get("Id")
+        if not jellyfin_user_id:
+            raise RuntimeError("jellyfin user id is missing")
+        enforce_jellyfin_limited_library_access(jellyfin_user_id)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(str(exc)))
+    try:
+        send_moviehub_credentials_email(req, temporary_password)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(f"failed to send credentials email: {exc}"))
     mapping_id = str(uuid.uuid4())
-    insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": request_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "movieHubUserName": req.get("movieHubUserName"), "active": True, "createdAt": now_iso(), "updatedAt": now_iso()})
-    col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now_iso(), "updatedAt": now_iso()}})
-    return success({"message": "moviehub access approved and jellyfin user created", "requestId": request_id, "movieHubUserName": req.get("movieHubUserName"), "notification": "skipped"})
+    now = now_iso()
+    insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": request_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "userName": req.get("userName"), "movieHubUserName": req.get("movieHubUserName"), "movieHubUserNameLower": req.get("movieHubUserNameLower"), "jellyfinUserId": jellyfin_user_id, "approvedBy": user["userId"], "approvedAt": now, "passwordResetConfirmedAt": None, "active": True, "createdAt": now, "updatedAt": now})
+    col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "jellyfinUserId": jellyfin_user_id, "credentialsSentAt": now, "updatedAt": now}})
+    return success({"message": "moviehub access approved and jellyfin user created", "requestId": request_id, "movieHubUserName": req.get("movieHubUserName"), "notification": "sent"})
 
 
 @router.post("/v2/admin/moviehub/access/requests/{request_id}/reject")
@@ -369,8 +578,26 @@ def moviehub_access_user_delete(mapping_id: str, _: Dict[str, str] = Depends(adm
 
 
 @router.post("/v2/moviehub/access/resend-password")
-def moviehub_resend_password(_: Dict[str, str] = Depends(current_user)):
-    return success({"message": "temporary password resent", "notification": "skipped"})
+def moviehub_resend_password(user: Dict[str, str] = Depends(current_user)):
+    db_user = find_one("users", {"userId": user["userId"]}) or {}
+    email = db_user.get("email") or user.get("email", "")
+    mapping = find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"userEmail": email, "active": True})
+    if not mapping:
+        return JSONResponse(status_code=403, content=error("moviehub access is not approved for this user"))
+    req = col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).find_one({"userEmail": email, "status": "APPROVED"}, sort=[("createdAt", -1)])
+    if not req:
+        return JSONResponse(status_code=404, content=error("no approved moviehub access request found"))
+    try:
+        temporary_password = decrypt_temp_password(req.get("encryptedPassword"))
+        req = json.loads(json.dumps(req, default=str))
+        req["movieHubUserName"] = mapping.get("movieHubUserName", req.get("movieHubUserName"))
+        send_moviehub_credentials_email(req, temporary_password)
+        now = now_iso()
+        col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": req.get("requestId")}, {"$set": {"credentialsSentAt": now, "updatedAt": now}})
+        col(MOVIEHUB_ACCESS_USERS_COLLECTION).update_one({"mappingId": mapping.get("mappingId")}, {"$set": {"passwordResetConfirmedAt": None, "updatedAt": now}})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(f"failed to resend temporary password: {exc}"))
+    return success({"message": "temporary password resent to your email", "notification": "sent"})
 
 
 @router.post("/v2/moviehub/access/confirm-password-reset")
