@@ -20,7 +20,8 @@ interface PriceChartProps {
 
 interface PriceEntry {
   productPrice: string;
-  captureTime: string;
+  captureTime?: string;
+  createdAt?: string;
 }
 
 interface PricePoint {
@@ -53,17 +54,28 @@ const PriceChart: React.FC<PriceChartProps> = ({ productId }) => {
   const allChartData: PricePoint[] = useMemo(() => {
     if (!data || data.status !== 200 || !data.body) return [];
 
-    return (data.body as PriceEntry[])
+    const entries = Array.isArray(data.body)
+      ? (data.body as PriceEntry[])
+      : Array.isArray((data.body as { response?: PriceEntry[] }).response)
+      ? ((data.body as { response?: PriceEntry[] }).response as PriceEntry[])
+      : [];
+
+    return entries
       .map((entry) => {
-        const price = parseFloat(entry.productPrice.replace(/[^0-9.]/g, ""));
-        const rawDate = new Date(entry.captureTime);
+        const priceText = String(entry.productPrice ?? "");
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const timestamp = entry.captureTime ?? entry.createdAt ?? "";
+        const rawDate = new Date(timestamp);
+
         return {
           rawDate,
-          date: formatDate(rawDate), // Updated
+          date: formatDate(rawDate),
           price,
         };
       })
-      .filter((entry) => !isNaN(entry.price));
+      .filter(
+        (entry) => !isNaN(entry.price) && !isNaN(entry.rawDate.getTime())
+      );
   }, [data]);
 
   const filteredChartData = useMemo(() => {

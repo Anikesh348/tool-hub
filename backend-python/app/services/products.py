@@ -1,7 +1,9 @@
 import os
 import re
+import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Set
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from fastapi.responses import JSONResponse
@@ -12,6 +14,65 @@ from app.utils.responses import error, success
 
 
 PRICE_ALERT_MARGIN_PERCENT = 5
+SUPPORTED_SEARCH_PLATFORMS = {
+    "amazon",
+    "flipkart",
+    "myntra",
+    "nykaa",
+    "ajio",
+    "tatacliq",
+    "croma",
+    "meesho",
+    "shopsy",
+    "snapdeal",
+    "firstcry",
+    "bigbasket",
+    "reliancedigital",
+    "vijaysales",
+    "jiomart",
+}
+DOMAIN_PLATFORM_MAP = {
+    "amazon.in": "amazon",
+    "www.amazon.in": "amazon",
+    "amazon.com": "amazon",
+    "www.amazon.com": "amazon",
+    "flipkart.com": "flipkart",
+    "www.flipkart.com": "flipkart",
+    "m.flipkart.com": "flipkart",
+    "dl.flipkart.com": "flipkart",
+    "myntra.com": "myntra",
+    "www.myntra.com": "myntra",
+    "myntraapp.com": "myntra",
+    "www.myntraapp.com": "myntra",
+    "nykaa.com": "nykaa",
+    "www.nykaa.com": "nykaa",
+    "nykaa.in": "nykaa",
+    "www.nykaa.in": "nykaa",
+    "ajio.com": "ajio",
+    "www.ajio.com": "ajio",
+    "ajioluxe.com": "ajio",
+    "www.ajioluxe.com": "ajio",
+    "tatacliq.com": "tatacliq",
+    "www.tatacliq.com": "tatacliq",
+    "croma.com": "croma",
+    "www.croma.com": "croma",
+    "meesho.com": "meesho",
+    "www.meesho.com": "meesho",
+    "shopsy.in": "shopsy",
+    "www.shopsy.in": "shopsy",
+    "snapdeal.com": "snapdeal",
+    "www.snapdeal.com": "snapdeal",
+    "firstcry.com": "firstcry",
+    "www.firstcry.com": "firstcry",
+    "bigbasket.com": "bigbasket",
+    "www.bigbasket.com": "bigbasket",
+    "reliancedigital.in": "reliancedigital",
+    "www.reliancedigital.in": "reliancedigital",
+    "vijaysales.com": "vijaysales",
+    "www.vijaysales.com": "vijaysales",
+    "jiomart.com": "jiomart",
+    "www.jiomart.com": "jiomart",
+}
 
 
 def extract_price(value: Any) -> int:
@@ -30,6 +91,25 @@ def extract_product_id(url: str) -> str:
         if not match:
             raise ValueError(f"Invalid Flipkart URL: {url}")
         return "flipkart_" + match.group(1).lower()
+
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower()
+    normalized_domain = domain[4:] if domain.startswith("www.") else domain
+    platform = DOMAIN_PLATFORM_MAP.get(domain) or DOMAIN_PLATFORM_MAP.get(normalized_domain)
+    if platform:
+        normalized_url = urlunparse(
+            (
+                parsed.scheme.lower() or "https",
+                normalized_domain,
+                parsed.path.rstrip("/"),
+                "",
+                parsed.query,
+                "",
+            )
+        )
+        digest = hashlib.sha1(normalized_url.encode("utf-8")).hexdigest()[:16]
+        return f"{platform}_{digest}"
+
     raise ValueError(f"Unsupported platform in URL: {url}")
 
 
@@ -49,6 +129,47 @@ def scrape_product(product: Dict[str, Any]) -> Dict[str, Any]:
     if not product_info.get("price") or not product_info.get("title"):
         raise RuntimeError("Invalid response from scrapper")
     return {"product": product, "productInfo": product_info}
+
+
+def scraper_search_url() -> str:
+    configured_url = os.getenv("SCRAPPER_SEARCH_URL", "").strip()
+    if configured_url:
+        return configured_url
+
+    scraper_url = os.getenv("SCRAPPER_URL", "").strip()
+    if scraper_url:
+        if scraper_url.endswith("/scrape/product"):
+            return scraper_url[: -len("/scrape/product")] + "/v2/search"
+        return urljoin(scraper_url.rstrip("/") + "/", "v2/search")
+
+    return "http://scraper-beautifulsoup:8001/v2/search"
+
+
+def search_products(query: str, platform: str):
+    normalized_query = (query or "").strip()
+    normalized_platform = (platform or "").strip().lower()
+    if not normalized_query:
+        return JSONResponse(status_code=400, content=error("query is required"))
+    if normalized_platform not in SUPPORTED_SEARCH_PLATFORMS:
+        supported = ", ".join(sorted(SUPPORTED_SEARCH_PLATFORMS))
+        return JSONResponse(status_code=400, content=error(f"platform must be one of: {supported}"))
+
+    try:
+        response = requests.get(
+            scraper_search_url(),
+            params={"query": normalized_query, "platform": normalized_platform},
+            timeout=45,
+        )
+        payload = response.json()
+    except requests.Timeout:
+        return JSONResponse(status_code=504, content=error("search request timed out"))
+    except Exception as exc:
+        return JSONResponse(status_code=502, content=error(f"search service failed: {exc}"))
+
+    if response.status_code < 200 or response.status_code >= 300:
+        return JSONResponse(status_code=response.status_code, content=payload)
+
+    return payload
 
 
 def update_product_info(product: Dict[str, Any], product_info: Dict[str, Any]) -> None:
@@ -131,8 +252,20 @@ def get_products(user: Dict[str, str]) -> List[Dict[str, Any]]:
     return response
 
 
+def normalize_price_history_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(record)
+    if not normalized.get("productName") and normalized.get("productTitle"):
+        normalized["productName"] = normalized.get("productTitle")
+    if not normalized.get("captureTime") and normalized.get("createdAt"):
+        normalized["captureTime"] = normalized.get("createdAt")
+    return normalized
+
+
 def get_price_history(product_id: str) -> List[Dict[str, Any]]:
-    return find("pricehistory", {"productId": product_id})
+    return [
+        normalize_price_history_record(record)
+        for record in find("pricehistory", {"productId": product_id})
+    ]
 
 
 def delete_product_target(product_id: str, target_price: str, user: Dict[str, str]):
@@ -153,10 +286,10 @@ def save_price_history(product: Dict[str, Any], product_info: Dict[str, Any]) ->
         "pricehistory",
         {
             "productId": product.get("productId"),
-            "productTitle": product_info.get("title"),
+            "productName": product_info.get("title"),
             "productUrl": product.get("productUrl"),
             "productPrice": product_info.get("price"),
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "captureTime": datetime.now(timezone.utc).isoformat(),
         },
     )
 

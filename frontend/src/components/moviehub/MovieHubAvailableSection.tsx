@@ -10,7 +10,7 @@ type MovieHubAvailableSectionProps = {
   deletingMediaId: string | null;
   onSetMediaType: (type: "MOVIES" | "SHOWS") => void;
   onRefresh: () => void;
-  onDelete: (item: MovieHubAvailableMedia) => void;
+  onDelete: (item: MovieHubAvailableMedia, season?: number) => void;
   formatDateTime: (value?: string) => string;
 };
 
@@ -27,6 +27,9 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
     formatDateTime,
   }) => {
     const [searchQuery, setSearchQuery] = useState("");
+    const [seasonToDeleteByItemKey, setSeasonToDeleteByItemKey] = useState<
+      Record<string, string>
+    >({});
 
     const filteredItems = useMemo(() => {
       const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -44,6 +47,9 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
         );
       });
     }, [searchQuery, sortedAvailableItems]);
+
+    const getItemKey = (item: MovieHubAvailableMedia, index: number) =>
+      `${item.mediaType}-${item.radarrId || item.sonarrId || item.title}-${index}`;
 
     return (
       <div className="space-y-4">
@@ -114,12 +120,24 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
           </p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredItems.map((item, idx) => (
-              <div
-                key={`${item.title}-${item.year || "na"}-${idx}`}
-                className="moviehub-section-card rounded-xl p-4"
-              >
-                <div className="flex gap-4">
+            {filteredItems.map((item, idx) => {
+              const itemKey = getItemKey(item, idx);
+              const selectedSeasonValue = seasonToDeleteByItemKey[itemKey] || "";
+              const selectedSeason = selectedSeasonValue
+                ? Number(selectedSeasonValue)
+                : undefined;
+              const deleteKey =
+                selectedSeason && item.mediaType === "SHOWS"
+                  ? `${item.mediaType}-${item.sonarrId || idx}-S${selectedSeason}`
+                  : `${item.mediaType}-${item.radarrId || item.sonarrId || idx}`;
+              const availableSeasons = item.availableSeasons || [];
+
+              return (
+                <div
+                  key={`${item.title}-${item.year || "na"}-${idx}`}
+                  className="moviehub-section-card rounded-xl p-4"
+                >
+                  <div className="flex gap-4">
                   {item.poster ? (
                     <img
                       src={item.poster}
@@ -166,25 +184,46 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
                   ) : null}
                 </div>
 
-                {isAdmin ? (
-                  <div className="mt-4 flex justify-end">
+                  {isAdmin ? (
+                    <div className="mt-4 flex flex-col sm:flex-row sm:items-end sm:justify-end gap-2">
+                      {item.mediaType === "SHOWS" && availableSeasons.length > 0 ? (
+                        <label className="w-full sm:w-48 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                          Delete scope
+                          <select
+                            value={selectedSeasonValue}
+                            onChange={(event) =>
+                              setSeasonToDeleteByItemKey((current) => ({
+                                ...current,
+                                [itemKey]: event.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/90 dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Entire show</option>
+                            {availableSeasons.map((season) => (
+                              <option key={season} value={season}>
+                                Season {season}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
                     <button
-                      onClick={() => onDelete(item)}
-                      disabled={
-                        deletingMediaId ===
-                        `${item.mediaType}-${item.radarrId || item.sonarrId || idx}`
-                      }
+                      onClick={() => onDelete(item, selectedSeason)}
+                      disabled={deletingMediaId === deleteKey}
                       className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      {deletingMediaId ===
-                      `${item.mediaType}-${item.radarrId || item.sonarrId || idx}`
+                      {deletingMediaId === deleteKey
                         ? "Deleting..."
-                        : "Delete"}
+                        : selectedSeason
+                          ? `Delete S${selectedSeason}`
+                          : "Delete"}
                     </button>
                   </div>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

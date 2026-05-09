@@ -20,6 +20,8 @@ services:
     container_name: backend
     env_file:
       - ./backend/.env.dev
+    environment:
+      SCRAPPER_SEARCH_URL: http://scraper-beautifulsoup:8001/v2/search
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

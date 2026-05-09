@@ -91,7 +91,6 @@ public class AddShowController implements AddMediaController {
                                                     sonarrApiKey, addShowPayload)
                                             .onSuccess(addMediaResp -> {
                                                 try {
-                                                    addContentPromise.complete();
                                                     seriesId.set(addMediaResp.getInteger("id"));
                                                     log.info("Added series to Sonarr: title={} id={}", lookUpDTO.getTitle(), seriesId.get());
                                                     PollingClient<JsonObject> pollingClient = new PollingClient<>(vertx, 1500, 15);

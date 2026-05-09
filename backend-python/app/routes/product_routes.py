@@ -1,9 +1,9 @@
 from typing import Dict
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.middlewares.auth import current_user
-from app.services.products import delete_product_target, get_price_history, get_products, save_product
+from app.services.products import delete_product_target, get_price_history, get_products, save_product, search_products
 
 router = APIRouter()
 
@@ -16,6 +16,18 @@ async def save_product_route(request: Request, user: Dict[str, str] = Depends(cu
 @router.get("/v2/products")
 def products_route(user: Dict[str, str] = Depends(current_user)):
     return get_products(user)
+
+
+@router.get("/search")
+@router.get("/v2/search")
+def search_products_route(
+    query: str = Query(..., min_length=1),
+    platform: str = Query(
+        ...,
+        pattern="^(amazon|flipkart|myntra|nykaa|ajio|tatacliq|croma|meesho|shopsy|snapdeal|firstcry|bigbasket|reliancedigital|vijaysales|jiomart)$",
+    ),
+):
+    return search_products(query, platform)
 
 
 @router.post("/v2/pricehistory")

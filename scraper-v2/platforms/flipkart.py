@@ -3,6 +3,80 @@ from playwright.async_api import Page
 from urllib.parse import quote_plus
 import time
 import traceback
+import re
+
+
+def clean_price(text) -> str | None:
+    if text is None:
+        return None
+    match = re.search(r"\d+(\.\d{1,2})?", str(text).replace(",", ""))
+    return match.group(0) if match else None
+
+
+def extract_recursive_fallbacks(data):
+    title = None
+    price = None
+    image = None
+
+    def visit(node, key=""):
+        nonlocal title, price, image
+        lowered_key = key.lower()
+
+        if isinstance(node, dict):
+            for child_key, child_value in node.items():
+                visit(child_value, str(child_key))
+            return
+
+        if isinstance(node, list):
+            for child in node:
+                visit(child, key)
+            return
+
+        if node is None:
+            return
+
+        value = str(node).strip()
+        if not value:
+            return
+
+        if not title and lowered_key in {"title", "name", "producttitle"}:
+            if 5 <= len(value) <= 300 and "flipkart" not in value.lower() and not value.startswith("http"):
+                title = value
+
+        if not price and ("price" in lowered_key or lowered_key in {"amount", "fsp"}):
+            candidate = clean_price(value)
+            if candidate:
+                price = candidate
+
+        if not image and ("image" in lowered_key or lowered_key in {"src", "url"}):
+            if value.startswith(("http://", "https://")) and any(
+                token in value.lower() for token in ("/image/", "rukminim", ".jpg", ".jpeg", ".png", ".webp")
+            ):
+                image = value
+
+    visit(data)
+    return title, price, image
+
+
+async def first_text(page: Page, selectors: list[str]) -> str | None:
+    for selector in selectors:
+        element = await page.query_selector(selector)
+        text = await element.text_content() if element else None
+        if text and text.strip():
+            return text.strip()
+    return None
+
+
+async def first_attr(page: Page, selectors: list[str], attrs: list[str]) -> str | None:
+    for selector in selectors:
+        element = await page.query_selector(selector)
+        if not element:
+            continue
+        for attr in attrs:
+            value = await element.get_attribute(attr)
+            if value and value.strip():
+                return value.strip()
+    return None
 
 class FlipkartPlatform(ECommercePlatform):
     async def scrape_product(self, page: Page, url: str) -> dict:
@@ -22,19 +96,39 @@ class FlipkartPlatform(ECommercePlatform):
 
             print("[DEBUG] Final URL after redirect:", page.url)
 
+            state_title, state_price, state_image = None, None, None
+            try:
+                state = await page.evaluate("""() => window.__INITIAL_STATE__ || window.__NEXT_DATA__ || null""")
+                state_title, state_price, state_image = extract_recursive_fallbacks(state)
+            except Exception:
+                pass
+
             # Title
             start = time.time()
-            title_element = await page.query_selector("h1._6EBuvT")
-            title = await title_element.text_content() if title_element else None
-            result["title"] = title.strip() if title else "N/A"
+            title = state_title or await first_text(page, [
+                "h1._6EBuvT",
+                "span.B_NuCI",
+                "span.VU-ZEz",
+                "h1",
+            ])
+            if not title:
+                title = await first_attr(page, ["meta[property='og:title']"], ["content"])
+            result["title"] = title.strip() if title else None
             result["timings"]["title"] = round(time.time() - start, 2)
 
             # Price
             start = time.time()
-            price_element = await page.query_selector("div.CxhGGd")
-            price_text = await price_element.text_content() if price_element else None
-            if price_text:
-                price_clean = price_text.replace("₹", "").replace(",", "").strip()
+            price_text = state_price or await first_text(page, [
+                "div.CxhGGd",
+                "div._30jeq3",
+                "div.Nx9bqj",
+                "[data-testid='price-current']",
+                "div[class*='Nx9bqj']",
+                "div[class*='_30jeq3']",
+                "[itemprop='price']",
+            ])
+            price_clean = clean_price(price_text)
+            if price_clean:
                 result["price"] = price_clean
             else:
                 result["price"] = ""
@@ -44,12 +138,14 @@ class FlipkartPlatform(ECommercePlatform):
 
             # Image
             start = time.time()
-            img_element = await page.query_selector("img.jLEJ7H")
-            image_url = await img_element.get_attribute("src") if img_element else None
-            if not image_url:
-                fallback_img = await page.query_selector("img._53J4C-")
-                image_url = await fallback_img.get_attribute("src") if fallback_img else None
-            result["image"] = image_url or "N/A"
+            image_url = state_image or await first_attr(page, [
+                "img.jLEJ7H",
+                "img._53J4C-",
+                "img.DByuf4",
+                "img[loading='eager']",
+                "meta[property='og:image']",
+            ], ["src", "content"])
+            result["image"] = image_url
             result["timings"]["image"] = round(time.time() - start, 2)
 
         except Exception as e:
