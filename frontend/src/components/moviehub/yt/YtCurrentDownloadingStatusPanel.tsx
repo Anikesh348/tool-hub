@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { MovieHubYtDownloadRequest } from "../../../apis/moviehub/moviehub";
+import { MovieHubPagination, usePaginatedItems } from "../MovieHubPagination";
 
 type YtCurrentDownloadingStatusPanelProps = {
   ytRequests: MovieHubYtDownloadRequest[];
@@ -41,6 +42,7 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
       ),
     [ytRequests],
   );
+  const pagination = usePaginatedItems(downloadingRequests, 4);
 
   return (
     <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3 xl:sticky xl:top-4">
@@ -59,7 +61,16 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
         </p>
       ) : (
         <div className="space-y-3">
-          {downloadingRequests.map((request) => {
+          <MovieHubPagination
+            currentPage={pagination.currentPage}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            totalItems={downloadingRequests.length}
+            onPageChange={pagination.setCurrentPage}
+            onPageSizeChange={pagination.setPageSize}
+            pageSizeOptions={[4, 8, 16, 32]}
+          />
+          {pagination.paginatedItems.map((request) => {
             const status = ytStatusByVideoId[request.videoId] || {};
             const statusLabel =
               readString(status.status)?.toUpperCase() ||
@@ -115,6 +126,15 @@ export const YtCurrentDownloadingStatusPanel: React.FC<
               </div>
             );
           })}
+          <MovieHubPagination
+            currentPage={pagination.currentPage}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            totalItems={downloadingRequests.length}
+            onPageChange={pagination.setCurrentPage}
+            onPageSizeChange={pagination.setPageSize}
+            pageSizeOptions={[4, 8, 16, 32]}
+          />
         </div>
       )}
     </div>

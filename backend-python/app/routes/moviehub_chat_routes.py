@@ -17,6 +17,7 @@ from app.middlewares.auth import admin_user, current_user
 from app.routes.moviehub_routes import (
     create_jellyfin_user,
     decrypt_temp_password,
+    delete_jellyfin_user,
     encrypt_temp_password,
     enforce_jellyfin_limited_library_access,
     generate_temp_password,
@@ -869,9 +870,16 @@ def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
         context["completed"] = True
         return {"message": "No pending access requests found." if not records else "\n".join(["Pending access requests:"] + [f"{i}. {r.get('movieHubUserName')} | {r.get('userEmail')} | id={r.get('requestId')}" for i, r in enumerate(records[:15], 1)])}
     if intent == "ACCESS_LIST_USERS":
-        records = sorted(find(MOVIEHUB_ACCESS_USERS_COLLECTION, {"active": True}), key=lambda r: r.get("createdAt", ""), reverse=True)
+        records = find(MOVIEHUB_ACCESS_USERS_COLLECTION, {"active": True})
+        user_ids = [record.get("userId") for record in records if record.get("userId")]
+        role_by_user_id = {
+            account.get("userId"): str(account.get("role") or "USER").upper()
+            for account in find("users", {"userId": {"$in": user_ids}})
+            if account.get("userId")
+        }
+        records = sorted(records, key=lambda r: r.get("createdAt", ""), reverse=True)
         context["completed"] = True
-        return {"message": "No active MovieHub users found." if not records else "\n".join(["Active MovieHub users:"] + [f"{i}. {r.get('movieHubUserName')} | {r.get('userEmail')} | id={r.get('mappingId')}" for i, r in enumerate(records[:15], 1)])}
+        return {"message": "No active MovieHub users found." if not records else "\n".join(["Active MovieHub users:"] + [f"{i}. {r.get('movieHubUserName')} | {r.get('userEmail')} | role={'ADMIN' if role_by_user_id.get(r.get('userId')) == 'ADMIN' else 'USER'} | id={r.get('mappingId')}" for i, r in enumerate(records[:15], 1)])}
     target_id = first_uuid_or_token(user_input)
     if not target_id:
         return {"message": "Please provide the request or mapping id."}
@@ -916,6 +924,15 @@ def handle_access_chat(context: Dict[str, Any], user_input: str, user: Dict[str,
         update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": target_id}, {"$set": {"status": "REJECTED", "rejectedBy": user["userId"], "rejectedAt": now_iso(), "updatedAt": now_iso()}})
         context["completed"] = True
         return {"message": "MovieHub access request rejected."}
+    mapping = find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": target_id, "active": True})
+    if not mapping:
+        context["completed"] = True
+        return {"message": "MovieHub user not found."}
+    try:
+        delete_jellyfin_user(mapping.get("jellyfinUserId"), mapping.get("movieHubUserName"))
+    except Exception as exc:
+        context["completed"] = True
+        return {"message": f"Failed to delete Jellyfin user: {exc}"}
     delete_one_or_404(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": target_id})
     context["completed"] = True
     return {"message": "MovieHub user deleted."}

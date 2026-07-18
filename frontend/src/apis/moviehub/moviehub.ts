@@ -270,6 +270,31 @@ export const MovieHubService = {
     };
   },
 
+  playMedia: (
+    item: MovieHubAvailableMedia,
+    username: string,
+  ) => {
+    return {
+      url: `${BASE_URL}/v2/moviehub/play`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({
+          username,
+          title: item.title,
+          year: item.year,
+          mediaType: item.mediaType,
+          imdbId: item.imdbId,
+          tmdbId: item.tmdbId,
+          tvdbId: item.tvdbId,
+        }),
+      },
+    };
+  },
+
   deleteAvailableMedia: (payload: {
     id: number;
     mediaType: MovieHubMediaType;

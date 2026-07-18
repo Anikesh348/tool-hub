@@ -6,6 +6,7 @@ import {
   MovieHubDownloadScope,
 } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 
 type MovieHubDownloadingSectionProps = {
   downloadsLoading: boolean;
@@ -42,15 +43,17 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
     formatDateTime,
   }) => {
     const isPaused = Boolean(downloadHandling?.paused);
-    const isPartiallyPaused = Boolean(downloadHandling?.partiallyPaused);
+    const activePagination = usePaginatedItems(downloadItems, 6);
+    const completedPagination = usePaginatedItems(completedDownloadItems, 8);
 
     return (
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Downloading Status</h2>
+            <p className="moviehub-section-eyebrow">Queue</p>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Downloads</h2>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              View active queue progress and completed downloads.
+              Track what is downloading and what is ready to watch.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -102,16 +105,6 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
           </div>
         </div>
 
-        {isAdmin && downloadHandling?.statusKnown ? (
-          <div className="rounded-xl border border-amber-200/70 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
-            {isPartiallyPaused
-              ? "Download automation is partially paused across Radarr/Sonarr."
-              : isPaused
-                ? "Download automation is paused across Radarr and Sonarr."
-                : "Download automation is active across Radarr and Sonarr."}
-          </div>
-        ) : null}
-
         {downloadsLoading ? (
           <Loader />
         ) : downloadItems.length === 0 && completedDownloadItems.length === 0 ? (
@@ -129,8 +122,17 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                   No active downloads in queue.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {downloadItems.map((item, idx) => {
+                <div className="space-y-4">
+                  <MovieHubPagination
+                    currentPage={activePagination.currentPage}
+                    pageCount={activePagination.pageCount}
+                    pageSize={activePagination.pageSize}
+                    totalItems={downloadItems.length}
+                    onPageChange={activePagination.setCurrentPage}
+                    onPageSizeChange={activePagination.setPageSize}
+                  />
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {activePagination.paginatedItems.map((item, idx) => {
                     const progress = Number(item.progressPercent || 0);
                     const displayProgress = Number.isFinite(progress) ? progress : 0;
                     const key = item.downloadId || String(item.queueItemId || idx);
@@ -147,7 +149,6 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                             </h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                               {item.mediaType === "MOVIES" ? "Movie" : "Series"}
-                              {item.trackedDownloadState ? ` • ${item.trackedDownloadState}` : ""}
                             </p>
                           </div>
                           {item.status && (
@@ -180,9 +181,6 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                           {item.estimatedCompletionTime ? (
                             <p>ETA: {formatDateTime(item.estimatedCompletionTime)}</p>
                           ) : null}
-                          {item.downloadClient ? <p>Client: {item.downloadClient}</p> : null}
-                          {item.indexer ? <p>Indexer: {item.indexer}</p> : null}
-                          {item.added ? <p>Added: {formatDateTime(item.added)}</p> : null}
                         </div>
 
                         {isAdmin && item.queueItemId !== undefined ? (
@@ -199,6 +197,15 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                       </div>
                     );
                   })}
+                  </div>
+                  <MovieHubPagination
+                    currentPage={activePagination.currentPage}
+                    pageCount={activePagination.pageCount}
+                    pageSize={activePagination.pageSize}
+                    totalItems={downloadItems.length}
+                    onPageChange={activePagination.setCurrentPage}
+                    onPageSizeChange={activePagination.setPageSize}
+                  />
                 </div>
               )}
             </div>
@@ -212,8 +219,18 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                   No completed downloads found.
                 </p>
               ) : (
-                <div className="overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
-                  <table className="w-full text-sm">
+                <div className="space-y-4">
+                <MovieHubPagination
+                  currentPage={completedPagination.currentPage}
+                  pageCount={completedPagination.pageCount}
+                  pageSize={completedPagination.pageSize}
+                  totalItems={completedDownloadItems.length}
+                  onPageChange={completedPagination.setCurrentPage}
+                  onPageSizeChange={completedPagination.setPageSize}
+                  pageSizeOptions={[8, 16, 32, 64]}
+                />
+                <div className="moviehub-table-scroll overflow-x-auto overflow-y-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
+                  <table className="w-full min-w-[820px] text-sm">
                     <thead className="bg-gradient-to-r from-emerald-50 to-blue-50/60 dark:from-emerald-950/30 dark:to-slate-800/40">
                       <tr className="text-left text-slate-600 dark:text-slate-300">
                         <th className="py-3 px-4 font-semibold">Title</th>
@@ -227,7 +244,7 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                       </tr>
                     </thead>
                     <tbody>
-                      {completedDownloadItems.map((item) => {
+                      {completedPagination.paginatedItems.map((item) => {
                         const requestedBy =
                           item.requestedBy?.userName ||
                           item.requestedBy?.userEmail ||
@@ -260,7 +277,7 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                               </span>
                             </td>
                             {isAdmin && downloadScope === "all" ? (
-                              <td className="py-3 px-4 max-w-[260px] truncate">
+                              <td className="py-3 px-4 min-w-[180px] max-w-[260px] truncate">
                                 {requestedBy}
                               </td>
                             ) : null}
@@ -269,6 +286,16 @@ export const MovieHubDownloadingSection: React.FC<MovieHubDownloadingSectionProp
                       })}
                     </tbody>
                   </table>
+                </div>
+                <MovieHubPagination
+                  currentPage={completedPagination.currentPage}
+                  pageCount={completedPagination.pageCount}
+                  pageSize={completedPagination.pageSize}
+                  totalItems={completedDownloadItems.length}
+                  onPageChange={completedPagination.setCurrentPage}
+                  onPageSizeChange={completedPagination.setPageSize}
+                  pageSizeOptions={[8, 16, 32, 64]}
+                />
                 </div>
               )}
             </div>

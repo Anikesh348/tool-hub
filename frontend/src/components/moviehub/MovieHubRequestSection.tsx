@@ -4,6 +4,8 @@ import {
   MovieHubSearchResult,
 } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
+import { Download, Film, Search, Tv, X } from "lucide-react";
 
 type MovieHubRequestSectionProps = {
   isAdmin: boolean;
@@ -51,63 +53,77 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
     onPlaceRequest,
     getResultKey,
   }) => {
+    const {
+      currentPage,
+      pageCount,
+      pageSize,
+      paginatedItems,
+      setCurrentPage,
+      setPageSize,
+    } = usePaginatedItems(results, 6);
+
     return (
-      <div className="space-y-5">
-        <div className="flex items-center justify-between gap-3">
+      <div className="space-y-7">
+        <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isAdmin ? "Start a Download" : "Request Media"}
+            <p className="moviehub-section-eyebrow">Discover</p>
+            <h2 className="text-3xl font-bold text-white">
+              Find your next watch
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              Search and pick the exact title, quality, and seasons.
+            <p className="mt-2 max-w-xl text-sm text-slate-400">
+              Search movies and series, choose your quality, and add them to
+              MovieHub.
             </p>
           </div>
         </div>
 
-        <div className="moviehub-section-card p-3 sm:p-4 flex flex-col gap-3 mb-1">
+        <div className="moviehub-discovery-bar">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => onMediaTypeChange("MOVIES")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`moviehub-filter-chip ${
                 mediaType === "MOVIES"
-                  ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                  ? "moviehub-filter-chip-active"
+                  : ""
               }`}
             >
+              <Film className="h-4 w-4" />
               Movies
             </button>
             <button
               onClick={() => onMediaTypeChange("SHOWS")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`moviehub-filter-chip ${
                 mediaType === "SHOWS"
-                  ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                  ? "moviehub-filter-chip-active"
+                  : ""
               }`}
             >
+              <Tv className="h-4 w-4" />
               Shows
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 min-w-0">
+          <div className="moviehub-discovery-search">
+            <Search className="h-4 w-4 shrink-0 text-slate-500" />
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSearch()}
               placeholder={`Search ${mediaType === "MOVIES" ? "movies" : "shows"}...`}
-              className="w-full min-w-0 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/70"
             />
             <button
               onClick={onSearch}
               disabled={searchLoading}
-              className="px-5 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white disabled:opacity-60 w-full sm:w-auto"
+              className="moviehub-play-button"
             >
               Search
             </button>
             <button
               onClick={onClear}
               disabled={searchLoading && results.length === 0}
-              className="px-5 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 disabled:opacity-60 w-full sm:w-auto"
+              className="moviehub-icon-button"
+              aria-label="Clear search"
             >
-              Clear
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -121,8 +137,17 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
               : "Search for a movie or show to request download."}
           </p>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {results.map((result, idx) => {
+          <div className="space-y-4">
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={results.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+            <div className="moviehub-discovery-grid">
+            {paginatedItems.map((result, idx) => {
               const resultKey = getResultKey(result);
               const selectedQuality = qualityByResult[resultKey] || DEFAULT_QUALITY;
               const selectedSeasons = seasonsByResult[resultKey] || [];
@@ -131,41 +156,38 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
               return (
                 <div
                   key={`${resultKey}-${idx}`}
-                  className="moviehub-section-card rounded-xl p-4"
+                  className="moviehub-discovery-card"
                 >
-                  <div className="flex gap-4">
+                  <div className="moviehub-discovery-art">
                     {result.poster ? (
                       <img
                         src={result.poster}
                         alt={result.title}
-                        className="w-20 h-28 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                       />
                     ) : (
-                      <div className="w-20 h-28 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-xs text-gray-400">
-                        No Image
+                      <div className="moviehub-poster-placeholder">
+                        MovieHub
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white line-clamp-1">
-                        {result.title}
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {result.mediaType === "MOVIES" ? "Movie" : "Series"}
-                        {result.year ? ` • ${result.year}` : ""}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 line-clamp-3">
-                        {result.overview || "No description available."}
-                      </p>
-                    </div>
+                    <span className="moviehub-poster-type">
+                      {result.mediaType === "MOVIES" ? "Movie" : "Series"}
+                    </span>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
-                    <label className="text-sm text-gray-700 dark:text-gray-300">
-                      Quality
+                  <div className="moviehub-discovery-copy">
+                    <h3>{result.title}</h3>
+                    <p>{result.year || "Coming to MovieHub"}</p>
+                    <span>
+                      {result.overview || "No description available."}
+                    </span>
+                  </div>
+
+                  <div className="moviehub-discovery-actions">
+                    <label>
                       <select
                         value={selectedQuality}
                         onChange={(e) => onQualityChange(resultKey, e.target.value as MovieHubQuality)}
-                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800 text-sm"
+                        aria-label={`Quality for ${result.title}`}
                       >
                         <option value="any">Any</option>
                         <option value="720p">720p</option>
@@ -177,8 +199,9 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
                     <button
                       onClick={() => onPlaceRequest(result)}
                       disabled={isCurrentRequest || isBusy}
-                      className="h-10 px-4 rounded-lg text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white disabled:opacity-60"
+                      className="moviehub-request-button"
                     >
+                      <Download className="h-4 w-4" />
                       {isCurrentRequest
                         ? isAdmin
                           ? "Starting Download..."
@@ -190,8 +213,8 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
                   </div>
 
                   {result.mediaType === "SHOWS" && (
-                    <div className="mt-3">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                    <div className="moviehub-season-picker">
+                      <p>
                         Select seasons
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -217,6 +240,15 @@ export const MovieHubRequestSection: React.FC<MovieHubRequestSectionProps> = Rea
                 </div>
               );
             })}
+            </div>
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={results.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

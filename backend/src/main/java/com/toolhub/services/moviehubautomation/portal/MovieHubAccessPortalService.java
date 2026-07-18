@@ -623,9 +623,8 @@ public class MovieHubAccessPortalService {
     }
 
     private JsonArray resolveAllowedFolderIds(JsonArray folders) {
-        JsonArray allowedFolderIds = new JsonArray();
-        boolean hasMovies = false;
-        boolean hasTvShows = false;
+        String moviesId = null;
+        String tvShowsId = null;
         for (Object folderObj : folders) {
             if (!(folderObj instanceof JsonObject folder)) {
                 continue;
@@ -639,23 +638,20 @@ public class MovieHubAccessPortalService {
             if (itemId == null || itemId.isBlank()) {
                 continue;
             }
-            if (!hasMovies && normalizedName.contains("movie")) {
-                allowedFolderIds.add(itemId);
-                hasMovies = true;
-                continue;
+            if (moviesId == null && "movies".equals(normalizedName)) {
+                moviesId = itemId;
             }
-            if (!hasTvShows && (normalizedName.contains("tv show")
-                    || normalizedName.contains("tv shows")
-                    || (normalizedName.contains("tv") && normalizedName.contains("show"))
-                    || normalizedName.contains("series"))) {
-                allowedFolderIds.add(itemId);
-                hasTvShows = true;
+            if (tvShowsId == null && ("tv shows".equals(normalizedName) || "tvshows".equals(normalizedName))) {
+                tvShowsId = itemId;
             }
         }
-        if (!hasMovies || !hasTvShows) {
-            log.warn("Jellyfin folder matching incomplete hasMovies={} hasTvShows={}", hasMovies, hasTvShows);
+        if (moviesId == null || tvShowsId == null) {
+            log.warn("Jellyfin exact folder matching incomplete hasMovies={} hasTvShows={}", moviesId != null, tvShowsId != null);
             return new JsonArray();
         }
+        JsonArray allowedFolderIds = new JsonArray()
+                .add(moviesId)
+                .add(tvShowsId);
         log.info("Resolved Jellyfin allowed folders for Movies/TV Shows count={}", allowedFolderIds.size());
         return allowedFolderIds;
     }

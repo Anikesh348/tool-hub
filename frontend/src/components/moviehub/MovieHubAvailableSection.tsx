@@ -1,6 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { MovieHubAvailableMedia } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
+import {
+  LoaderCircle,
+  Play,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 type MovieHubAvailableSectionProps = {
   availableLoading: boolean;
@@ -12,6 +19,8 @@ type MovieHubAvailableSectionProps = {
   onRefresh: () => void;
   onDelete: (item: MovieHubAvailableMedia, season?: number) => void;
   formatDateTime: (value?: string) => string;
+  onWatch: (item: MovieHubAvailableMedia) => void;
+  playingMediaTitle: string | null;
 };
 
 export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> = React.memo(
@@ -25,6 +34,8 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
     onRefresh,
     onDelete,
     formatDateTime,
+    onWatch,
+    playingMediaTitle,
   }) => {
     const [searchQuery, setSearchQuery] = useState("");
     const [seasonToDeleteByItemKey, setSeasonToDeleteByItemKey] = useState<
@@ -48,61 +59,70 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
       });
     }, [searchQuery, sortedAvailableItems]);
 
+    const {
+      currentPage,
+      pageCount,
+      pageSize,
+      paginatedItems,
+      setCurrentPage,
+      setPageSize,
+    } = usePaginatedItems(filteredItems, 6);
+
     const getItemKey = (item: MovieHubAvailableMedia, index: number) =>
       `${item.mediaType}-${item.radarrId || item.sonarrId || item.title}-${index}`;
 
     return (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div className="space-y-7">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Movies/Series Available
+            <p className="moviehub-section-eyebrow">Explore</p>
+            <h2 className="text-2xl font-bold text-white">
+              {availableMediaType === "MOVIES"
+                ? "Movies in your library"
+                : "Series in your library"}
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              Browse media currently present on the server.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onSetMediaType("MOVIES")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`moviehub-filter-chip ${
                 availableMediaType === "MOVIES"
-                  ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                  ? "moviehub-filter-chip-active"
+                  : ""
               }`}
             >
               Movies
             </button>
             <button
               onClick={() => onSetMediaType("SHOWS")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`moviehub-filter-chip ${
                 availableMediaType === "SHOWS"
-                  ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                  ? "moviehub-filter-chip-active"
+                  : ""
               }`}
             >
               Shows
             </button>
             <button
               onClick={onRefresh}
-              className="px-3 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 w-full sm:w-auto"
+              className="moviehub-filter-chip"
             >
               Refresh
             </button>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <div className="moviehub-library-search">
+          <Search className="h-4 w-4 text-slate-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={`Search available ${availableMediaType === "MOVIES" ? "movies" : "shows"}...`}
-            className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/90 dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder={`Search ${availableMediaType === "MOVIES" ? "movies" : "series"}...`}
           />
           <button
             onClick={() => setSearchQuery("")}
-            className="px-3 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 w-full sm:w-auto"
+            className="moviehub-filter-chip"
           >
             Clear
           </button>
@@ -119,8 +139,17 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
             No matches found for "{searchQuery.trim()}".
           </p>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredItems.map((item, idx) => {
+          <div className="space-y-4">
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={filteredItems.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+            <div className="moviehub-poster-grid">
+            {paginatedItems.map((item, idx) => {
               const itemKey = getItemKey(item, idx);
               const selectedSeasonValue = seasonToDeleteByItemKey[itemKey] || "";
               const selectedSeason = selectedSeasonValue
@@ -135,95 +164,92 @@ export const MovieHubAvailableSection: React.FC<MovieHubAvailableSectionProps> =
               return (
                 <div
                   key={`${item.title}-${item.year || "na"}-${idx}`}
-                  className="moviehub-section-card rounded-xl p-4"
+                  className="moviehub-poster-card group"
                 >
-                  <div className="flex gap-4">
-                  {item.poster ? (
-                    <img
-                      src={item.poster}
-                      alt={item.title}
-                      className="w-20 h-28 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
-                    />
-                  ) : (
-                    <div className="w-20 h-28 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-xs text-gray-400">
-                      No Image
+                  <div className="moviehub-poster-art">
+                    {item.poster ? (
+                      <img src={item.poster} alt={item.title} />
+                    ) : (
+                      <div className="moviehub-poster-placeholder">MovieHub</div>
+                    )}
+                    <div className="moviehub-poster-overlay">
+                      <button
+                        onClick={() => onWatch(item)}
+                        disabled={playingMediaTitle === item.title}
+                        className="moviehub-poster-play"
+                        aria-label={`Watch ${item.title}`}
+                      >
+                        {playingMediaTitle === item.title ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Play className="h-5 w-5 fill-current" />
+                        )}
+                      </button>
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-bold text-gray-900 dark:text-white line-clamp-1">
-                      {item.title}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {item.mediaType === "MOVIES" ? "Movie" : "Show"}
-                      {item.year ? ` • ${item.year}` : ""}
-                    </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 line-clamp-3">
-                      {item.overview || "No description available."}
-                    </p>
+                    <span className="moviehub-poster-type">
+                      {item.mediaType === "MOVIES" ? "Movie" : "Series"}
+                    </span>
                   </div>
-                </div>
-
-                <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                  {item.added ? <p>Added: {formatDateTime(item.added)}</p> : null}
-                  {item.path ? <p className="break-all">Path: {item.path}</p> : null}
-                  {item.mediaType === "SHOWS" ? (
-                    <>
-                      <p>
-                        Episodes: {item.episodeFileCount || 0}/{item.totalEpisodeCount || 0}
-                        {item.percentOfEpisodes !== undefined
-                          ? ` (${Number(item.percentOfEpisodes).toFixed(1)}%)`
-                          : ""}
-                      </p>
-                      <p>
-                        Available seasons:{" "}
-                        {item.availableSeasons && item.availableSeasons.length > 0
-                          ? item.availableSeasons.join(", ")
-                          : "-"}
-                      </p>
-                    </>
-                  ) : null}
-                </div>
+                  <div className="moviehub-poster-copy">
+                    <h3>{item.title}</h3>
+                    <p>
+                      {item.year || "MovieHub"}
+                      {item.mediaType === "SHOWS" && item.availableSeasons?.length
+                        ? ` · ${item.availableSeasons.length} season${
+                            item.availableSeasons.length === 1 ? "" : "s"
+                          }`
+                        : ""}
+                    </p>
+                    <span>{item.overview || "Available to stream."}</span>
+                  </div>
 
                   {isAdmin ? (
-                    <div className="mt-4 flex flex-col sm:flex-row sm:items-end sm:justify-end gap-2">
+                    <div className="moviehub-poster-admin">
                       {item.mediaType === "SHOWS" && availableSeasons.length > 0 ? (
-                        <label className="w-full sm:w-48 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                          Delete scope
-                          <select
-                            value={selectedSeasonValue}
-                            onChange={(event) =>
-                              setSeasonToDeleteByItemKey((current) => ({
-                                ...current,
-                                [itemKey]: event.target.value,
-                              }))
-                            }
-                            className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/90 dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Entire show</option>
-                            {availableSeasons.map((season) => (
-                              <option key={season} value={season}>
-                                Season {season}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
-                    <button
-                      onClick={() => onDelete(item, selectedSeason)}
-                      disabled={deletingMediaId === deleteKey}
-                      className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {deletingMediaId === deleteKey
-                        ? "Deleting..."
-                        : selectedSeason
-                          ? `Delete S${selectedSeason}`
-                          : "Delete"}
-                    </button>
-                  </div>
-                ) : null}
+                        <select
+                          value={selectedSeasonValue}
+                          onChange={(event) =>
+                            setSeasonToDeleteByItemKey((current) => ({
+                              ...current,
+                              [itemKey]: event.target.value,
+                            }))
+                          }
+                          aria-label={`Delete scope for ${item.title}`}
+                        >
+                          <option value="">Entire show</option>
+                          {availableSeasons.map((season) => (
+                            <option key={season} value={season}>
+                              Season {season}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-[10px] text-slate-600">
+                          Added {item.added ? formatDateTime(item.added) : "to library"}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => onDelete(item, selectedSeason)}
+                        disabled={deletingMediaId === deleteKey}
+                        aria-label={`Delete ${item.title}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingMediaId === deleteKey ? "Deleting" : "Delete"}
+                      </button>
+                    </div>
+                  ) : null}
               </div>
               );
             })}
+            </div>
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={filteredItems.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

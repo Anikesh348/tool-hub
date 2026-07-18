@@ -7,8 +7,15 @@ import { ProductService } from "../apis/product/product";
 import { useApiFetcher } from "../hooks/useApiFetcher";
 import { Loader } from "./Loader";
 import { PromptModel } from "./PromptModal";
-import { useNavigate } from "react-router-dom";
-import { BarChart3 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  BarChart3,
+  BellRing,
+  Link2,
+  Search,
+  TrendingDown,
+} from "lucide-react";
 import { useNotification } from "../context/NotificationContext";
 import type { SearchPlatform } from "../apis/search/search";
 
@@ -34,6 +41,7 @@ const PriceTracker = () => {
   const { isAuthenticated, updateSearchState, searchResults } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
   const { loading, data, error, fetchData } = useApiFetcher();
 
   const {
@@ -43,7 +51,9 @@ const PriceTracker = () => {
   } = useApiFetcher();
 
   const [clickedProduct, setClickedProduct] = useState("");
-  const [viewMode, setViewMode] = useState<"search" | "paste">("paste");
+  const [viewMode, setViewMode] = useState<"search" | "paste">(() =>
+    location.pathname === "/pricetracker/search" ? "search" : "paste"
+  );
   const [productUrl, setProductUrl] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<SearchPlatform | "">("");
@@ -54,6 +64,12 @@ const PriceTracker = () => {
     isOpen: false,
     message: "",
   });
+
+  useEffect(() => {
+    setViewMode(
+      location.pathname === "/pricetracker/search" ? "search" : "paste"
+    );
+  }, [location.pathname]);
 
   const handleSearch = (query: string) => {
     if (query !== "" && selectedPlatform !== "") {
@@ -128,40 +144,59 @@ const PriceTracker = () => {
   }, [data, error]);
 
   return (
-    <div className="min-h-screen w-full landing-bg transition-colors duration-300">
-      <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8 pt-20">
-        <header className="mb-6 text-center">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight drop-shadow-lg">
-            Amazon Price Drop Tracker - Real-Time Price Monitoring
-          </h1>
-          <p className="mt-1 text-xs sm:text-sm text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-            Track price drops across popular ecommerce sites. Paste product URLs
-            or search to monitor prices in real-time and receive instant
-            notifications when prices drop. Your ultimate price tracking tool.
-          </p>
+    <div className="portal-page price-tracker-workspace min-h-screen w-full transition-colors duration-300">
+      <div className="toolhub-desktop-container max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8 pt-24">
+        <header className="mb-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <p className="tool-workspace-kicker">Price intelligence</p>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+              Price Tracker
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Add a product or search supported stores, set your target, and let
+              ToolHub monitor the price.
+            </p>
+          </div>
+          {isAuthenticated && (
+            <button
+              onClick={() => navigate("/pricetracker/dashboard")}
+              className="portal-secondary-button"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Open dashboard
+            </button>
+          )}
         </header>
 
-        {/* View Mode Tabs */}
-        <div className="flex items-center justify-center gap-3 mb-6">
+        <div className="tool-metric-grid mb-6">
+          <div className="tool-metric-card">
+            <Link2 />
+            <span><strong>Paste</strong>Any supported product URL</span>
+          </div>
+          <div className="tool-metric-card">
+            <TrendingDown />
+            <span><strong>Target</strong>Choose the price you want</span>
+          </div>
+          <div className="tool-metric-card">
+            <BellRing />
+            <span><strong>Alert</strong>Get notified when it drops</span>
+          </div>
+        </div>
+
+        <div className="price-mode-switch">
           <button
-            onClick={() => setViewMode("paste")}
-            className={`px-6 py-3 rounded-full text-sm font-semibold transition-all ${
-              viewMode === "paste"
-                ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg"
-                : "glass-card border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:shadow-md"
-            }`}
+            onClick={() => navigate("/pricetracker/add")}
+            className={viewMode === "paste" ? "price-mode-active" : ""}
           >
+            <Link2 className="h-4 w-4" />
             Paste URL
           </button>
           <button
-            onClick={() => setViewMode("search")}
-            className={`px-6 py-3 rounded-full text-sm font-semibold transition-all ${
-              viewMode === "search"
-                ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg"
-                : "glass-card border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:shadow-md"
-            }`}
+            onClick={() => navigate("/pricetracker/search")}
+            className={viewMode === "search" ? "price-mode-active" : ""}
           >
-            Search Products
+            <Search className="h-4 w-4" />
+            Search stores
           </button>
         </div>
 
@@ -177,32 +212,26 @@ const PriceTracker = () => {
         />
 
         {viewMode === "search" ? (
-          <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-lg p-6 max-w-2xl mx-auto">
+          <div className="tool-workspace-card p-5 sm:p-7">
             {/* Platform Selection */}
             <div className="mb-5">
               <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-3">
                 Select Platform
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <select
+                value={selectedPlatform}
+                onChange={(event) =>
+                  setSelectedPlatform(event.target.value as SearchPlatform | "")
+                }
+                className="tool-select"
+              >
+                <option value="">Choose a store</option>
                 {searchPlatforms.map((platform) => (
-                  <button
-                    key={platform.id}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-xs ${
-                      selectedPlatform === platform.id
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md"
-                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                    }`}
-                    onClick={() => setSelectedPlatform(platform.id)}
-                  >
-                    <span className="w-4 h-4 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 text-sm">
-                      {platform.label.charAt(0)}
-                    </span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {platform.label}
-                    </span>
-                  </button>
+                  <option key={platform.id} value={platform.id}>
+                    {platform.label}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
 
             {/* Search Bar */}
@@ -240,8 +269,9 @@ const PriceTracker = () => {
             </div>
           </div>
         ) : (
-          <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-lg p-6 max-w-2xl mx-auto">
-            <div>
+          <div className="tool-workspace-card p-5 sm:p-7">
+            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Product URL
               </label>
@@ -256,9 +286,8 @@ const PriceTracker = () => {
                 Supported: Amazon, Flipkart, Myntra, Nykaa, Ajio, Tata CLiQ,
                 Croma, Meesho
               </p>
-            </div>
-
-            <div className="mt-4">
+              </div>
+              <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Target Price (₹)
               </label>
@@ -269,66 +298,34 @@ const PriceTracker = () => {
                 onChange={(e) => setTargetPrice(e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
+              </div>
             </div>
 
             <button
               onClick={handlePasteSubmit}
               disabled={
-                !isAuthenticated ||
                 isProductLoading ||
                 !productUrl.trim() ||
                 !targetPrice.trim()
               }
               className={`w-full mt-5 py-2 text-sm rounded-lg font-semibold transition-all ${
-                isAuthenticated && productUrl.trim() && targetPrice.trim()
+                productUrl.trim() && targetPrice.trim()
                   ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-lg active:scale-95"
                   : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
               }`}
             >
-              {isProductLoading ? "Adding..." : "Start Tracking"}
+              {isProductLoading ? "Adding..." : isAuthenticated ? "Start Tracking" : "Log in to track"}
+              {!isProductLoading && <ArrowRight className="ml-2 inline h-4 w-4" />}
             </button>
 
             {!isAuthenticated && (
               <p className="text-sm text-center text-orange-500 dark:text-orange-400 mt-4 flex items-center justify-center gap-2">
-                <span>🔒</span> Please log in to track a product
+                Log in to save products and receive price alerts.
               </p>
             )}
           </div>
         )}
 
-        {/* Dashboard Section */}
-        {isAuthenticated && (
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <div
-              onClick={() => navigate("/pricetracker/dashboard")}
-              className="group glass-card border border-blue-200/50 dark:border-blue-400/30 rounded-xl p-5 hover:shadow-xl hover:border-blue-300 dark:hover:border-blue-400/60 transition-all duration-300 cursor-pointer transform hover:scale-102"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <BarChart3 className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 transition" />
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
-                      View Dashboard
-                    </h3>
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-300 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition">
-                    Track monitored products, view price history, and manage
-                    your watchlist
-                  </p>
-                </div>
-                <div className="hidden sm:block">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center group-hover:shadow-lg group-hover:scale-110 transition transform flex-shrink-0">
-                    <BarChart3 className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold group-hover:shadow-lg group-hover:from-blue-700 group-hover:to-purple-700 transition">
-                Go to Dashboard →
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

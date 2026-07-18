@@ -12,6 +12,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: always
 
   backend:
@@ -22,10 +24,50 @@ services:
       - ./backend/.env.dev
     environment:
       SCRAPPER_SEARCH_URL: http://scraper-beautifulsoup:8001/v2/search
+      TOOLHUB_AUTH_URL: http://toolhub-auth:8080
+      REDIS_URL: redis://redis:6379/0
+      GATUS_URL: http://gatus:8082
+    depends_on:
+      toolhub-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
+    volumes:
+      - buzzwatch-data:/data/buzzwatch
+      - /run/toolhub-admin:/run/toolhub-admin:ro
+      - /srv/docker/apps/route-observability/metrics-token:/run/secrets/toolhub_metrics_token:ro
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: toolhub-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - buzzwatch-redis:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  toolhub-auth:
+    build:
+      context: ../../google-auth-common
+    container_name: toolhub-auth
+    env_file:
+      - ./backend/.env.dev
+    environment:
+      REFRESH_TOKEN_TTL_DAYS: "30"
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
@@ -40,3 +82,7 @@ services:
     ports:
       - "8001:8001"
     restart: always
+
+volumes:
+  buzzwatch-data:
+  buzzwatch-redis:

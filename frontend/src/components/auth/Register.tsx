@@ -76,11 +76,9 @@ function Register() {
   useEffect(() => {
     if (data && data?.status === 200) {
       addNotification("Registration successful!", "success");
-      const accessToken = data.body?.accessToken || data.body?.token;
-      const refreshToken = data.body?.refreshToken;
-      if (accessToken && refreshToken) {
+      if (data.body?.authenticated && data.body?.user) {
         // If registration auto-logs in
-        login(accessToken, refreshToken, data.body.user);
+        login(data.body.user);
         navigate("/");
       } else {
         // If registration doesn't auto-login, redirect to login
@@ -101,7 +99,7 @@ function Register() {
     user.password.length >= 6;
 
   return (
-    <div className="min-h-screen w-full landing-bg transition-colors duration-300">
+    <div className="portal-page min-h-screen w-full transition-colors duration-300">
       {/* Main Content */}
       <div className="flex items-center justify-center min-h-screen pt-16">
         <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-3xl p-8 w-full max-w-md mx-4 shadow-xl">

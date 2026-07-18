@@ -22,6 +22,12 @@ target/
 Thumbs.db
 node_modules
 .idea
+__pycache__/
+*.py[cod]
+
+# Local analysis and recovery artifacts
+.codex-backups/
+graphify-out/
 
 # Environment config
 .env

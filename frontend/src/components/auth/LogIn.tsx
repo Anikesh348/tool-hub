@@ -147,11 +147,8 @@ export const LogIn = () => {
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
-    const accessToken = data?.body?.accessToken || data?.body?.token;
-    const refreshToken = data?.body?.refreshToken;
-
-    if (data && data.status === 200 && accessToken && refreshToken) {
-      login(accessToken, refreshToken, data.body.user);
+    if (data && data.status === 200 && data.body?.authenticated && data.body?.user) {
+      login(data.body.user);
       addNotification("Login successful!", "success");
       navigate("/");
     } else if (data && data.status !== 200) {
@@ -163,7 +160,7 @@ export const LogIn = () => {
   }, [data, login, navigate, addNotification]);
 
   return (
-    <div className="relative min-h-screen w-full landing-bg transition-colors duration-300 overflow-hidden">
+    <div className="portal-page relative min-h-screen w-full transition-colors duration-300 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-blue-500/15 blur-3xl" />
       <div className="pointer-events-none absolute top-1/2 -right-20 h-72 w-72 rounded-full bg-fuchsia-500/15 blur-3xl" />
 

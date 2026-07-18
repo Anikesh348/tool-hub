@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { MovieHubYtDownloadRequest } from "../../../apis/moviehub/moviehub";
 import { Loader } from "../../Loader";
+import { MovieHubPagination, usePaginatedItems } from "../MovieHubPagination";
 
 type YtDownloadRequestsTableProps = {
   ytRequestsLoading: boolean;
@@ -55,6 +56,7 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
           },
         );
       }, [ytRequests]);
+      const pagination = usePaginatedItems(ytRequests, 8);
 
       return (
         <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3">
@@ -96,6 +98,16 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
               No YT download requests found.
             </p>
           ) : (
+            <div className="space-y-3">
+            <MovieHubPagination
+              currentPage={pagination.currentPage}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              totalItems={ytRequests.length}
+              onPageChange={pagination.setCurrentPage}
+              onPageSizeChange={pagination.setPageSize}
+              pageSizeOptions={[8, 16, 32, 64]}
+            />
             <div className="overflow-auto moviehub-table-scroll rounded-lg border border-gray-200 dark:border-gray-800">
               <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-900/40">
@@ -109,7 +121,7 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
                   </tr>
                 </thead>
                 <tbody>
-                  {ytRequests.map((request) => {
+                  {pagination.paginatedItems.map((request) => {
                     const requestStatus = request.status || "UNKNOWN";
                     const normalizedStatus = requestStatus.toUpperCase();
                     const requestedBy = request.userEmail || request.userId || "-";
@@ -161,6 +173,16 @@ export const YtDownloadRequestsTable: React.FC<YtDownloadRequestsTableProps> =
                   })}
                 </tbody>
               </table>
+            </div>
+            <MovieHubPagination
+              currentPage={pagination.currentPage}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              totalItems={ytRequests.length}
+              onPageChange={pagination.setCurrentPage}
+              onPageSizeChange={pagination.setPageSize}
+              pageSizeOptions={[8, 16, 32, 64]}
+            />
             </div>
           )}
         </div>

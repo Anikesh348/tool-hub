@@ -25,6 +25,8 @@ RUN npm run build -- --minify false
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY admin-proxy-common.conf /etc/nginx/snippets/admin-proxy-common.conf
+COPY admin-proxy-legacy-rewrite.conf /etc/nginx/snippets/admin-proxy-legacy-rewrite.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]

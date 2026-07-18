@@ -103,8 +103,8 @@ const Dashboard: React.FC = () => {
 
   return (
     <>
-      <div className="min-h-screen w-full landing-bg transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-4 pt-20 md:pt-24 pb-12">
+      <div className="portal-page min-h-screen w-full transition-colors duration-300">
+        <div className="toolhub-desktop-container max-w-7xl mx-auto px-4 pt-20 md:pt-24 pb-12">
           <div className="bg-gradient-to-b from-white/95 to-white/80 dark:from-gray-900/95 dark:to-gray-900/80 backdrop-blur-sm py-6 px-4 mb-8 rounded-2xl transition-colors duration-300">
             <div className="flex items-center justify-between mb-4">
               <button
@@ -140,7 +140,7 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
               {data.body.map((product: Product) => (
                 <div
                   key={product.productId + product.targetPrice}

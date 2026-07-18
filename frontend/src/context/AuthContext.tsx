@@ -8,19 +8,12 @@ import React, {
 } from "react";
 import { Product } from "../apis/search/search";
 import { User } from "../apis/auth/auth";
-import {
-  clearStoredAuth,
-  getAccessToken,
-  getJwtExpiryEpochMs,
-  getRefreshToken,
-  getStoredUser,
-  isJwtExpired,
-  setStoredTokens,
-  setStoredUser,
-} from "../apis/auth/tokenStorage";
+import { clearLegacyStoredAuth } from "../apis/auth/tokenStorage";
 import {
   AUTH_LOGOUT_EVENT,
-  AUTH_TOKENS_UPDATED_EVENT,
+  AUTH_SESSION_UPDATED_EVENT,
+  endSession,
+  fetchCurrentSession,
   refreshAccessToken,
 } from "../apis/auth/authSession";
 
@@ -28,13 +21,14 @@ interface AuthContextObj {
   authToken: string | null | undefined;
   isAuthLoading: boolean;
   isAuthenticated: boolean;
-  login: (accessToken: string, refreshToken: string, user: User) => void;
-  logout: () => void;
+  login: (user: User) => void;
+  logout: () => Promise<void>;
   searchResults: Product[];
   user: User | undefined | null;
   updateSearchState: (results: Product[]) => void;
 }
 
+const AUTHENTICATED_SESSION = "cookie-session";
 const AuthContext = createContext<AuthContextObj | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
@@ -45,121 +39,65 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   );
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const isAuthenticated = authToken === AUTHENTICATED_SESSION;
+  const isAuthLoading = authToken === undefined;
 
-  const logout = useCallback(() => {
-    clearStoredAuth();
-    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
-    setAuthToken(null);
-    setUser(undefined);
+  const applySession = useCallback((nextUser: User | null) => {
+    setAuthToken(nextUser ? AUTHENTICATED_SESSION : null);
+    setUser(nextUser ?? undefined);
   }, []);
 
+  const logout = useCallback(async () => {
+    await endSession();
+    applySession(null);
+  }, [applySession]);
+
   const login = useCallback(
-    (accessToken: string, refreshToken: string, nextUser: User) => {
-      setStoredTokens(accessToken, refreshToken);
-      setStoredUser(nextUser);
-      setAuthToken(accessToken);
-      setUser(nextUser);
+    (nextUser: User) => {
+      applySession(nextUser);
     },
-    []
+    [applySession]
   );
 
   useEffect(() => {
     let cancelled = false;
+    clearLegacyStoredAuth();
 
-    const bootstrapAuth = async () => {
-      const storedUser = getStoredUser();
-      const storedToken = getAccessToken();
-      const storedRefreshToken = getRefreshToken();
-
-      if (storedToken && !isJwtExpired(storedToken, 10)) {
-        if (!cancelled) {
-          setAuthToken(storedToken);
-          setUser(storedUser ?? undefined);
-        }
-        return;
-      }
-
-      // Always attempt refresh when refresh token exists.
-      // Backend is the source of truth for refresh token validity/expiry.
-      if (storedRefreshToken) {
-        const refreshedAccessToken = await refreshAccessToken();
-        if (!cancelled) {
-          if (refreshedAccessToken) {
-            setAuthToken(refreshedAccessToken);
-            setUser(storedUser ?? undefined);
-          } else {
-            setAuthToken(null);
-            setUser(undefined);
-          }
-        }
-        return;
-      }
-
-      clearStoredAuth();
-      if (!cancelled) {
-        setAuthToken(null);
-        setUser(undefined);
-      }
-    };
-
-    bootstrapAuth();
+    fetchCurrentSession().then((sessionUser) => {
+      if (!cancelled) applySession(sessionUser);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applySession]);
 
   useEffect(() => {
-    const onTokenUpdated = () => {
-      const latestAccessToken = getAccessToken();
-      if (latestAccessToken) {
-        setAuthToken(latestAccessToken);
-      }
-    };
+    if (!isAuthenticated) return;
+    const interval = window.setInterval(() => {
+      refreshAccessToken();
+    }, 10 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [isAuthenticated]);
 
-    const onLogout = () => {
-      setAuthToken(null);
-      setUser(undefined);
+  useEffect(() => {
+    const onSessionUpdated = async () => {
+      const sessionUser = await fetchCurrentSession();
+      applySession(sessionUser);
     };
+    const onLogout = () => applySession(null);
 
-    window.addEventListener(AUTH_TOKENS_UPDATED_EVENT, onTokenUpdated);
+    window.addEventListener(AUTH_SESSION_UPDATED_EVENT, onSessionUpdated);
     window.addEventListener(AUTH_LOGOUT_EVENT, onLogout);
-
     return () => {
-      window.removeEventListener(AUTH_TOKENS_UPDATED_EVENT, onTokenUpdated);
+      window.removeEventListener(AUTH_SESSION_UPDATED_EVENT, onSessionUpdated);
       window.removeEventListener(AUTH_LOGOUT_EVENT, onLogout);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!authToken) return;
-
-    const expiryEpochMs = getJwtExpiryEpochMs(authToken);
-    if (!expiryEpochMs) return;
-
-    const refreshLeadTimeMs = 60 * 1000;
-    const refreshInMs = Math.max(expiryEpochMs - Date.now() - refreshLeadTimeMs, 1000);
-
-    const timeoutId = window.setTimeout(async () => {
-      const refreshedToken = await refreshAccessToken();
-      if (!refreshedToken) {
-        logout();
-        return;
-      }
-      setAuthToken(refreshedToken);
-    }, refreshInMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [authToken, logout]);
+  }, [applySession]);
 
   const updateSearchState = useCallback((results: Product[]) => {
     setSearchResults(results);
   }, []);
-
-  const isAuthenticated = !!authToken;
-  const isAuthLoading = authToken === undefined;
 
   return (
     <AuthContext.Provider

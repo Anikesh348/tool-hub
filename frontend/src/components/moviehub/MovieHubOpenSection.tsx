@@ -82,6 +82,10 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
       ),
     [portalUrl, sessionKey, normalizedUsername],
   );
+  const externalPortalUrl = useMemo(
+    () => trimTrailingSlash(portalUrl),
+    [portalUrl],
+  );
 
   useEffect(() => {
     if (!normalizedUsername) {
@@ -95,15 +99,14 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
       window.localStorage.getItem(MOVIEHUB_EXPECTED_USERNAME_KEY) || "";
     const hasSessionGuard =
       window.localStorage.getItem(MOVIEHUB_SESSION_GUARD_KEY) === "ready";
-    const shouldResetJellyfinSession =
-      !hasSessionGuard ||
-      (previousUsername.length > 0 &&
-        previousUsername.toLowerCase() !== normalizedUsername.toLowerCase());
+    const isDifferentExpectedUser =
+      previousUsername.length > 0 &&
+      previousUsername.toLowerCase() !== normalizedUsername.toLowerCase();
 
-    setIsPreparingSession(shouldResetJellyfinSession);
+    setIsPreparingSession(isDifferentExpectedUser);
     setLogoutFrameUrl("");
 
-    if (shouldResetJellyfinSession) {
+    if (isDifferentExpectedUser) {
       setIframeUrl("about:blank");
       setLogoutFrameUrl(
         buildJellyfinWebUrl(
@@ -119,7 +122,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
     }
 
     const timeoutId = window.setTimeout(() => {
-      setIframeUrl(shouldResetJellyfinSession ? loginUrl : portalHomeUrl);
+      setIframeUrl(isDifferentExpectedUser ? loginUrl : portalHomeUrl);
       setIsPreparingSession(false);
       setLogoutFrameUrl("");
       window.localStorage.setItem(
@@ -127,7 +130,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
         normalizedUsername,
       );
       window.localStorage.setItem(MOVIEHUB_SESSION_GUARD_KEY, "ready");
-    }, shouldResetJellyfinSession ? 900 : 0);
+    }, isDifferentExpectedUser ? 900 : 0);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -157,21 +160,22 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
   }, [normalizedUsername, portalUrl, sessionKey]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
-            MovieHub Streaming Portal
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            Stream inside ToolHub or open MovieHub in a separate page.
-          </p>
+    <div className="flex h-full min-h-0 w-full flex-col gap-1.5 sm:gap-2">
+      <div className="moviehub-section-card px-2.5 sm:px-3 py-2 text-sm text-gray-700 dark:text-gray-300 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+            Streaming as
+          </span>
+          <span className="min-w-0 truncate rounded-full border border-gray-200/80 dark:border-gray-700 bg-white/70 dark:bg-slate-950/50 px-2.5 py-1 text-xs font-semibold text-gray-900 dark:text-white">
+            {username || "-"}
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => onOpenExternal(loginUrl)}
-            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold"
+            onClick={() => onOpenExternal(externalPortalUrl)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200/80 dark:border-blue-900/70 bg-blue-50/70 dark:bg-blue-950/30 px-2.5 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100/80 dark:hover:bg-blue-900/40"
+            title="Open in New Page"
           >
             <ExternalLink className="h-4 w-4" />
             Open in New Page
@@ -181,7 +185,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
             <button
               onClick={onResendPassword}
               disabled={resending || !username.trim()}
-              className="px-4 sm:px-5 py-2.5 rounded-xl bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              className="rounded-lg bg-gray-100/80 dark:bg-gray-800/80 px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {resending ? (
                 <span className="inline-flex items-center gap-2">
@@ -197,7 +201,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
             <button
               onClick={onConfirmPasswordReset}
               disabled={confirmingPasswordReset}
-              className="px-4 sm:px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {confirmingPasswordReset ? (
                 <span className="inline-flex items-center gap-2">
@@ -211,19 +215,14 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
         </div>
       </div>
 
-      <div className="moviehub-section-card px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-        <p className="shrink-0">
-          Username: <span className="font-semibold text-gray-900 dark:text-white">{username || "-"}</span>
-        </p>
-        {!isAdmin && showTemporaryPasswordNotice && (
-          <p className="sm:border-l sm:border-gray-300 sm:dark:border-gray-700 sm:pl-3">
-            Temporary password has been sent to your mail id
-            {userEmail ? ` (${userEmail})` : ""}.
-          </p>
-        )}
-      </div>
+      {!isAdmin && showTemporaryPasswordNotice && (
+        <div className="moviehub-section-card px-3 py-2 text-xs text-gray-700 dark:text-gray-300">
+          Temporary password has been sent to your mail id
+          {userEmail ? ` (${userEmail})` : ""}.
+        </div>
+      )}
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-2xl shadow-slate-900/10 dark:shadow-black/30">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-2xl shadow-slate-900/10 dark:shadow-black/30">
         {logoutFrameUrl && (
           <iframe
             src={logoutFrameUrl}
@@ -233,7 +232,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
           />
         )}
         {isPreparingSession && (
-          <div className="flex h-[calc(100vh-15.5rem)] min-h-[640px] w-full items-center justify-center gap-3 text-sm font-semibold text-gray-700 dark:text-gray-200 max-sm:h-[70vh] max-sm:min-h-[520px]">
+          <div className="flex h-full min-h-[320px] w-full items-center justify-center gap-3 text-sm font-semibold text-gray-700 dark:text-gray-200">
             <Loader size="sm" />
             Preparing MovieHub session
           </div>
@@ -241,7 +240,7 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
         <iframe
           src={iframeUrl}
           title="MovieHub streaming portal"
-          className={`h-[calc(100vh-15.5rem)] min-h-[640px] w-full bg-white max-sm:h-[70vh] max-sm:min-h-[520px] ${
+          className={`h-full min-h-0 w-full bg-white ${
             isPreparingSession ? "hidden" : "block"
           }`}
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"

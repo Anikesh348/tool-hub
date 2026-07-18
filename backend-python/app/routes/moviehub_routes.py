@@ -1,6 +1,7 @@
 import json
 import base64
 import hashlib
+import logging
 import os
 import re
 import secrets
@@ -25,6 +26,7 @@ from app.utils.http import api_headers, base_url
 from app.utils.responses import error, now_iso, success
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.get("/v2/moviehub/search")
 def moviehub_search(term: str, mediaType: str, _: Dict[str, str] = Depends(current_user)):
@@ -136,6 +138,147 @@ def moviehub_available(mediaType: str, _: Dict[str, str] = Depends(current_user)
     if res.status_code < 200 or res.status_code >= 300:
         return JSONResponse(status_code=500, content=error(res.text))
     return success(normalize_available_media(res.json(), mt))
+
+
+def resolve_jellyfin_media_item(jellyfin: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    title = str(body.get("title") or "").strip()
+    media_type = parse_media_type(body.get("mediaType"))
+    if not title or media_type == "UNKNOWN":
+        raise ValueError("title and mediaType are required")
+
+    include_type = "Movie" if media_type == "MOVIES" else "Series"
+    res = requests.get(
+        f"{jellyfin}/Items",
+        params={
+            "Recursive": "true",
+            "SearchTerm": title,
+            "IncludeItemTypes": include_type,
+            "Fields": "ProviderIds,ProductionYear",
+            "Limit": 50,
+        },
+        headers=jellyfin_headers(),
+        timeout=30,
+    )
+    if not res.ok:
+        raise RuntimeError(f"failed to search Jellyfin library: {res.text[:300]}")
+    candidates = res.json().get("Items") or []
+
+    expected_ids = {
+        "Imdb": str(body.get("imdbId") or "").strip().lower(),
+        "Tmdb": str(body.get("tmdbId") or "").strip().lower(),
+        "Tvdb": str(body.get("tvdbId") or "").strip().lower(),
+    }
+
+    def match_score(item: Dict[str, Any]) -> int:
+        providers = item.get("ProviderIds") or {}
+        score = 0
+        for provider, expected in expected_ids.items():
+            actual = str(providers.get(provider) or "").strip().lower()
+            if expected and actual == expected:
+                score += 20
+        if str(item.get("Name") or "").strip().lower() == title.lower():
+            score += 5
+        if body.get("year") and str(item.get("ProductionYear") or "") == str(body.get("year")):
+            score += 2
+        return score
+
+    matched = max(candidates, key=match_score, default=None)
+    if not matched or match_score(matched) <= 0:
+        raise LookupError(f"{title} was not found in the Jellyfin library")
+
+    if media_type == "SHOWS":
+        episodes_res = requests.get(
+            f"{jellyfin}/Items",
+            params={
+                "ParentId": matched.get("Id"),
+                "Recursive": "true",
+                "IncludeItemTypes": "Episode",
+                "IsMissing": "false",
+                "SortBy": "ParentIndexNumber,IndexNumber",
+                "SortOrder": "Ascending",
+                "Limit": 1,
+            },
+            headers=jellyfin_headers(),
+            timeout=30,
+        )
+        if not episodes_res.ok:
+            raise RuntimeError(f"failed to resolve a playable episode: {episodes_res.text[:300]}")
+        episodes = episodes_res.json().get("Items") or []
+        if not episodes:
+            raise LookupError(f"No playable episodes were found for {title}")
+        return episodes[0]
+
+    return matched
+
+
+@router.post("/v2/moviehub/play")
+async def moviehub_play(request: Request, user: Dict[str, str] = Depends(current_user)):
+    body = await request.json()
+    username = str(body.get("username") or "").strip()
+    if not username:
+        return JSONResponse(status_code=400, content=error("MovieHub username is required"))
+
+    if user.get("role") != "ADMIN":
+        mapping = find_one(
+            MOVIEHUB_ACCESS_USERS_COLLECTION,
+            {
+                "userId": user.get("userId"),
+                "movieHubUserNameLower": username.lower(),
+                "active": True,
+            },
+        )
+        if not mapping:
+            return JSONResponse(status_code=403, content=error("MovieHub access mapping was not found"))
+
+    try:
+        jellyfin = require_jellyfin_config()
+        jellyfin_user = fetch_jellyfin_user_by_name(username)
+        if not jellyfin_user or not jellyfin_user.get("Id"):
+            raise LookupError("MovieHub user is not available in Jellyfin")
+
+        item = resolve_jellyfin_media_item(jellyfin, body)
+        sessions_res = requests.get(
+            f"{jellyfin}/Sessions",
+            params={"ControllableByUserId": jellyfin_user["Id"]},
+            headers=jellyfin_headers(),
+            timeout=30,
+        )
+        if not sessions_res.ok:
+            raise RuntimeError(f"failed to find the active player: {sessions_res.text[:300]}")
+        sessions = [
+            session
+            for session in sessions_res.json()
+            if session.get("Id") and session.get("SupportsRemoteControl", True)
+        ]
+        if not sessions:
+            raise LookupError("Open the Watch tab once to prepare the MovieHub player")
+
+        session = max(
+            sessions,
+            key=lambda value: str(value.get("LastActivityDate") or ""),
+        )
+        play_res = requests.post(
+            f"{jellyfin}/Sessions/{session['Id']}/Playing",
+            params={
+                "playCommand": "PlayNow",
+                "itemIds": item["Id"],
+                "startPositionTicks": 0,
+            },
+            headers=jellyfin_headers(),
+            timeout=30,
+        )
+        if not play_res.ok:
+            raise RuntimeError(f"Jellyfin could not start playback: {play_res.text[:300]}")
+        return success({
+            "message": "Playback started",
+            "itemId": item.get("Id"),
+            "title": item.get("Name") or body.get("title"),
+        })
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content=error(str(exc)))
+    except Exception as exc:
+        logger.exception("MovieHub playback failed")
+        return JSONResponse(status_code=500, content=error(str(exc)))
 
 
 @router.get("/v2/moviehub/downloads")
@@ -358,8 +501,27 @@ def fetch_jellyfin_user_by_name(username: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def update_jellyfin_user_password(user_id: str, password: str) -> None:
+    jellyfin = require_jellyfin_config()
+    res = requests.post(
+        f"{jellyfin}/Users/{user_id}/Password",
+        headers=jellyfin_headers(),
+        json={"CurrentPw": "", "NewPw": password, "ResetPassword": False},
+        timeout=30,
+    )
+    if res.status_code < 200 or res.status_code >= 300:
+        raise RuntimeError(f"failed to update existing jellyfin user password: {res.text[:300]}")
+
+
 def create_jellyfin_user(username: str, password: str) -> Dict[str, Any]:
     jellyfin = require_jellyfin_config()
+    existing_user = fetch_jellyfin_user_by_name(username)
+    if existing_user:
+        user_id = existing_user.get("Id")
+        if not user_id:
+            raise RuntimeError("existing jellyfin user id is missing")
+        update_jellyfin_user_password(user_id, password)
+        return existing_user
     res = requests.post(
         f"{jellyfin}/Users/New",
         headers=jellyfin_headers(),
@@ -378,8 +540,62 @@ def create_jellyfin_user(username: str, password: str) -> Dict[str, Any]:
     if res.status_code in {400, 409} and any(token in response_text.lower() for token in ("already exists", "already in use", "duplicate")):
         existing = fetch_jellyfin_user_by_name(username)
         if existing:
+            user_id = existing.get("Id")
+            if not user_id:
+                raise RuntimeError("existing jellyfin user id is missing")
+            update_jellyfin_user_password(user_id, password)
             return existing
+    logger.warning(
+        "Jellyfin user create failed username=%s status=%s body=%s",
+        username,
+        res.status_code,
+        response_text[:300],
+    )
     raise RuntimeError(f"failed to create jellyfin user: {response_text[:300]}")
+
+
+def delete_jellyfin_user(user_id: Optional[str], username: Optional[str] = None) -> None:
+    jellyfin = require_jellyfin_config()
+    resolved_user_id = (user_id or "").strip()
+    if not resolved_user_id and username:
+        existing_user = fetch_jellyfin_user_by_name(username)
+        resolved_user_id = str((existing_user or {}).get("Id") or "").strip()
+    if not resolved_user_id:
+        return
+    res = requests.delete(f"{jellyfin}/Users/{resolved_user_id}", headers=jellyfin_headers(), timeout=30)
+    if res.status_code == 404:
+        return
+    if res.status_code < 200 or res.status_code >= 300:
+        raise RuntimeError(f"failed to delete jellyfin user: {res.text[:300]}")
+
+
+def normalized_library_name(folder: Dict[str, Any]) -> str:
+    return re.sub(r"\s+", " ", str(folder.get("Name") or "").strip().lower())
+
+
+def library_item_id(folder: Dict[str, Any]) -> Optional[str]:
+    item_id = folder.get("ItemId") or folder.get("Id")
+    return str(item_id).strip() if item_id else None
+
+
+def resolve_jellyfin_allowed_library_ids(folders: List[Dict[str, Any]]) -> List[str]:
+    movies_id: Optional[str] = None
+    tv_shows_id: Optional[str] = None
+
+    for folder in folders:
+        item_id = library_item_id(folder)
+        if not item_id:
+            continue
+        name = normalized_library_name(folder)
+        if movies_id is None and name == "movies":
+            movies_id = item_id
+        if tv_shows_id is None and name in {"tv shows", "tvshows"}:
+            tv_shows_id = item_id
+
+    if not movies_id or not tv_shows_id:
+        raise RuntimeError("failed to locate exact Movies/TV Shows libraries in Jellyfin")
+
+    return [movies_id, tv_shows_id]
 
 
 def enforce_jellyfin_limited_library_access(user_id: str) -> None:
@@ -388,27 +604,11 @@ def enforce_jellyfin_limited_library_access(user_id: str) -> None:
     if folders_res.status_code < 200 or folders_res.status_code >= 300:
         raise RuntimeError(f"failed to fetch jellyfin libraries: {folders_res.text[:300]}")
     folders = folders_res.json() or []
-    allowed: List[str] = []
-    has_movies = False
-    has_tv = False
-    for folder in folders:
-        name = str(folder.get("Name") or "").strip().lower()
-        item_id = folder.get("ItemId") or folder.get("Id")
-        if not item_id:
-            continue
-        if not has_movies and "movie" in name:
-            allowed.append(item_id)
-            has_movies = True
-            continue
-        if not has_tv and ("series" in name or ("tv" in name and "show" in name)):
-            allowed.append(item_id)
-            has_tv = True
-    if not has_movies or not has_tv:
-        raise RuntimeError("failed to locate Movies/TV Shows libraries in Jellyfin")
+    allowed = resolve_jellyfin_allowed_library_ids(folders)
     blocked = [
-        folder.get("ItemId") or folder.get("Id")
+        library_item_id(folder)
         for folder in folders
-        if (folder.get("ItemId") or folder.get("Id")) and (folder.get("ItemId") or folder.get("Id")) not in set(allowed)
+        if library_item_id(folder) and library_item_id(folder) not in set(allowed)
     ]
     user_res = requests.get(f"{jellyfin}/Users/{user_id}", headers=jellyfin_headers(), timeout=30)
     if user_res.status_code < 200 or user_res.status_code >= 300:
@@ -568,11 +768,31 @@ def moviehub_access_reject(request_id: str, user: Dict[str, str] = Depends(admin
 @router.get("/v2/admin/moviehub/access/users")
 def moviehub_access_users(_: Dict[str, str] = Depends(admin_user)):
     records = find(MOVIEHUB_ACCESS_USERS_COLLECTION, {"active": True})
-    return success(sorted(records, key=lambda r: r.get("createdAt", ""), reverse=True))
+    user_ids = [record.get("userId") for record in records if record.get("userId")]
+    role_by_user_id = {
+        user.get("userId"): str(user.get("role") or "USER").upper()
+        for user in find("users", {"userId": {"$in": user_ids}})
+        if user.get("userId")
+    }
+    tagged_records = []
+    for record in records:
+        role_tag = role_by_user_id.get(record.get("userId"), "USER")
+        tagged = dict(record)
+        tagged["roleTag"] = "ADMIN" if role_tag == "ADMIN" else "USER"
+        tagged["isAdmin"] = tagged["roleTag"] == "ADMIN"
+        tagged_records.append(tagged)
+    return success(sorted(tagged_records, key=lambda r: r.get("createdAt", ""), reverse=True))
 
 
 @router.delete("/v2/admin/moviehub/access/users/{mapping_id}")
 def moviehub_access_user_delete(mapping_id: str, _: Dict[str, str] = Depends(admin_user)):
+    mapping = find_one(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "active": True})
+    if not mapping:
+        return JSONResponse(status_code=404, content=error("moviehub access user not found"))
+    try:
+        delete_jellyfin_user(mapping.get("jellyfinUserId"), mapping.get("movieHubUserName"))
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(str(exc)))
     delete_one_or_404(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id})
     return success({"message": "moviehub user deleted", "mappingId": mapping_id})
 
