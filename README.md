@@ -62,109 +62,6 @@ tool-hub/
 └── docker-compose.dev.yml   # Isolated preview stack for prebuilt dev images
 ```
 
-## Prerequisites
-
-- Docker Engine with Docker Compose v2
-- An accessible MongoDB instance
-- The shared `google-auth-common` repository at the path expected by `docker-compose.yml` (`../../google-auth-common` from this checkout)
-- Provider credentials only for the integrations you enable
-
-For direct, non-container development you also need Node.js 24+, Python 3.12+, and npm.
-
-## Configuration
-
-Runtime secrets are intentionally not committed. The main stack reads backend and auth configuration from `backend/.env.dev`; the frontend image selects `frontend/.env.dev` or `frontend/.env.prod` using the `ENVIRONMENT` build argument.
-
-Core configuration covers:
-
-- MongoDB connection and database names
-- JWT/auth service secrets, issuer, cookie names, and token lifetimes
-- Google OAuth client and internal auth-service settings
-- Public ToolHub URL and frontend backend URL
-
-Optional integrations add their own variables for services such as TMDB/OMDb, Radarr, Sonarr, Jellyfin, OpenAI, Home Assistant webhooks, email delivery, scraper endpoints, admin agents, and notification ingestion.
-
-Relevant frontend variables:
-
-- `VITE_BASE_BACKEND_URL`
-- `VITE_GOOGLE_CLIENT_ID`
-
-Never commit `.env` files, tokens, API keys, mounted secret files, or production host credentials.
-
-> **Portability note:** the checked-in Compose and Nginx configuration includes homelab-specific private endpoints, read-only host mounts, external monitoring services, and admin-agent integrations. Review and replace those values before running the stack in another environment. Do not expose admin proxy routes or host-control endpoints directly to the public internet.
-
-## Run with Docker Compose
-
-After providing the required environment files and the sibling auth-service checkout:
-
-```bash
-ENVIRONMENT=dev docker compose up --build -d
-docker compose ps
-```
-
-Default local ports:
-
-| Service | URL |
-|---|---|
-| Frontend | `http://localhost:3000` |
-| FastAPI backend | `http://localhost:8080` |
-| OpenAPI docs | `http://localhost:8080/docs` |
-| Product scraper | `http://localhost:8001` |
-
-Useful checks:
-
-```bash
-docker compose config -q
-curl --fail http://localhost:8080/health
-docker compose logs --tail=100 backend frontend
-```
-
-Stop the stack with:
-
-```bash
-docker compose down
-```
-
-Named volumes are not removed by that command. Avoid `docker compose down -v` unless deleting persisted application data is intentional.
-
-## Local development
-
-### Frontend
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Vite uses the configured frontend environment file. The production-style frontend build is:
-
-```bash
-npm run build
-```
-
-### FastAPI backend
-
-```bash
-cd backend-python
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
-```
-
-The backend still requires its database, auth service, Redis, and any selected integrations to be reachable.
-
-### Product scraper
-
-```bash
-cd scraper-beautifulsoup
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-uvicorn scrape:app --reload --host 0.0.0.0 --port 8001
-```
-
 ## API overview
 
 The OpenAPI document at `/openapi.json` is the authoritative endpoint reference. Major route groups include:
@@ -187,18 +84,6 @@ The OpenAPI document at `/openapi.json` is the authoritative endpoint reference.
 
 Authentication and authorization requirements vary by route. Do not treat a route merely being reachable through the backend as permission to expose it publicly; `/v2/admin/*`, host controls, media administration, and metrics require the intended authenticated proxy and secret boundaries.
 
-## Validation
-
-The following checks match the current containerized stack:
-
-```bash
-docker compose config -q
-python3 -m compileall -q backend-python/app
-docker compose build frontend
-```
-
-For feature work, also exercise the affected route through the real frontend/auth path and inspect backend logs. Admin and notification tests can have user-visible or operational side effects, so use non-mutating endpoints unless those effects are intentional.
-
 ## Production notes
 
 - The backend health check is `/health`; the frontend waits for a healthy backend.
@@ -207,7 +92,3 @@ For feature work, also exercise the affected route through the real frontend/aut
 - Admin embeds rely on Nginx authorization subrequests and private upstream services.
 - Blog seed/index setup, notification indexes, and the price-check scheduler run during FastAPI startup.
 - `docker-compose.dev.yml` expects prebuilt dev images plus the existing production network and is not a standalone first-run environment.
-
-## License
-
-ToolHub is available under the [MIT License](LICENSE).
