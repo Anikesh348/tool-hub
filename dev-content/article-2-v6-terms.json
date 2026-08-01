@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "article": "article-2",
+  "terms": {
+    "authentication-gateway": "The authentication gateway is the small service I built on the VPS to protect selected hostnames before Caddy sends traffic to the Pi. For the metrics hostname, it checks the signed session and allowed account first; rejected requests never reach the monitoring service.",
+    "caddy": "Caddy is the web server at the public edge of this setup. It obtains and renews HTTPS certificates, matches each requested hostname and forwards an approved request to the correct service on the Pi.",
+    "cloudflare-dns": "Cloudflare DNS publishes the records for hostingfrompurva.xyz. For the production blog, the root record returns the public VPS address directly; the browser then establishes HTTPS with Caddy there rather than connecting to the home network.",
+    "https": "HTTPS is the encrypted connection a browser uses for a normal secure website. The browser verifies a certificate for the requested hostname and then protects the request and response with TLS encryption.",
+    "lan": "The LAN is the private network inside the home. Pi services keep their local addresses and continue serving devices such as the television even if the VPS or public tunnel is unavailable.",
+    "lets-encrypt": "Let's Encrypt is the certificate authority Caddy uses for these hostnames. Caddy proves control of a hostname, receives a time-limited certificate and renews it automatically, so certificate upkeep is not a manual calendar task.",
+    "reverse-proxy": "A reverse proxy gives several applications one public front door. Caddy receives the hostname, chooses the matching Pi service and hides its private address and application port from the visitor.",
+    "router-port-forwarding": "Router port forwarding sends traffic arriving at the home's public connection to a particular device and application port. I avoided adding one of these rules per Pi service by receiving public traffic on the VPS and carrying selected requests home through WireGuard.",
+    "tailscale": "Tailscale creates a private encrypted network between approved devices. It remains convenient for my own laptop and phone, but asking friends and family to join that network was the usability problem that led to this public HTTPS path.",
+    "tls": "TLS is the encryption and certificate protocol underneath HTTPS. It lets the browser confirm the hostname and agree on private encryption keys before the article or login page is transferred.",
+    "vps": "A VPS is a small rented virtual server with a stable public internet address. I discovered it could act as the front door for the homelab while the applications and data remained on the Raspberry Pi at home.",
+    "wireguard": "WireGuard creates the encrypted private link between the VPS and Raspberry Pi. In this setup only the two tunnel peers use the 10.90.0.1 and 10.90.0.2 addresses, giving Caddy a route home without publishing the Pi's residential address."
+  }
+}

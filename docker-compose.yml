@@ -26,7 +26,12 @@ services:
       SCRAPPER_SEARCH_URL: http://scraper-beautifulsoup:8001/v2/search
       TOOLHUB_AUTH_URL: http://toolhub-auth:8080
       REDIS_URL: redis://redis:6379/0
-      GATUS_URL: http://gatus:8082
+      GATUS_URL: http://100.99.75.123:3302
+      NETDATA_PI_URL: http://100.99.75.123:19999
+      NETDATA_UBUNTU_URL: http://host.docker.internal:19999
+      NETDATA_DEFAULT_NODE: pi5
+      TOOLHUB_PI_ADMIN_URL: http://100.99.75.123:3901
+      TOOLHUB_CODEX_ADMIN_URL: http://100.111.189.107:3902
     depends_on:
       toolhub-auth:
         condition: service_healthy
@@ -40,6 +45,7 @@ services:
       - buzzwatch-data:/data/buzzwatch
       - /run/toolhub-admin:/run/toolhub-admin:ro
       - /srv/docker/apps/route-observability/metrics-token:/run/secrets/toolhub_metrics_token:ro
+      - /srv/toolhub/log-digest:/data/log-digest:ro
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]

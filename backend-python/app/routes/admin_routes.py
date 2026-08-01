@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict
@@ -13,20 +15,74 @@ from app.middlewares.auth import admin_user
 from app.utils.responses import success
 
 router = APIRouter()
-NETDATA_URL = os.getenv("NETDATA_URL", "http://host.docker.internal:19999").rstrip("/")
+NETDATA_NODES = {
+    "pi5": {
+        "id": "pi5",
+        "label": "Pi 5",
+        "url": os.getenv(
+            "NETDATA_PI_URL",
+            os.getenv("NETDATA_URL", "http://host.docker.internal:19999"),
+        ).rstrip("/"),
+    },
+    "ubuntu": {
+        "id": "ubuntu",
+        "label": "HP / Ubuntu",
+        "url": os.getenv("NETDATA_UBUNTU_URL", "http://192.168.68.117:19999").rstrip("/"),
+    },
+}
+DEFAULT_NETDATA_NODE = os.getenv("NETDATA_DEFAULT_NODE", "pi5")
+if DEFAULT_NETDATA_NODE not in NETDATA_NODES:
+    DEFAULT_NETDATA_NODE = "pi5"
 GATUS_URL = os.getenv("GATUS_URL", "http://gatus:8082").rstrip("/")
+PRODESK_TEMPERATURE_URL = os.getenv(
+    "PRODESK_TEMPERATURE_URL", "http://192.168.68.116:9108/temperature"
+)
+PRODESK_TEMPERATURE_CACHE_SECONDS = 5
+LOG_DIGEST_PATH = os.getenv(
+    "LOG_DIGEST_PATH", "/data/log-digest/latest.json"
+)
+LOG_DIGEST_DIR = os.path.dirname(LOG_DIGEST_PATH)
+LOG_DIGEST_MAX_BYTES = 2 * 1024 * 1024
+LOG_DIGEST_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_prodesk_temperature_cache: Dict[str, Any] = {
+    "fetchedAt": 0.0,
+    "temperatureCelsius": None,
+    "sampledAt": None,
+}
+_prodesk_temperature_lock = threading.Lock()
 
 
-def netdata_get(path: str, params: Dict[str, Any] | None = None) -> Any:
+def netdata_node(node: str) -> Dict[str, str]:
+    selected = NETDATA_NODES.get(node)
+    if not selected:
+        raise HTTPException(status_code=404, detail="Unknown metrics node")
+    return selected
+
+
+def netdata_get(
+    path: str,
+    params: Dict[str, Any] | None = None,
+    node: str = DEFAULT_NETDATA_NODE,
+    allow_not_found: bool = False,
+) -> Any:
+    selected = netdata_node(node)
     try:
-        response = requests.get(f"{NETDATA_URL}{path}", params=params, timeout=5)
+        response = requests.get(f"{selected['url']}{path}", params=params, timeout=5)
+        if allow_not_found and response.status_code == 404:
+            return {"labels": ["time"], "data": []}
         response.raise_for_status()
         return response.json()
     except (requests.RequestException, ValueError) as exc:
         raise HTTPException(status_code=502, detail="System metrics are temporarily unavailable") from exc
 
 
-def chart_data(chart: str, *, seconds: int = 120, points: int = 60) -> Dict[str, Any]:
+def chart_data(
+    chart: str,
+    node: str = DEFAULT_NETDATA_NODE,
+    *,
+    seconds: int = 120,
+    points: int = 60,
+) -> Dict[str, Any]:
     return netdata_get(
         "/api/v1/data",
         {
@@ -36,10 +92,12 @@ def chart_data(chart: str, *, seconds: int = 120, points: int = 60) -> Dict[str,
             "group": "average",
             "format": "json",
         },
+        node,
+        True,
     )
 
 
-def all_metrics() -> Dict[str, Any]:
+def all_metrics(node: str = DEFAULT_NETDATA_NODE) -> Dict[str, Any]:
     return netdata_get(
         "/api/v1/allmetrics",
         {
@@ -50,6 +108,7 @@ def all_metrics() -> Dict[str, Any]:
                 "disk_space./ sensors.temperature_cpu_thermal-virtual-0_temp1_input"
             ),
         },
+        node,
     )
 
 
@@ -63,6 +122,30 @@ def dimension_values(snapshot: Dict[str, Any], chart: str) -> tuple[int, Dict[st
         except (TypeError, ValueError):
             values[name] = 0.0
     return int(metric.get("last_updated") or 0), values
+
+
+def prodesk_temperature() -> Dict[str, Any]:
+    now = time.time()
+    with _prodesk_temperature_lock:
+        if now - float(_prodesk_temperature_cache["fetchedAt"]) < PRODESK_TEMPERATURE_CACHE_SECONDS:
+            return dict(_prodesk_temperature_cache)
+        try:
+            response = requests.get(PRODESK_TEMPERATURE_URL, timeout=2)
+            response.raise_for_status()
+            payload = response.json()
+            temperature = float(payload["temperatureCelsius"])
+            sampled_at = int(payload.get("sampledAt") or now)
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            temperature = None
+            sampled_at = None
+        _prodesk_temperature_cache.update(
+            {
+                "fetchedAt": now,
+                "temperatureCelsius": temperature,
+                "sampledAt": sampled_at,
+            }
+        )
+        return dict(_prodesk_temperature_cache)
 
 
 def process_breakdown(snapshot: Dict[str, Any], memory_total_mib: float) -> list[Dict[str, Any]]:
@@ -103,8 +186,9 @@ def process_breakdown(snapshot: Dict[str, Any], memory_total_mib: float) -> list
     return sorted(selected.values(), key=lambda item: item["cpuPercent"], reverse=True)
 
 
-def current_metrics() -> Dict[str, Any]:
-    snapshot = all_metrics()
+def current_metrics(node: str = DEFAULT_NETDATA_NODE) -> Dict[str, Any]:
+    snapshot = all_metrics(node)
+    prodesk_thermal = prodesk_temperature()
     latest = {
         "cpu": dimension_values(snapshot, "system.cpu"),
         "memory": dimension_values(snapshot, "system.ram"),
@@ -177,6 +261,8 @@ def current_metrics() -> Dict[str, Any]:
             "sentKbps": abs(network.get("sent", 0)),
         },
         "temperatureCelsius": temperature.get("input", 0),
+        "prodeskTemperatureCelsius": prodesk_thermal["temperatureCelsius"],
+        "prodeskTemperatureSampledAt": prodesk_thermal["sampledAt"],
         "uptimeSeconds": uptime.get("uptime", 0),
         "processes": process_breakdown(snapshot, memory_total),
     }
@@ -185,6 +271,73 @@ def current_metrics() -> Dict[str, Any]:
 @router.get("/v2/admin/proxy/authorize")
 def authorize_admin_proxy(_: Dict[str, str] = Depends(admin_user)):
     return {"authorized": True}
+
+
+def read_log_digest(path: str) -> Dict[str, Any]:
+    try:
+        if os.path.getsize(path) > LOG_DIGEST_MAX_BYTES:
+            raise HTTPException(status_code=503, detail="Log digest is too large")
+        with open(path, "r", encoding="utf-8") as report_file:
+            report = json.load(report_file)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="No log digest has been published yet",
+        ) from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Log digest is temporarily unavailable",
+        ) from exc
+    if not isinstance(report, dict) or report.get("schemaVersion") not in {1, 2, 3}:
+        raise HTTPException(status_code=503, detail="Log digest format is invalid")
+    return report
+
+
+@router.get("/v2/admin/log-digest")
+def log_digest(
+    date: str | None = None,
+    _: Dict[str, str] = Depends(admin_user),
+):
+    if date is None:
+        return read_log_digest(LOG_DIGEST_PATH)
+    if not LOG_DIGEST_DATE_PATTERN.fullmatch(date):
+        raise HTTPException(status_code=400, detail="Invalid digest date")
+    return read_log_digest(os.path.join(LOG_DIGEST_DIR, f"{date}.json"))
+
+
+@router.get("/v2/admin/log-digest/days")
+def log_digest_days(_: Dict[str, str] = Depends(admin_user)):
+    try:
+        filenames = os.listdir(LOG_DIGEST_DIR)
+    except FileNotFoundError:
+        return {"days": []}
+    except OSError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Log digest history is temporarily unavailable",
+        ) from exc
+
+    days = []
+    for filename in sorted(filenames, reverse=True):
+        date, extension = os.path.splitext(filename)
+        if extension != ".json" or not LOG_DIGEST_DATE_PATTERN.fullmatch(date):
+            continue
+        try:
+            report = read_log_digest(os.path.join(LOG_DIGEST_DIR, filename))
+        except HTTPException:
+            continue
+        days.append(
+            {
+                "date": report.get("reportDate") or date,
+                "generatedAt": report.get("generatedAt"),
+                "overallStatus": report.get("overallStatus"),
+                "summary": report.get("summary") or {},
+            }
+        )
+        if len(days) >= 90:
+            break
+    return {"days": days}
 
 
 @router.get("/v2/admin/uptime")
@@ -223,21 +376,27 @@ def uptime_overview(_: Dict[str, str] = Depends(admin_user)):
 
 
 @router.get("/v2/admin/system-metrics/live")
-def system_metrics_live(_: Dict[str, str] = Depends(admin_user)):
-    return current_metrics()
+def system_metrics_live(
+    node: str = DEFAULT_NETDATA_NODE,
+    _: Dict[str, str] = Depends(admin_user),
+):
+    return current_metrics(node)
 
 
 @router.get("/v2/admin/system-metrics/stream")
 async def system_metrics_stream(
     request: Request,
+    node: str = DEFAULT_NETDATA_NODE,
     _: Dict[str, str] = Depends(admin_user),
 ):
+    netdata_node(node)
+
     async def events():
         yield "retry: 2000\n\n"
         while not await request.is_disconnected():
             started_at = time.monotonic()
             try:
-                payload = await asyncio.to_thread(current_metrics)
+                payload = await asyncio.to_thread(current_metrics, node)
                 yield (
                     f"id: {payload['sampledAt']}\n"
                     "event: metrics\n"
@@ -263,7 +422,11 @@ async def system_metrics_stream(
 
 
 @router.get("/v2/admin/system-metrics")
-def system_metrics(_: Dict[str, str] = Depends(admin_user)):
+def system_metrics(
+    node: str = DEFAULT_NETDATA_NODE,
+    _: Dict[str, str] = Depends(admin_user),
+):
+    selected = netdata_node(node)
     history_charts = {
         "cpu": "system.cpu",
         "memory": "system.ram",
@@ -273,15 +436,16 @@ def system_metrics(_: Dict[str, str] = Depends(admin_user)):
         "temperature": "sensors.temperature_cpu_thermal-virtual-0_temp1_input",
     }
     with ThreadPoolExecutor(max_workers=8) as executor:
-        info_future = executor.submit(netdata_get, "/api/v1/info")
+        info_future = executor.submit(netdata_get, "/api/v1/info", None, node)
         alarms_future = executor.submit(
             netdata_get,
             "/api/v1/alarms",
             {"all": "true"},
+            node,
         )
-        live_future = executor.submit(current_metrics)
+        live_future = executor.submit(current_metrics, node)
         chart_futures = {
-            key: executor.submit(chart_data, chart)
+            key: executor.submit(chart_data, chart, node)
             for key, chart in history_charts.items()
         }
         info = info_future.result()
@@ -304,8 +468,13 @@ def system_metrics(_: Dict[str, str] = Depends(admin_user)):
     ]
 
     return {
+        "node": selected["id"],
+        "nodes": [
+            {"id": item["id"], "label": item["label"]}
+            for item in NETDATA_NODES.values()
+        ],
         "host": {
-            "hostname": (info.get("mirrored_hosts") or ["pi-purva"])[0],
+            "hostname": (info.get("mirrored_hosts") or [selected["label"]])[0],
             "version": info.get("version"),
             "osName": info.get("os_name"),
             "osVersion": info.get("os_version"),

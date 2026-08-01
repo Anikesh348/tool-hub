@@ -3,10 +3,11 @@ import { useApiFetcher } from "../hooks/useApiFetcher";
 import { useAuth } from "../context/AuthContext";
 import PriceChart from "./PriceChart";
 import { Loader } from "./Loader";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ProductService } from "../apis/product/product";
 import { ArrowLeft } from "lucide-react";
 import { useNotification } from "../context/NotificationContext";
+import { locationPath } from "../utils/authRedirect";
 
 const amazonIcon =
   "https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg";
@@ -47,6 +48,7 @@ const Dashboard: React.FC = () => {
   const { authToken, isAuthLoading } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data, error, loading, fetchData: fetchProducts } = useApiFetcher();
   const { data: deleteResponse, fetchData: fetchDelete } = useApiFetcher();
   const [showChartFor, setShowChartFor] = useState<Product | null>(null);
@@ -56,7 +58,7 @@ const Dashboard: React.FC = () => {
     if (isAuthLoading) return;
 
     if (!authToken) {
-      navigate("/login");
+      navigate("/login", { state: { from: locationPath(location) } });
       return;
     }
 
@@ -64,7 +66,7 @@ const Dashboard: React.FC = () => {
       ProductService.getProduct().url,
       ProductService.getProduct().options
     );
-  }, [authToken, isAuthLoading, fetchProducts, navigate]);
+  }, [authToken, isAuthLoading, fetchProducts, location, navigate]);
 
   useEffect(() => {
     if (deleteResponse !== null && deleteResponse?.status === 200) {

@@ -42,6 +42,18 @@ def current_user(
     return request_user(request, authorization)
 
 
+def optional_user(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+) -> Dict[str, str]:
+    token = (request.cookies.get(ACCESS_COOKIE) or "").strip()
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        return {}
+    return request_user(request, authorization)
+
+
 def admin_user(user: Dict[str, str] = Depends(current_user)) -> Dict[str, str]:
     if user.get("role", "").upper() != "ADMIN":
         raise HTTPException(status_code=403, detail="Forbidden: Insufficient permissions")

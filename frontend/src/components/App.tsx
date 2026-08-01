@@ -19,6 +19,11 @@ import { ToastContainer } from "./Toast";
 import AdminSettings from "./AdminSettings";
 import SpeedTest from "./SpeedTest";
 import AdminRemote from "./AdminRemote";
+import BlogIndex from "./blogs/BlogIndex";
+import BlogArticle from "./blogs/BlogArticle";
+import AdminBlogEditor from "./blogs/AdminBlogEditor";
+import AdminBlogAnalytics from "./blogs/AdminBlogAnalytics";
+import { locationPath, rememberAuthReturnPath } from "../utils/authRedirect";
 
 const DEFAULT_TITLE = "ToolHub";
 
@@ -36,6 +41,10 @@ const getPageTitle = (pathname: string) => {
   if (pathname === "/speedtest") return "Speed Test | ToolHub";
   if (pathname === "/remote") return "Remote | ToolHub";
   if (pathname === "/settings") return "Admin Settings | ToolHub";
+  if (pathname === "/blogs") return "Blogs | ToolHub";
+  if (pathname.startsWith("/blogs/")) return "Homelab Blog | ToolHub";
+  if (pathname === "/admin/blogs") return "Blog Studio | ToolHub";
+  if (pathname === "/admin/blogs/analytics") return "Blog Analytics | ToolHub";
   if (pathname.startsWith("/admin/tools/")) {
     const tool = getAdminTool(pathname.split("/").pop());
     return tool ? `${tool.title} | ToolHub` : DEFAULT_TITLE;
@@ -51,6 +60,16 @@ function PageTitle() {
   useEffect(() => {
     document.title = getPageTitle(pathname);
   }, [pathname]);
+
+  return null;
+}
+
+function AuthReturnTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    rememberAuthReturnPath(location);
+  }, [location]);
 
   return null;
 }
@@ -82,7 +101,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) {
     return (
-      <Navigate to="/login" replace state={{ from: location.pathname }} />
+      <Navigate to="/login" replace state={{ from: locationPath(location) }} />
     );
   }
 
@@ -101,7 +120,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) {
     return (
-      <Navigate to="/login" replace state={{ from: location.pathname }} />
+      <Navigate to="/login" replace state={{ from: locationPath(location) }} />
     );
   }
 
@@ -111,12 +130,13 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function App() {
   const { pathname } = useLocation();
   const isLanding = pathname === "/";
-  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname === "/settings" || pathname === "/remote";
+  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/settings" || pathname === "/remote";
 
   return (
     <NotificationProvider>
-      <div className="app-shell min-h-screen bg-[#030711] text-slate-100">
+      <div className="app-shell min-h-screen">
         <PageTitle />
+        <AuthReturnTracker />
         <Header />
         <main
           className={`portal-main min-h-screen w-full ${hasSidebar ? "lg:pl-60" : ""}`}
@@ -146,6 +166,8 @@ function App() {
             />
             <Route path="/login" element={<LogIn />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/blogs" element={<BlogIndex />} />
+            <Route path="/blogs/:slug" element={<BlogArticle />} />
             <Route path="/pricetracker/dashboard" element={<Dashboard />} />
             <Route
               path="/leetcode"
@@ -168,6 +190,22 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminRemote />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/blogs"
+              element={
+                <AdminRoute>
+                  <AdminBlogEditor />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/blogs/analytics"
+              element={
+                <AdminRoute>
+                  <AdminBlogAnalytics />
                 </AdminRoute>
               }
             />

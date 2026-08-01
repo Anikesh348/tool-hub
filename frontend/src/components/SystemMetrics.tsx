@@ -32,6 +32,11 @@ type ChartResponse = {
 };
 
 type MetricsResponse = {
+  node: string;
+  nodes: Array<{
+    id: string;
+    label: string;
+  }>;
   host: {
     hostname: string;
     version?: string;
@@ -104,6 +109,8 @@ type LiveMetrics = {
     sentKbps: number;
   };
   temperatureCelsius: number;
+  prodeskTemperatureCelsius: number | null;
+  prodeskTemperatureSampledAt: number | null;
   uptimeSeconds: number;
   processes: ProcessMetric[];
 };
@@ -120,6 +127,10 @@ type SeriesPoint = Record<string, number | string>;
 
 const API_BASE = (import.meta.env.VITE_BASE_BACKEND_URL || "").replace(/\/$/, "");
 const PROCESS_ROW_COUNT = 12;
+const DEFAULT_NODES = [
+  { id: "pi5", label: "Pi 5" },
+  { id: "ubuntu", label: "HP / Ubuntu" },
+];
 const colors = {
   violet: "#8b5cf6",
   blue: "#38bdf8",
@@ -293,6 +304,8 @@ const SystemMetrics = () => {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [streamState, setStreamState] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const [processSort, setProcessSort] = useState<"cpu" | "memory">("cpu");
+  const [selectedNode, setSelectedNode] = useState("pi5");
+  const [availableNodes, setAvailableNodes] = useState(DEFAULT_NODES);
   const fullRequestRunning = useRef(false);
 
   const loadMetrics = useCallback(async () => {
@@ -300,7 +313,8 @@ const SystemMetrics = () => {
     fullRequestRunning.current = true;
     try {
       setError("");
-      const send = () => fetch(`${API_BASE}/v2/admin/system-metrics`, {
+      const query = new URLSearchParams({ node: selectedNode });
+      const send = () => fetch(`${API_BASE}/v2/admin/system-metrics?${query}`, {
         credentials: "include",
       });
       let response = await send();
@@ -308,6 +322,7 @@ const SystemMetrics = () => {
       if (!response.ok) throw new Error(`Metrics request failed (${response.status})`);
       const nextMetrics = (await response.json()) as MetricsResponse;
       setMetrics(nextMetrics);
+      setAvailableNodes(nextMetrics.nodes?.length ? nextMetrics.nodes : DEFAULT_NODES);
       setUpdatedAt(new Date(nextMetrics.live.sampledAt * 1000));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Metrics are unavailable");
@@ -315,13 +330,15 @@ const SystemMetrics = () => {
       fullRequestRunning.current = false;
       setLoading(false);
     }
-  }, [authToken]);
+  }, [authToken, selectedNode]);
 
   useEffect(() => {
     if (!authToken) return;
+    setLoading(true);
     loadMetrics();
     setStreamState("connecting");
-    const source = new EventSource(`${API_BASE}/v2/admin/system-metrics/stream`, {
+    const query = new URLSearchParams({ node: selectedNode });
+    const source = new EventSource(`${API_BASE}/v2/admin/system-metrics/stream?${query}`, {
       withCredentials: true,
     });
     source.onopen = () => setStreamState("live");
@@ -350,7 +367,7 @@ const SystemMetrics = () => {
       window.clearInterval(historyInterval);
       source.close();
     };
-  }, [authToken, loadMetrics]);
+  }, [authToken, loadMetrics, selectedNode]);
 
   const values = useMemo(() => {
     if (!metrics) return null;
@@ -365,6 +382,8 @@ const SystemMetrics = () => {
       diskAvailable: live.disk.availableGiB,
       load1: live.load.load1,
       temperature: live.temperatureCelsius,
+      prodeskTemperature: live.prodeskTemperatureCelsius,
+      prodeskTemperatureSampledAt: live.prodeskTemperatureSampledAt,
       received: live.network.receivedKbps,
       sent: live.network.sentKbps,
       diskRead: live.diskIo.readKiBps,
@@ -391,7 +410,7 @@ const SystemMetrics = () => {
   if (loading && !metrics) {
     return (
       <div className="flex flex-1 items-center justify-center bg-[#050914] text-sm text-slate-400">
-        Loading live Pi metrics...
+        Loading live system metrics...
       </div>
     );
   }
@@ -430,6 +449,38 @@ const SystemMetrics = () => {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-[#050914] px-4 py-5 sm:px-6">
       <div className="mx-auto max-w-[1500px] space-y-5">
+        <section className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-[#0a101c]/90 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Monitoring node
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Switch between the Raspberry Pi 5 and the HP-hosted Ubuntu VM.
+            </p>
+          </div>
+          <div className="flex flex-wrap rounded-xl border border-white/[0.08] bg-[#060b14] p-1">
+            {availableNodes.map((node) => (
+              <button
+                key={node.id}
+                type="button"
+                onClick={() => {
+                  if (node.id === selectedNode) return;
+                  setError("");
+                  setLoading(true);
+                  setSelectedNode(node.id);
+                }}
+                className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${
+                  selectedNode === node.id
+                    ? "bg-violet-500/20 text-violet-200"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                {node.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="flex flex-col justify-between gap-4 rounded-2xl border border-violet-400/15 bg-gradient-to-br from-violet-500/10 via-[#0a101c] to-sky-500/5 p-5 sm:flex-row sm:items-center">
           <div className="flex items-center gap-4">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
@@ -470,11 +521,32 @@ const SystemMetrics = () => {
           </div>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard icon={Cpu} label="CPU Usage" value={`${values.cpuPercent.toFixed(1)}%`} detail={`${metrics.host.cores || "?"} cores · Load ${values.load1.toFixed(2)}`} tone="violet" />
           <MetricCard icon={MemoryStick} label="Memory" value={`${values.ramPercent.toFixed(1)}%`} detail={`${values.ramUsed.toFixed(1)} of ${values.ramTotal.toFixed(1)} MiB used`} tone="blue" />
           <MetricCard icon={HardDrive} label="Storage" value={`${values.diskPercent.toFixed(1)}%`} detail={`${values.diskUsed.toFixed(1)} GiB used · ${values.diskAvailable.toFixed(1)} GiB free`} tone="amber" />
           <MetricCard icon={Thermometer} label="CPU Temperature" value={`${values.temperature.toFixed(1)}°C`} detail={values.temperature >= 75 ? "Running hot" : "Thermals normal"} tone={values.temperature >= 75 ? "rose" : "green"} />
+          <MetricCard
+            icon={Thermometer}
+            label="ProDesk CPU"
+            value={values.prodeskTemperature == null ? "Unavailable" : `${values.prodeskTemperature.toFixed(1)}°C`}
+            detail={
+              values.prodeskTemperature == null
+                ? "Host sensor unavailable"
+                : values.prodeskTemperature >= 90
+                  ? "Critical temperature"
+                  : values.prodeskTemperature >= 80
+                    ? "Running warm"
+                    : "Thermals normal"
+            }
+            tone={
+              values.prodeskTemperature == null || values.prodeskTemperature >= 90
+                ? "rose"
+                : values.prodeskTemperature >= 80
+                  ? "amber"
+                  : "green"
+            }
+          />
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a101c]/90 [overflow-anchor:none]">

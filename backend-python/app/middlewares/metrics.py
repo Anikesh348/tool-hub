@@ -29,7 +29,6 @@ METRICS_TOKEN_PATH = Path(
 IGNORED_METRIC_PATHS = {
     "/metrics",
     "/health",
-    "/v2/admin/proxy/authorize",
 }
 
 

@@ -22,6 +22,7 @@ import {
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
+import { locationPath } from "../utils/authRedirect";
 import { MovieHubSection, SectionConfig } from "./moviehub/types";
 import { MovieHubNav } from "./moviehub/MovieHubNav";
 import { MovieHubRequestSection } from "./moviehub/MovieHubRequestSection";
@@ -482,9 +483,9 @@ export const MovieHub: React.FC = () => {
 
   useEffect(() => {
     if (isUnauthenticated) {
-      navigate("/login", { state: { from: location.pathname } });
+      navigate("/login", { state: { from: locationPath(location) } });
     }
-  }, [isUnauthenticated, location.pathname, navigate]);
+  }, [isUnauthenticated, location, navigate]);
 
   const loadMyRequests = useCallback(() => {
     const { url, options } = MovieHubService.getMyRequests();

@@ -22,6 +22,7 @@ from app.middlewares.auth import admin_user, current_user
 from app.services.mongo import col, find, find_one, insert, update_one_or_404, delete_one_or_404
 from app.services.moviehub_automation import *
 from app.services.mail import send_brevo_email
+from app.services.notifications import emit_notification
 from app.utils.http import api_headers, base_url
 from app.utils.responses import error, now_iso, success
 
@@ -71,6 +72,16 @@ async def moviehub_create_request(request: Request, user: Dict[str, str] = Depen
         "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso(),
     }
     insert(MEDIA_REQUESTS_COLLECTION, record)
+    emit_notification(
+        audience="ADMIN",
+        title="New MovieHub request",
+        message=f"{record.get('userName') or record.get('userEmail') or 'A user'} requested {title}.",
+        severity="INFO",
+        category="media_request",
+        source="moviehub",
+        action_url="/moviehub/admin/approvals",
+        metadata={"requestId": record["requestId"], "mediaType": mt, "title": title},
+    )
     return JSONResponse(status_code=201, content=success({"message": "request created", "requestId": record["requestId"], "status": "PENDING"}))
 
 
@@ -109,6 +120,17 @@ def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(adm
         notification = "sent"
     except Exception:
         notification = "failed"
+    emit_notification(
+        audience="USER",
+        target_user_id=record.get("userId"),
+        title="MovieHub request approved",
+        message=f"{record.get('title')} was approved and queued for download.",
+        severity="SUCCESS",
+        category="media_request",
+        source="moviehub",
+        action_url="/moviehub/downloads",
+        metadata={"requestId": request_id, "mediaType": record.get("mediaType")},
+    )
     return success({"message": "Request approved and media queued for download", "requestId": request_id, "notification": notification})
 
 
@@ -345,6 +367,20 @@ def moviehub_reconcile():
                     update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": record.get("requestId")}, {"$set": {"status": "DOWNLOADED", "downloadedAt": now, "updatedAt": now}})
                     record["status"] = "DOWNLOADED"
                     record["downloadedAt"] = now
+                    emit_notification(
+                        audience="USER",
+                        target_user_id=record.get("userId"),
+                        title="MovieHub download completed",
+                        message=f"{record.get('title')} is now available in MovieHub.",
+                        severity="SUCCESS",
+                        category="media_download",
+                        source="moviehub",
+                        action_url="/moviehub/watch",
+                        metadata={
+                            "requestId": record.get("requestId"),
+                            "mediaType": record.get("mediaType"),
+                        },
+                    )
                 else:
                     summary["inQueue"] += 1
                     continue
@@ -711,6 +747,16 @@ async def moviehub_access_request(request: Request, user: Dict[str, str] = Depen
     req_id = str(uuid.uuid4())
     record = {"requestId": req_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "encryptedPassword": encrypted_password, "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()}
     insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, record)
+    emit_notification(
+        audience="ADMIN",
+        title="MovieHub access requested",
+        message=f"{record.get('userName') or email or 'A user'} requested access as {username}.",
+        severity="INFO",
+        category="access",
+        source="moviehub",
+        action_url="/moviehub/admin/access",
+        metadata={"requestId": req_id, "userId": user["userId"]},
+    )
     return JSONResponse(status_code=201, content=success({"message": "moviehub access request submitted", "requestId": req_id, "status": "PENDING", "movieHubUserName": username}))
 
 
@@ -756,12 +802,37 @@ def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admi
     now = now_iso()
     insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": request_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "userName": req.get("userName"), "movieHubUserName": req.get("movieHubUserName"), "movieHubUserNameLower": req.get("movieHubUserNameLower"), "jellyfinUserId": jellyfin_user_id, "approvedBy": user["userId"], "approvedAt": now, "passwordResetConfirmedAt": None, "active": True, "createdAt": now, "updatedAt": now})
     col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "jellyfinUserId": jellyfin_user_id, "credentialsSentAt": now, "updatedAt": now}})
+    emit_notification(
+        audience="USER",
+        target_user_id=req.get("userId"),
+        title="MovieHub access approved",
+        message="Your MovieHub access was approved. Your sign-in details were sent by email.",
+        severity="SUCCESS",
+        category="access",
+        source="moviehub",
+        action_url="/moviehub",
+        metadata={"requestId": request_id},
+    )
     return success({"message": "moviehub access approved and jellyfin user created", "requestId": request_id, "movieHubUserName": req.get("movieHubUserName"), "notification": "sent"})
 
 
 @router.post("/v2/admin/moviehub/access/requests/{request_id}/reject")
 def moviehub_access_reject(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+    req = find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id})
+    if not req:
+        return JSONResponse(status_code=404, content=error("request not found"))
     update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "REJECTED", "rejectedBy": user["userId"], "rejectedAt": now_iso(), "updatedAt": now_iso()}})
+    emit_notification(
+        audience="USER",
+        target_user_id=req.get("userId"),
+        title="MovieHub access request updated",
+        message="Your MovieHub access request was not approved.",
+        severity="WARNING",
+        category="access",
+        source="moviehub",
+        action_url="/moviehub",
+        metadata={"requestId": request_id},
+    )
     return success({"message": "moviehub access request rejected", "requestId": request_id, "status": "REJECTED", "notification": "skipped"})
 
 

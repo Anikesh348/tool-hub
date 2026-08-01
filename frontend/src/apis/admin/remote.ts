@@ -13,6 +13,10 @@ export interface Pi5RenderState {
   message?: string;
 }
 
+export interface SmallLightsGuardState {
+  enabled: boolean;
+}
+
 const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const send = () => fetch(url, {
     ...(options || {}),
@@ -27,6 +31,11 @@ const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> =>
 };
 
 export const AdminRemoteService = {
+  smallLightsGuard: () => requestJson<SmallLightsGuardState>(`${BASE_URL}/v2/admin/home/small-lights-guard`),
+  setSmallLightsGuard: (enabled: boolean) => requestJson<SmallLightsGuardState>(
+    `${BASE_URL}/v2/admin/home/small-lights-guard/${enabled ? "on" : "off"}`,
+    { method: "POST" },
+  ),
   pi5RenderStatus: () => requestJson<Pi5RenderState>(`${BASE_URL}/v2/admin/remote/pi5-render`),
   setPi5RenderPaused: (paused: boolean) => requestJson<Pi5RenderState>(
     `${BASE_URL}/v2/admin/remote/pi5-render/${paused ? "pause" : "resume"}`,

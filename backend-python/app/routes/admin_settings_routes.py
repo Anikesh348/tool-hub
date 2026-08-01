@@ -5,13 +5,14 @@ from fastapi.responses import JSONResponse
 
 from app.middlewares.auth import admin_user
 from app.services.buzzwatch import refresh_buzzwatch_items
-from app.services.host_admin import host_admin_request
+from app.services.host_admin import codex_host_admin_request, host_admin_request
 from app.services.mongo import col
 from app.services.redis_cache import cache_delete_pattern, cache_info
 from app.utils.responses import error, jsonable, now_iso, success
 
 router = APIRouter()
 AUDIT_COLLECTION = "adminsettingsaudit"
+SPEEDTEST_TARGETS = {"hp-purva", "ubuntu-purva", "homeassistant", "hp-codex", "pi-purva"}
 
 
 def audit(user: Dict[str, str], action: str, status: str, details: Dict[str, Any] | None = None) -> None:
@@ -61,24 +62,43 @@ def admin_settings_buzzwatch_refresh(user: Dict[str, str] = Depends(admin_user))
     return success({"message": "BuzzWatch catalog refreshed", **result})
 
 
+@router.get("/v2/admin/settings/speedtest")
+def admin_settings_speedtest_latest(_: Dict[str, str] = Depends(admin_user)):
+    row = col(AUDIT_COLLECTION).find_one(
+        {"action": "SERVER_FLEET_SPEEDTEST", "status": {"$in": ["COMPLETED", "PARTIAL"]}},
+        sort=[("createdAt", -1)],
+    )
+    if not row:
+        return success({"available": False})
+    return success({"available": True, **jsonable(row.get("details") or {})})
+
+
 @router.post("/v2/admin/settings/speedtest")
 def admin_settings_speedtest(user: Dict[str, str] = Depends(admin_user)):
+    return run_admin_speedtest(user)
+
+
+@router.post("/v2/admin/settings/speedtest/{target_id}")
+def admin_settings_node_speedtest(target_id: str, user: Dict[str, str] = Depends(admin_user)):
+    if target_id not in SPEEDTEST_TARGETS:
+        return JSONResponse(status_code=404, content=error("Unknown speed-test target"))
+    return run_admin_speedtest(user, target_id)
+
+
+def run_admin_speedtest(user: Dict[str, str], target_id: str | None = None):
+    action = "SERVER_FLEET_SPEEDTEST" if target_id is None else "SERVER_NODE_SPEEDTEST"
+    path = "/v1/fleet-speedtest" if target_id is None else f"/v1/speedtest/{target_id}"
     try:
-        result = host_admin_request("POST", "/v1/speedtest", timeout=180)
+        result = codex_host_admin_request("POST", path, timeout=300)
     except RuntimeError as exc:
-        audit(user, "SERVER_SPEEDTEST", "FAILED", {"error": str(exc)})
+        audit(user, action, "FAILED", {"targetId": target_id, "error": str(exc)})
         return JSONResponse(status_code=503, content=error(str(exc)))
-    audit(
-        user,
-        "SERVER_SPEEDTEST",
-        "COMPLETED",
-        {
-            "downloadMbps": result.get("downloadMbps"),
-            "uploadMbps": result.get("uploadMbps"),
-            "pingMs": result.get("pingMs"),
-        },
-    )
-    return success({"message": "Server speed test completed", **result})
+    failed = sum(1 for item in result.get("results", []) if item.get("status") != "ok")
+    status = "PARTIAL" if failed else "COMPLETED"
+    audit(user, action, status, result)
+    subject = "Fleet" if target_id is None else next((item.get("label") for item in result.get("results", [])), target_id)
+    message = f"{subject} speed test completed" if not failed else f"{subject} speed test failed"
+    return success({"message": message, **result})
 
 
 @router.post("/v2/admin/settings/restart-toolhub")

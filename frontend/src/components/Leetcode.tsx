@@ -7,6 +7,7 @@ import Filters from "./Filters";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
 import { BookOpenCheck, CheckCircle2, Circle, Plus } from "lucide-react";
+import { locationPath } from "../utils/authRedirect";
 
 export const Leetcode = () => {
   const { authToken, isAuthLoading } = useAuth();
@@ -77,14 +78,14 @@ export const Leetcode = () => {
     if (isAuthLoading) return;
 
     if (!authToken) {
-      navigate("/login");
+      navigate("/login", { state: { from: locationPath(location) } });
       return;
     }
 
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     fetchQuestions();
-  }, [authToken, isAuthLoading, navigate]);
+  }, [authToken, isAuthLoading, location, navigate]);
 
   // Handle fetch results
   useEffect(() => {

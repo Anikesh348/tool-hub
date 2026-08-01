@@ -21,7 +21,8 @@ import { useAuth } from "../context/AuthContext";
 import { useApiFetcher } from "../hooks/useApiFetcher";
 import { useNotification } from "../context/NotificationContext";
 import { Loader } from "./Loader";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { locationPath } from "../utils/authRedirect";
 
 type FlightWatch = {
   watchId: string;
@@ -137,6 +138,7 @@ const priceDelta = (watch: FlightWatch) => {
 
 const FlightTracker = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addNotification } = useNotification();
   const { isAuthenticated, isAuthLoading } = useAuth();
   const watchesFetcher = useApiFetcher();
@@ -300,7 +302,7 @@ const FlightTracker = () => {
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!isAuthenticated) {
-      navigate("/login", { state: { from: "/flighttracker" } });
+      navigate("/login", { state: { from: locationPath(location) } });
       return;
     }
     const payload = {
@@ -338,7 +340,7 @@ const FlightTracker = () => {
             </p>
           </div>
           {!isAuthenticated ? (
-            <button onClick={() => navigate("/login", { state: { from: "/flighttracker" } })} className="portal-primary-button">
+            <button onClick={() => navigate("/login", { state: { from: locationPath(location) } })} className="portal-primary-button">
               Log in to track
             </button>
           ) : (

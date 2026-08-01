@@ -16,24 +16,19 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const getInitialTheme = (): Theme => {
+  if (typeof window === "undefined") return "dark";
+  const savedTheme = window.localStorage.getItem("theme");
+  if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+};
+
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [theme, setThemeState] = useState<Theme>("dark");
-
-  // Check for saved theme preference or default to 'light'
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as Theme;
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    ).matches;
-
-    if (savedTheme) {
-      setThemeState(savedTheme);
-    } else if (prefersDark) {
-      setThemeState("dark");
-    }
-  }, []);
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 
   // Apply theme to document element
   useEffect(() => {
@@ -43,6 +38,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({
     } else {
       root.classList.remove("dark");
     }
+    root.style.colorScheme = theme;
     localStorage.setItem("theme", theme);
   }, [theme]);
 

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useNotification } from "../context/NotificationContext";
 import type { SearchPlatform } from "../apis/search/search";
+import { locationPath } from "../utils/authRedirect";
 
 const searchPlatforms: { id: SearchPlatform; label: string; tone: string }[] = [
   { id: "amazon", label: "Amazon", tone: "yellow" },
@@ -135,6 +136,7 @@ const PriceTracker = () => {
       isOpen: false,
       message: "",
     });
+    navigate("/login", { state: { from: locationPath(location) } });
   };
 
   useEffect(() => {

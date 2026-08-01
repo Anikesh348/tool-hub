@@ -3,8 +3,6 @@ import {
   Activity,
   AlertTriangle,
   Database,
-  Download,
-  Gauge,
   HardDrive,
   History,
   MemoryStick,
@@ -13,12 +11,11 @@ import {
   RotateCcw,
   Server,
   Trash2,
-  Upload,
-  Wifi,
   X,
 } from "lucide-react";
-import { AdminAuditItem, AdminSettingsService, AdminStatus, ServerSpeedTestResult } from "../apis/admin/settings";
+import { AdminAuditItem, AdminSettingsService, AdminStatus } from "../apis/admin/settings";
 import { Loader } from "./Loader";
+import FleetSpeedTestPanel from "./FleetSpeedTestPanel";
 
 type ActionName = "cache" | "refresh" | "toolhub" | "reboot";
 
@@ -35,8 +32,6 @@ const formatUptime = (seconds = 0) => {
   const minutes = Math.floor((seconds % 3600) / 60);
   return `${days}d ${hours}h ${minutes}m`;
 };
-
-const formatSpeed = (value?: number | null) => (value === undefined || value === null ? "--" : value.toFixed(1));
 
 const ACTIONS: Record<ActionName, {
   title: string;
@@ -85,9 +80,6 @@ const AdminSettings = () => {
   const [feedback, setFeedback] = useState("");
   const [action, setAction] = useState<ActionName | null>(null);
   const [busy, setBusy] = useState(false);
-  const [speedTest, setSpeedTest] = useState<ServerSpeedTestResult | null>(null);
-  const [speedTestBusy, setSpeedTestBusy] = useState(false);
-  const [speedTestError, setSpeedTestError] = useState("");
 
   const load = async () => {
     setError("");
@@ -127,22 +119,6 @@ const AdminSettings = () => {
     }
   };
 
-  const runServerSpeedTest = async () => {
-    setSpeedTestBusy(true);
-    setSpeedTestError("");
-    setFeedback("");
-    try {
-      const result = await AdminSettingsService.runSpeedTest();
-      setSpeedTest(result);
-      setFeedback(result.message);
-      await load();
-    } catch (err: any) {
-      setSpeedTestError(err?.message || "Server speed test failed");
-    } finally {
-      setSpeedTestBusy(false);
-    }
-  };
-
   if (loading) return <div className="portal-page flex min-h-screen items-center justify-center"><Loader /></div>;
 
   const memoryPercent = status?.host.memory?.totalBytes ? (status.host.memory.usedBytes / status.host.memory.totalBytes) * 100 : 0;
@@ -173,35 +149,7 @@ const AdminSettings = () => {
           </div>
         </section>
 
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2"><Gauge className="h-4 w-4 text-cyan-300" /><h2 className="text-base font-black text-white">Server speed test</h2></div>
-            <button onClick={runServerSpeedTest} disabled={speedTestBusy} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-cyan-300 px-4 text-xs font-black text-slate-950 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">
-              {speedTestBusy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Gauge className="h-4 w-4" />}
-              {speedTestBusy ? "Testing..." : "Run test"}
-            </button>
-          </div>
-          <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
-            {[
-              { label: "Ping", value: speedTest?.pingMs === undefined ? "--" : speedTest.pingMs.toFixed(0), unit: "ms", icon: Activity },
-              { label: "Download", value: formatSpeed(speedTest?.downloadMbps), unit: "Mbps", icon: Download },
-              { label: "Upload", value: formatSpeed(speedTest?.uploadMbps), unit: "Mbps", icon: Upload },
-            ].map(({ label, value, unit, icon: Icon }) => (
-              <div key={label} className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
-                <div className="flex items-center justify-between"><p className="text-[11px] font-bold uppercase text-slate-500">{label}</p><Icon className="h-4 w-4 text-cyan-300" /></div>
-                <p className="mt-3 text-2xl font-black text-white">{value}<span className="ml-1 text-xs font-bold text-slate-500">{unit}</span></p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-2"><Wifi className="h-4 w-4 text-cyan-300" />{speedTest?.client?.isp || "Pi internet connection"}</span>
-              <span>{speedTest?.server?.sponsor || "Speedtest server"}{speedTest?.server?.name ? `, ${speedTest.server.name}` : ""}</span>
-              {speedTest?.timestamp && <span>{new Date(speedTest.timestamp).toLocaleString()}</span>}
-            </div>
-            {speedTestError && <p className="mt-3 rounded-lg border border-rose-300/20 bg-rose-300/10 p-3 text-sm font-semibold text-rose-200">{speedTestError}</p>}
-          </div>
-        </section>
+        <FleetSpeedTestPanel onAuditRefresh={load} />
 
         <section>
           <h2 className="text-base font-black text-white">Maintenance</h2>

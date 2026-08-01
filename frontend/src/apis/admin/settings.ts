@@ -54,6 +54,36 @@ export interface ServerSpeedTestResult {
   };
 }
 
+export interface FleetSpeedTestNodeResult {
+  id: string;
+  label: string;
+  kind: string;
+  hostname: string;
+  status: "ok" | "error";
+  latencyMs?: number;
+  jitterMs?: number;
+  responseMs?: number;
+  downloadMbps?: number;
+  uploadMbps?: number;
+  durationSeconds: number;
+  error?: string;
+}
+
+export interface FleetSpeedTestResult {
+  available?: boolean;
+  message?: string;
+  startedAt: string;
+  completedAt: string;
+  provider: string;
+  mode: "sequential" | "individual";
+  scope?: "fleet" | "node";
+  targetId?: string | null;
+  downloadBytesPerHost: number;
+  uploadBytesPerHost: number;
+  estimatedTotalMiB: number;
+  results: FleetSpeedTestNodeResult[];
+}
+
 const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const send = () => fetch(url, {
     ...(options || {}),
@@ -62,8 +92,9 @@ const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> =>
   });
   let response = await send();
   if (response.status === 401 && (await refreshAccessToken())) response = await send();
-  const body = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(body?.error || body?.detail || "Admin action failed");
+  const responseText = await response.text();
+  const body = responseText ? (() => { try { return JSON.parse(responseText); } catch { return null; } })() : null;
+  if (!response.ok) throw new Error(body?.error || body?.detail || `Admin request failed (${response.status})`);
   return body?.response as T;
 };
 
@@ -72,7 +103,13 @@ export const AdminSettingsService = {
   audit: () => requestJson<{ items: AdminAuditItem[] }>(`${BASE_URL}/v2/admin/settings/audit`),
   clearCache: () => requestJson<{ message: string; deletedKeys: number }>(`${BASE_URL}/v2/admin/settings/cache/clear`, { method: "POST" }),
   refreshBuzzWatch: () => requestJson<{ message: string; updated: number }>(`${BASE_URL}/v2/admin/settings/buzzwatch/refresh`, { method: "POST" }),
-  runSpeedTest: () => requestJson<ServerSpeedTestResult>(`${BASE_URL}/v2/admin/settings/speedtest`, { method: "POST" }),
+  latestFleetSpeedTest: () => requestJson<FleetSpeedTestResult>(`${BASE_URL}/v2/admin/settings/speedtest`),
+  runSpeedTest: (targetId?: string) => requestJson<FleetSpeedTestResult>(
+    targetId
+      ? `${BASE_URL}/v2/admin/settings/speedtest/${encodeURIComponent(targetId)}`
+      : `${BASE_URL}/v2/admin/settings/speedtest`,
+    { method: "POST" },
+  ),
   restartToolHub: (confirmation: string) => requestJson<{ message: string }>(`${BASE_URL}/v2/admin/settings/restart-toolhub`, {
     method: "POST",
     body: JSON.stringify({ confirmation }),

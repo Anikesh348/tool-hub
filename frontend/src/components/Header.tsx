@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
+  BookOpen,
   ChartNoAxesCombined,
   Check,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  SquarePen,
   TerminalSquare,
   type LucideIcon,
   X,
@@ -30,8 +32,16 @@ import { adminTools } from "../adminTools";
 import { useAuth } from "../context/AuthContext";
 import { useNotification } from "../context/NotificationContext";
 import ThemeToggle from "./ThemeToggle";
+import GlobalNotifications from "./GlobalNotifications";
+import { locationPath } from "../utils/authRedirect";
 
 const toolLinks = [
+  {
+    to: "/blogs",
+    label: "Blogs",
+    icon: BookOpen,
+    adminOnly: false,
+  },
   {
     to: "/speedtest",
     label: "Speed Test",
@@ -68,11 +78,31 @@ const toolLinks = [
     icon: Code2,
     adminOnly: true,
   },
+];
+
+const publishingLinks = [
+  {
+    to: "/admin/blogs",
+    label: "Blog Studio",
+    icon: SquarePen,
+  },
+  {
+    to: "/admin/blogs/analytics",
+    label: "Blog Analytics",
+    icon: BarChart3,
+  },
+];
+
+const workspaceLinks = [
+  {
+    to: "/settings",
+    label: "Settings",
+    icon: Settings,
+  },
   {
     to: "/remote",
     label: "Remote",
     icon: MonitorOff,
-    adminOnly: true,
   },
 ];
 
@@ -88,6 +118,15 @@ type SearchEntry = {
 };
 
 const searchableTools: SearchEntry[] = [
+  {
+    to: "/blogs",
+    label: "Blogs",
+    description: "Read notes from the homelab",
+    icon: BookOpen,
+    adminOnly: false,
+    keywords: ["blog", "blogs", "articles", "homelab", "writing", "self-hosting"],
+    kind: "tool",
+  },
   {
     to: "/",
     label: "ToolHub Home",
@@ -329,7 +368,8 @@ const jellyfinFeatures: SearchEntry[] = [
 ];
 
 function Header() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const navigate = useNavigate();
   const { isAuthenticated, logout, user } = useAuth();
   const { addNotification } = useNotification();
@@ -344,7 +384,7 @@ function Header() {
   const searchResultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const isLanding = pathname === "/";
-  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname === "/settings" || pathname === "/remote";
+  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/settings" || pathname === "/remote";
   const showSidebar = isLanding || isAdminToolPage;
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const showSignIn = !isAuthenticated && !isAuthPage;
@@ -503,7 +543,7 @@ function Header() {
             <ChevronDown className="h-3.5 w-3.5" />
           </button>
           {profileOpen && (
-            <div className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#0b111d]/95 shadow-2xl backdrop-blur-xl">
+            <div className="toolhub-profile-menu absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#0b111d]/95 shadow-2xl backdrop-blur-xl">
               <div className="border-b border-white/10 px-4 py-3">
                 <p className="truncate text-sm font-semibold text-white">
                   {user?.name || "ToolHub user"}
@@ -523,6 +563,7 @@ function Header() {
       ) : showSignIn ? (
         <Link
           to="/login"
+          state={{ from: locationPath(location) }}
           className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-violet-400/50 hover:text-white"
         >
           Log in
@@ -599,6 +640,16 @@ function Header() {
                     {title}
                   </Link>
                 ))}
+                {publishingLinks.map(({ to, label, icon: Icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={`toolhub-side-link ${pathname === to ? "toolhub-side-link-active" : ""}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Link>
+                ))}
               </>
             )}
           </nav>
@@ -606,20 +657,16 @@ function Header() {
           <div className="mt-auto px-3 pb-4 pt-4">
             {isAdmin && (
               <div className="space-y-1">
-                <Link
-                  to="/remote"
-                  className={`toolhub-side-link w-full ${pathname === "/remote" ? "toolhub-side-link-active" : ""}`}
-                >
-                  <MonitorOff className="h-4 w-4" />
-                  Remote
-                </Link>
-                <Link
-                  to="/settings"
-                  className={`toolhub-side-link w-full ${pathname === "/settings" ? "toolhub-side-link-active" : ""}`}
-                >
-                  <Settings className="h-4 w-4" />
-                  Settings
-                </Link>
+                {workspaceLinks.map(({ to, label, icon: Icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={`toolhub-side-link w-full ${pathname === to ? "toolhub-side-link-active" : ""}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Link>
+                ))}
               </div>
             )}
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
@@ -661,6 +708,15 @@ function Header() {
               )}
             </span>
           </Link>
+
+          {!showSidebar && !isAuthPage && (
+            <Link
+              to="/blogs"
+              className={`toolhub-blog-link hidden rounded-lg px-3 py-2 text-xs font-semibold transition sm:inline-flex ${pathname.startsWith("/blogs") ? "toolhub-blog-link-active bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white"}`}
+            >
+              Blogs
+            </Link>
+          )}
 
           {!isAuthPage && (
             <div
@@ -706,7 +762,7 @@ function Header() {
                 <div
                   id="global-tool-search-results"
                   role="listbox"
-                  className="absolute inset-x-0 top-[calc(100%+8px)] overflow-hidden rounded-xl border border-white/10 bg-[#090e18]/[0.98] p-2 shadow-2xl backdrop-blur-xl"
+                  className="toolhub-search-panel absolute inset-x-0 top-[calc(100%+8px)] overflow-hidden rounded-xl border border-white/10 bg-[#090e18]/[0.98] p-2 shadow-2xl backdrop-blur-xl"
                 >
                   <div className="flex items-center justify-between px-2 pb-2 pt-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
@@ -810,11 +866,12 @@ function Header() {
           )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <GlobalNotifications />
             <ThemeToggle />
             {profile}
             <button
               onClick={() => setMobileMenuOpen((value) => !value)}
-              className="rounded-lg border border-white/10 p-2 text-slate-300 md:hidden"
+              className="rounded-lg border border-white/10 p-2 text-slate-300 lg:hidden"
               aria-label="Open menu"
             >
               {mobileMenuOpen ? (
@@ -829,35 +886,49 @@ function Header() {
       </header>
 
       {mobileMenuOpen && (
-        <nav className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/[0.07] bg-[#070b13]/[0.98] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:hidden">
-          <Link to="/" className="toolhub-mobile-link">
-            <Home className="h-4 w-4" />
-            Home
-          </Link>
-          {visibleToolLinks.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className="toolhub-mobile-link">
-              <Icon className="h-4 w-4" />
-              {label}
+        <nav className="toolhub-mobile-menu fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/[0.07] bg-[#070b13]/[0.98] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl lg:hidden">
+          <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            Workspace
+          </p>
+          <div className="grid grid-cols-2 gap-1">
+            <Link to="/" className="toolhub-mobile-link">
+              <Home className="h-4 w-4 shrink-0" />
+              Home
             </Link>
-          ))}
+            {visibleToolLinks.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} className="toolhub-mobile-link min-w-0">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{label}</span>
+              </Link>
+            ))}
+          </div>
           {isAdmin && (
             <>
-              <div className="my-2 border-t border-white/[0.07]" />
-              {adminTools.map(({ key, path, title, icon: Icon }) => (
-                <Link key={key} to={path} className="toolhub-mobile-link">
-                  <Icon className="h-4 w-4" />
-                  {title}
-                </Link>
-              ))}
-              <div className="my-2 border-t border-white/[0.07]" />
-              <Link to="/remote" className="toolhub-mobile-link">
-                <MonitorOff className="h-4 w-4" />
-                Remote
-              </Link>
-              <Link to="/settings" className="toolhub-mobile-link">
-                <Settings className="h-4 w-4" />
-                Settings
-              </Link>
+              <div className="my-3 border-t border-white/[0.07]" />
+              <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
+                Admin workspace
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {[...publishingLinks, ...workspaceLinks].map(
+                  ({ to, label, icon: Icon }) => (
+                    <Link key={to} to={to} className="toolhub-mobile-link min-w-0">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                  ),
+                )}
+              </div>
+              <p className="mt-3 px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Server applications
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {adminTools.map(({ key, path, title, icon: Icon }) => (
+                  <Link key={key} to={path} className="toolhub-mobile-link min-w-0">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{title}</span>
+                  </Link>
+                ))}
+              </div>
             </>
           )}
         </nav>
