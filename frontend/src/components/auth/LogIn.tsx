@@ -2,48 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useApiFetcher } from "../../hooks/useApiFetcher";
 import { AuthService } from "../../apis/auth/auth";
 import { useAuth } from "../../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useNotification } from "../../context/NotificationContext";
 import { ShieldCheck, Sparkles, Zap } from "lucide-react";
-
-let googleScriptPromise: Promise<void> | null = null;
-
-const loadGoogleScript = () => {
-  if (googleScriptPromise) {
-    return googleScriptPromise;
-  }
-  googleScriptPromise = new Promise<void>((resolve, reject) => {
-    if (window.google?.accounts?.id) {
-      resolve();
-      return;
-    }
-    const existingScript = document.getElementById("google-login-script");
-    if (existingScript) {
-      if (existingScript.getAttribute("data-loaded") === "true") {
-        resolve();
-        return;
-      }
-      existingScript.addEventListener("load", () => resolve(), { once: true });
-      existingScript.addEventListener("error", () => reject(new Error("Google script failed to load")), {
-        once: true,
-      });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.id = "google-login-script";
-    script.onload = () => {
-      script.setAttribute("data-loaded", "true");
-      resolve();
-    };
-    script.onerror = () => reject(new Error("Google script failed to load"));
-    document.head.appendChild(script);
-  });
-  return googleScriptPromise;
-};
+import { clearAuthReturnPath, resolveAuthReturnPath } from "../../utils/authRedirect";
+import { loadGoogleIdentity } from "../../utils/googleIdentity";
 
 export const LogIn = () => {
   const { loading, data, fetchData } = useApiFetcher();
@@ -56,6 +19,13 @@ export const LogIn = () => {
   const initializedRef = useRef(false);
   const googleButtonContainerRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnPathRef = useRef(resolveAuthReturnPath(location.state));
+
+  const finishSignIn = useCallback(() => {
+    clearAuthReturnPath();
+    navigate(returnPathRef.current, { replace: true });
+  }, [navigate]);
 
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -105,7 +75,7 @@ export const LogIn = () => {
     }
 
     let cancelled = false;
-    loadGoogleScript()
+    loadGoogleIdentity()
       .then(() => {
         if (cancelled || !window.google?.accounts?.id) return;
         if (!initializedRef.current) {
@@ -142,28 +112,25 @@ export const LogIn = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/");
+      finishSignIn();
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, finishSignIn]);
 
   useEffect(() => {
-    const accessToken = data?.body?.accessToken || data?.body?.token;
-    const refreshToken = data?.body?.refreshToken;
-
-    if (data && data.status === 200 && accessToken && refreshToken) {
-      login(accessToken, refreshToken, data.body.user);
+    if (data && data.status === 200 && data.body?.authenticated && data.body?.user) {
+      login(data.body.user);
       addNotification("Login successful!", "success");
-      navigate("/");
+      finishSignIn();
     } else if (data && data.status !== 200) {
       addNotification(
         data?.body?.message || "Login failed. Please try again.",
         "error"
       );
     }
-  }, [data, login, navigate, addNotification]);
+  }, [data, login, addNotification, finishSignIn]);
 
   return (
-    <div className="relative min-h-screen w-full landing-bg transition-colors duration-300 overflow-hidden">
+    <div className="portal-page relative min-h-screen w-full transition-colors duration-300 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-blue-500/15 blur-3xl" />
       <div className="pointer-events-none absolute top-1/2 -right-20 h-72 w-72 rounded-full bg-fuchsia-500/15 blur-3xl" />
 

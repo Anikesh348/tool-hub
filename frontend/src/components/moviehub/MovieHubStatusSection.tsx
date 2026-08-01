@@ -1,6 +1,7 @@
 import React from "react";
 import { MovieHubRequest } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 
 type MovieHubStatusSectionProps = {
   requestsLoading: boolean;
@@ -22,6 +23,15 @@ export const MovieHubStatusSection: React.FC<MovieHubStatusSectionProps> = React
     onDelete,
     formatDateTime,
   }) => {
+    const {
+      currentPage,
+      pageCount,
+      pageSize,
+      paginatedItems,
+      setCurrentPage,
+      setPageSize,
+    } = usePaginatedItems(sortedRequests, 6);
+
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-4">
@@ -47,7 +57,15 @@ export const MovieHubStatusSection: React.FC<MovieHubStatusSectionProps> = React
           </p>
         ) : (
           <div className="space-y-3">
-            {sortedRequests.map((request) => (
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={sortedRequests.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+            {paginatedItems.map((request) => (
               <div
                 key={request.requestId}
                 className="moviehub-section-card rounded-xl p-4"
@@ -103,6 +121,14 @@ export const MovieHubStatusSection: React.FC<MovieHubStatusSectionProps> = React
                 ) : null}
               </div>
             ))}
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={sortedRequests.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

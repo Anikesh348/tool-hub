@@ -1,6 +1,7 @@
 import React from "react";
 import { Loader } from "../../Loader";
 import { MovieHubYtLibraryItem } from "../../../apis/moviehub/moviehub";
+import { MovieHubPagination, usePaginatedItems } from "../MovieHubPagination";
 
 type YtLibraryItemsTableProps = {
   ytLibraryLoading: boolean;
@@ -18,6 +19,8 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
     onRefreshItems,
     onDeleteItem,
   }) => {
+    const pagination = usePaginatedItems(ytLibraryItems, 8);
+
     return (
       <div className="moviehub-section-card rounded-xl p-3 sm:p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -44,6 +47,16 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
             No YT videos found in the configured Jellyfin folder.
           </p>
         ) : (
+          <div className="space-y-3">
+          <MovieHubPagination
+            currentPage={pagination.currentPage}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            totalItems={ytLibraryItems.length}
+            onPageChange={pagination.setCurrentPage}
+            onPageSizeChange={pagination.setPageSize}
+            pageSizeOptions={[8, 16, 32, 64]}
+          />
           <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800/80 shadow-sm">
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-gradient-to-r from-slate-50 to-blue-50/60 dark:from-slate-900/70 dark:to-slate-800/50">
@@ -55,7 +68,7 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
                 </tr>
               </thead>
               <tbody>
-                {ytLibraryItems.map((item) => {
+                {pagination.paginatedItems.map((item) => {
                   const itemId = item.Id || "";
                   const isDeleting = deletingItemId === itemId;
                   return (
@@ -80,6 +93,16 @@ export const YtLibraryItemsTable: React.FC<YtLibraryItemsTableProps> = React.mem
                 })}
               </tbody>
             </table>
+          </div>
+          <MovieHubPagination
+            currentPage={pagination.currentPage}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            totalItems={ytLibraryItems.length}
+            onPageChange={pagination.setCurrentPage}
+            onPageSizeChange={pagination.setPageSize}
+            pageSizeOptions={[8, 16, 32, 64]}
+          />
           </div>
         )}
       </div>

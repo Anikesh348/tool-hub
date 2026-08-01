@@ -1,6 +1,7 @@
 import React from "react";
 import { MovieHubRequest } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 
 type MovieHubAdminSectionProps = {
   adminRequestsLoading: boolean;
@@ -29,6 +30,15 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
     formatDateTime,
   }) => {
     const pendingCount = sortedAdminRequests.filter((request) => request.status === "PENDING").length;
+    const {
+      currentPage,
+      pageCount,
+      pageSize,
+      paginatedItems,
+      setCurrentPage,
+      setPageSize,
+    } = usePaginatedItems(sortedAdminRequests, 6);
+
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-4">
@@ -61,7 +71,15 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
           </p>
         ) : (
           <div className="space-y-3">
-            {sortedAdminRequests.map((request) => {
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={sortedAdminRequests.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+            {paginatedItems.map((request) => {
               const isPending = request.status === "PENDING";
               const isApproved = request.status === "APPROVED";
               const canDelete = isPending || isApproved;
@@ -147,6 +165,14 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
                 </div>
               );
             })}
+            <MovieHubPagination
+              currentPage={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={sortedAdminRequests.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </div>

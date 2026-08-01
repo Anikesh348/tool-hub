@@ -1,6 +1,7 @@
 import React from "react";
 import { Loader } from "../Loader";
 import { MovieHubAccessUser } from "../../apis/moviehub/moviehub";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 
 type MovieHubUsersAdminSectionProps = {
   users: MovieHubAccessUser[];
@@ -19,6 +20,15 @@ export const MovieHubUsersAdminSection: React.FC<MovieHubUsersAdminSectionProps>
   onDelete,
   formatDateTime,
 }) => {
+  const {
+    currentPage,
+    pageCount,
+    pageSize,
+    paginatedItems,
+    setCurrentPage,
+    setPageSize,
+  } = usePaginatedItems(users, 6);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
@@ -49,7 +59,15 @@ export const MovieHubUsersAdminSection: React.FC<MovieHubUsersAdminSectionProps>
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {users.map((user) => {
+          <MovieHubPagination
+            currentPage={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            totalItems={users.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
+          {paginatedItems.map((user) => {
             const roleTag = user.roleTag === "ADMIN" ? "ADMIN" : "USER";
             const isDeleting = deletingMappingId === user.mappingId;
             const canDelete = roleTag !== "ADMIN";
@@ -106,6 +124,14 @@ export const MovieHubUsersAdminSection: React.FC<MovieHubUsersAdminSectionProps>
               </div>
             );
           })}
+          <MovieHubPagination
+            currentPage={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            totalItems={users.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
         </div>
       )}
     </div>

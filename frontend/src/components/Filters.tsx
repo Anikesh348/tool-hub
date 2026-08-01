@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import TagsFilterModal from "./TagsFilterModal";
+import { Search, Tags } from "lucide-react";
 
 type Props = {
   difficulty: string;
@@ -31,9 +32,8 @@ const Filters: React.FC<Props> = ({
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
 
   return (
-    <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 transition-colors duration-300">
+    <div className="tool-workspace-card p-4 sm:p-5 space-y-3 sm:space-y-4 transition-colors duration-300">
       <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-        <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
         Filters
       </h3>
 
@@ -46,19 +46,7 @@ const Filters: React.FC<Props> = ({
           onChange={(e) => onSearchChange?.(e.target.value)}
           className="w-full border border-gray-200 dark:border-gray-600 rounded-lg pl-10 pr-4 py-2 sm:py-2.5 text-sm sm:text-base bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
         />
-        <svg
-          className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 dark:text-gray-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
       </div>
 
       {/* Mobile: Stacked | Desktop: Side by side */}
@@ -106,7 +94,8 @@ const Filters: React.FC<Props> = ({
             onClick={() => setTagsModalOpen(true)}
             className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 hover:shadow-lg active:scale-95 text-white rounded-lg font-medium text-xs sm:text-sm transition-all"
           >
-            🏷️ Tags
+            <Tags className="mr-1.5 inline h-4 w-4" />
+            Tags
           </button>
         </div>
       </div>

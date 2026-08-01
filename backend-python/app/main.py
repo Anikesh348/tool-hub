@@ -5,13 +5,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.middlewares.moviehub_access import moviehub_access_middleware
-from app.routes import health_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, product_routes, user_routes, yt_download_routes
+from app.middlewares.metrics import metrics_middleware, metrics_response
+from app.routes import admin_home_routes, admin_remote_routes, admin_routes, admin_settings_routes, blog_routes, buzzwatch_routes, flight_routes, health_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, notification_routes, product_routes, speedtest_routes, user_routes, yt_download_routes
+from app.services.blogs import ensure_blog_indexes_and_seed
+from app.services.blog_announcements import ensure_blog_announcement_indexes
+from app.services.notifications import ensure_notification_indexes
 from app.services.schedule import price_check_scheduler
 from app.utils.responses import error
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    ensure_blog_indexes_and_seed()
+    ensure_blog_announcement_indexes()
+    ensure_notification_indexes()
     price_check_scheduler.start()
     try:
         yield
@@ -30,16 +37,28 @@ def create_app() -> FastAPI:
     )
 
     app.middleware("http")(moviehub_access_middleware)
+    app.middleware("http")(metrics_middleware)
+
+    app.add_api_route("/metrics", metrics_response, methods=["GET"], include_in_schema=False)
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException):
         return JSONResponse(status_code=exc.status_code, content=error(exc.detail))
 
     app.include_router(health_routes.router)
+    app.include_router(admin_routes.router)
+    app.include_router(admin_home_routes.router)
+    app.include_router(admin_remote_routes.router)
+    app.include_router(admin_settings_routes.router)
+    app.include_router(blog_routes.router)
     app.include_router(user_routes.router)
     app.include_router(product_routes.router)
+    app.include_router(flight_routes.router)
     app.include_router(leetcode_routes.router)
+    app.include_router(buzzwatch_routes.router)
+    app.include_router(speedtest_routes.router)
     app.include_router(yt_download_routes.router)
+    app.include_router(notification_routes.router)
     app.include_router(moviehub_routes.router)
     app.include_router(moviehub_chat_routes.router)
     return app

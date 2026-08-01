@@ -1,17 +1,25 @@
-import { AuthService } from "./auth";
-import { clearStoredAuth, getRefreshToken, setStoredTokens } from "./tokenStorage";
+import { AuthService, type User } from "./auth";
 
-export const AUTH_TOKENS_UPDATED_EVENT = "toolhub:auth-token-updated";
+export const AUTH_SESSION_UPDATED_EVENT = "toolhub:auth-session-updated";
 export const AUTH_LOGOUT_EVENT = "toolhub:auth-logout";
 
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<boolean> | null = null;
+const AUTH_REQUEST_TIMEOUT_MS = 10_000;
 
-const emitAuthTokensUpdated = () => {
-  window.dispatchEvent(new Event(AUTH_TOKENS_UPDATED_EVENT));
-};
-
-const emitAuthLogout = () => {
-  window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+const fetchAuthRequest = async (
+  url: string,
+  options?: RequestInit,
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    AUTH_REQUEST_TIMEOUT_MS,
+  );
+  try {
+    return await fetch(url, { ...(options || {}), signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 };
 
 const readResponseBody = async (response: Response): Promise<any | null> => {
@@ -22,47 +30,51 @@ const readResponseBody = async (response: Response): Promise<any | null> => {
   }
 };
 
-export const refreshAccessToken = async (): Promise<string | null> => {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    return null;
-  }
-
-  if (refreshPromise) {
-    return refreshPromise;
-  }
+export const refreshAccessToken = async (): Promise<boolean> => {
+  if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
-      const { url, options } = AuthService.refreshToken(refreshToken);
-      const response = await fetch(url, options);
-      const body = await readResponseBody(response);
-
+      const { url, options } = AuthService.refreshSession();
+      const response = await fetchAuthRequest(url, options);
       if (!response.ok) {
-        clearStoredAuth();
-        emitAuthLogout();
-        return null;
+        if (response.status === 401 || response.status === 403) {
+          window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+        }
+        return false;
       }
-
-      const newAccessToken = body?.accessToken || body?.token;
-      const newRefreshToken = body?.refreshToken;
-      if (!newAccessToken || !newRefreshToken) {
-        clearStoredAuth();
-        emitAuthLogout();
-        return null;
-      }
-
-      setStoredTokens(newAccessToken, newRefreshToken);
-      emitAuthTokensUpdated();
-      return newAccessToken;
+      window.dispatchEvent(new Event(AUTH_SESSION_UPDATED_EVENT));
+      return true;
     } catch {
-      clearStoredAuth();
-      emitAuthLogout();
-      return null;
+      return false;
     } finally {
       refreshPromise = null;
     }
   })();
 
   return refreshPromise;
+};
+
+export const fetchCurrentSession = async (): Promise<User | null> => {
+  try {
+    const { url, options } = AuthService.currentSession();
+    let response = await fetchAuthRequest(url, options);
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchAuthRequest(url, options);
+    }
+    if (!response.ok) return null;
+    const body = await readResponseBody(response);
+    return body?.authenticated && body?.user ? (body.user as User) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const endSession = async (): Promise<void> => {
+  const { url, options } = AuthService.logout();
+  try {
+    await fetchAuthRequest(url, options);
+  } finally {
+    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+  }
 };

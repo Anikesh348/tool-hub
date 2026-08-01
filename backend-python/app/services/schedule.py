@@ -5,6 +5,7 @@ import time
 from contextlib import suppress
 from typing import Callable, List, Optional
 
+from app.services.flights import check_all_flight_watches
 from app.services.products import check_all_products
 from app.utils.responses import success
 
@@ -111,6 +112,7 @@ class ToolHubScheduler:
             return
 
         from app.routes.moviehub_routes import moviehub_reconcile
+        from app.services.buzzwatch import refresh_buzzwatch_items, warm_buzzwatch_year_cache
         from app.services.yt_download import check_downloads, start_download
 
         self._jobs = [
@@ -120,9 +122,24 @@ class ToolHubScheduler:
                 check_all_products,
             ),
             FixedIntervalJob(
+                "flight-price-check",
+                _interval_seconds("FLIGHT_CHECK_INTERVAL_SECONDS", 60 * 60),
+                check_all_flight_watches,
+            ),
+            FixedIntervalJob(
                 "moviehub-reconcile-downloads",
                 _interval_seconds("MOVIEHUB_RECONCILE_INTERVAL_SECONDS", 15 * 60),
                 moviehub_reconcile,
+            ),
+            FixedIntervalJob(
+                "buzzwatch-refresh",
+                _interval_seconds("BUZZWATCH_REFRESH_INTERVAL_SECONDS", 6 * 60 * 60),
+                refresh_buzzwatch_items,
+            ),
+            FixedIntervalJob(
+                "buzzwatch-year-warm",
+                _interval_seconds("BUZZWATCH_YEAR_WARM_INTERVAL_SECONDS", 24 * 60 * 60),
+                warm_buzzwatch_year_cache,
             ),
             FixedIntervalJob(
                 "yt-download-check",

@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import { LeetCodeService } from "../apis/question/question";
 import { useApiFetcher } from "../hooks/useApiFetcher";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Filters from "./Filters";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
+import { BookOpenCheck, CheckCircle2, Circle, Plus } from "lucide-react";
+import { locationPath } from "../utils/authRedirect";
 
 export const Leetcode = () => {
   const { authToken, isAuthLoading } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
   const [urls, setUrls] = useState("");
   const [questions, setQuestions] = useState<any[]>([]);
   const [updatingQuestionId, setUpdatingQuestionId] = useState<string | null>(
@@ -29,6 +32,18 @@ export const Leetcode = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!location.hash) return;
+    const sectionId = location.hash.slice(1);
+    const timeoutId = window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [location.hash]);
 
   // Hooks for fetching, adding, updating, deleting questions
   const {
@@ -63,14 +78,14 @@ export const Leetcode = () => {
     if (isAuthLoading) return;
 
     if (!authToken) {
-      navigate("/login");
+      navigate("/login", { state: { from: locationPath(location) } });
       return;
     }
 
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     fetchQuestions();
-  }, [authToken, isAuthLoading, navigate]);
+  }, [authToken, isAuthLoading, location, navigate]);
 
   // Handle fetch results
   useEffect(() => {
@@ -249,28 +264,54 @@ export const Leetcode = () => {
     }
     return true;
   });
+  const solvedCount = questions.filter(
+    (question) => question.status === "solved" || question.solved === true,
+  ).length;
+  const completionRate = questions.length
+    ? Math.round((solvedCount / questions.length) * 100)
+    : 0;
 
   return (
-    <div className="min-h-screen w-full landing-bg transition-colors duration-300">
-      <div className="max-w-5xl mx-auto py-12 px-4 sm:px-6 lg:px-8 pt-24">
-        <header className="mb-12 text-center">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-white tracking-tight drop-shadow-lg">
-            LeetCode Manager - Track & Manage Your Coding Practice
+    <div className="portal-page leetcode-workspace min-h-screen w-full transition-colors duration-300">
+      <div className="toolhub-desktop-container max-w-6xl mx-auto py-12 px-4 sm:px-6 lg:px-8 pt-24">
+        <header className="mb-8 max-w-3xl">
+          <p className="tool-workspace-kicker">Coding workspace</p>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+            LeetCode Manager
           </h1>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-            Advanced LeetCode question tracker with note-taking, tagging, and
-            progress tracking. Manage your LeetCode problems efficiently and
-            prepare for technical interviews with our comprehensive question
-            manager.
+          <p className="mt-2 text-sm text-slate-400 max-w-2xl">
+            Keep your problem list, progress, tags, and notes in one focused view.
           </p>
         </header>
 
+        <div className="tool-metric-grid mb-6">
+          <div className="tool-metric-card">
+            <BookOpenCheck />
+            <span><strong>{questions.length}</strong>Total problems</span>
+          </div>
+          <div className="tool-metric-card">
+            <CheckCircle2 />
+            <span><strong>{solvedCount}</strong>Solved</span>
+          </div>
+          <div className="tool-metric-card">
+            <Circle />
+            <span><strong>{Math.max(questions.length - solvedCount, 0)}</strong>Remaining</span>
+          </div>
+          <div className="tool-metric-card">
+            <span className="tool-progress-ring">{completionRate}%</span>
+            <span><strong>{completionRate}%</strong>Completion</span>
+          </div>
+        </div>
+
         {/* Add Question Section */}
-        <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-2xl p-4 sm:p-6 lg:p-8 mb-6 sm:mb-8 bg-gradient-to-br from-slate-50/50 to-blue-50/30 dark:from-slate-900/20 dark:to-blue-900/10 backdrop-blur-md">
+        <div
+          id="add-questions"
+          className="tool-workspace-card scroll-mt-24 p-4 sm:p-6 mb-6 sm:mb-8"
+        >
           <div className="mb-4 sm:mb-6">
             <div className="flex items-center gap-2 sm:gap-3 mb-2">
-              <div className="w-8 sm:w-10 h-8 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm sm:text-lg font-bold flex-shrink-0">
-                +
+              <div className="tool-workspace-icon">
+                <Plus className="h-5 w-5" />
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
                 Add Questions
@@ -305,15 +346,15 @@ export const Leetcode = () => {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-gray-500 dark:text-gray-400 order-2 sm:order-1">
-                💡 Separate by comma or new line
+              <div className="text-xs text-slate-500 order-2 sm:order-1">
+                Separate URLs with a comma or new line.
               </div>
               <button
                 onClick={handleSubmit}
                 disabled={addingQuestions || urls.trim().length === 0}
                 className="order-1 sm:order-2 w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-8 rounded-lg sm:rounded-xl text-white font-semibold text-sm sm:text-base bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none transition-all duration-200 flex items-center justify-center gap-2"
               >
-                <span>✓</span>
+                <Plus className="h-4 w-4" />
                 {addingQuestions ? "Submitting..." : "Submit"}
               </button>
             </div>
@@ -372,7 +413,10 @@ export const Leetcode = () => {
         )}
 
         {/* Questions Table */}
-        <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8">
+        <div
+          id="question-library"
+          className="tool-workspace-card scroll-mt-24 p-4 sm:p-6 lg:p-8"
+        >
           <h3 className="text-base sm:text-lg font-semibold mb-4 sm:mb-6 text-gray-900 dark:text-white">
             Your Questions ({filteredQuestions.length})
           </h3>
@@ -415,7 +459,7 @@ export const Leetcode = () => {
                       </div>
                       {q.notes && editingNotesId !== q.questionId && (
                         <p className="text-xs text-gray-600 dark:text-gray-400 italic pl-9 truncate">
-                          📝 {q.notes}
+                          {q.notes}
                         </p>
                       )}
                     </div>
@@ -442,7 +486,7 @@ export const Leetcode = () => {
 
                       <label className="flex items-center gap-2 cursor-pointer flex-1 justify-end">
                         <span className="text-xs text-gray-600 dark:text-gray-400">
-                          {q.status === "solved" ? "✓ Solved" : "○ Unsolved"}
+                          {q.status === "solved" ? "Solved" : "Unsolved"}
                         </span>
                         <input
                           type="checkbox"
@@ -491,14 +535,13 @@ export const Leetcode = () => {
                           }}
                           className="px-3 py-1.5 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 text-xs font-medium rounded-lg transition-all flex-1"
                         >
-                          📝 Notes
+                          Notes
                         </button>
                         <button
                           onClick={() => handleDelete(q.questionId)}
                           disabled={deletingQuestionId === q.questionId}
                           className="px-3 py-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium rounded-lg transition-all flex-1"
                         >
-                          🗑️{" "}
                           {deletingQuestionId === q.questionId
                             ? "..."
                             : "Delete"}
@@ -527,7 +570,7 @@ export const Leetcode = () => {
                         </a>
                         {q.notes && editingNotesId !== q.questionId && (
                           <p className="mt-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400 italic">
-                            📝 {q.notes}
+                            {q.notes}
                           </p>
                         )}
                       </div>
@@ -606,14 +649,13 @@ export const Leetcode = () => {
                             }}
                             className="px-3 sm:px-4 py-1.5 sm:py-2 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
                           >
-                            📝 Notes
+                            Notes
                           </button>
                           <button
                             onClick={() => handleDelete(q.questionId)}
                             disabled={deletingQuestionId === q.questionId}
                             className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
                           >
-                            🗑️{" "}
                             {deletingQuestionId === q.questionId
                               ? "..."
                               : "Delete"}

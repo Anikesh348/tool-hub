@@ -12,6 +12,7 @@ import requests
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
+from flights import scrape_skyscanner_flights, search_places
 from platforms import HANDLERS, get_handler_for_url
 
 # =========================================================
@@ -40,6 +41,21 @@ DEFAULT_AMAZON_PINCODE = os.getenv("AMAZON_PINCODE", "560048")
 class ScrapeProductRequest(BaseModel):
     url: str
     pincode: Optional[str] = DEFAULT_AMAZON_PINCODE
+
+
+class FlightSearchRequest(BaseModel):
+    origin: str
+    destination: str
+    departureDate: str
+    returnDate: Optional[str] = None
+    adults: int = 1
+    children: int = 0
+    infants: int = 0
+    cabin: str = "ECONOMY"
+    currency: str = "INR"
+    maxStops: Optional[int] = None
+    market: str = "IN"
+    locale: str = "en-IN"
 
 
 # =========================================================
@@ -258,6 +274,26 @@ def search_products(query: str = Query(..., min_length=1), platform: str = Query
             "error": str(exc),
             "time_taken": round(time.time() - search_start, 2),
         }
+
+
+@app.get("/v2/flights/places")
+def flight_places(query: str = Query(..., min_length=2), limit: int = Query(12, ge=1, le=25)):
+    return {"query": query.strip(), "results": search_places(query, limit)}
+
+
+@app.post("/v2/flights/search")
+def flight_search(request: FlightSearchRequest):
+    search_start = time.time()
+    payload = request.model_dump()
+    logger.info(
+        "Incoming flight scrape request: %s -> %s %s",
+        payload.get("origin"),
+        payload.get("destination"),
+        payload.get("departureDate"),
+    )
+    result = scrape_skyscanner_flights(payload)
+    result["time_taken"] = round(time.time() - search_start, 2)
+    return result
 
 
 # =========================================================

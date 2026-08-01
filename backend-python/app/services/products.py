@@ -2,7 +2,8 @@ import os
 import re
 import hashlib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Set
+from html import escape
+from typing import Any, Dict, List
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
@@ -10,10 +11,13 @@ from fastapi.responses import JSONResponse
 
 from app.services.mail import send_brevo_email
 from app.services.mongo import col, find, find_one, insert
+from app.services.redis_cache import cache_get, cache_set, cache_token
 from app.utils.responses import error, success
 
 
 PRICE_ALERT_MARGIN_PERCENT = 5
+PRICE_ALERT_STATE_COLLECTION = "price-alert-state"
+PRODUCT_SEARCH_CACHE_SECONDS = int(os.getenv("PRODUCT_SEARCH_CACHE_SECONDS", "600"))
 SUPPORTED_SEARCH_PLATFORMS = {
     "amazon",
     "flipkart",
@@ -154,6 +158,11 @@ def search_products(query: str, platform: str):
         supported = ", ".join(sorted(SUPPORTED_SEARCH_PLATFORMS))
         return JSONResponse(status_code=400, content=error(f"platform must be one of: {supported}"))
 
+    cache_key = f"toolhub:v1:product-search:{normalized_platform}:{cache_token(normalized_query.lower())}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         response = requests.get(
             scraper_search_url(),
@@ -169,6 +178,7 @@ def search_products(query: str, platform: str):
     if response.status_code < 200 or response.status_code >= 300:
         return JSONResponse(status_code=response.status_code, content=payload)
 
+    cache_set(cache_key, payload, PRODUCT_SEARCH_CACHE_SECONDS)
     return payload
 
 
@@ -294,13 +304,96 @@ def save_price_history(product: Dict[str, Any], product_info: Dict[str, Any]) ->
     )
 
 
-def build_price_alert_email(product: Dict[str, Any], product_info: Dict[str, Any]) -> str:
+def _display_value(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    return text if text else fallback
+
+
+def _first_display_value(*values: Any, fallback: str) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return fallback
+
+
+def product_info_for_alert(product: Dict[str, Any], product_info: Dict[str, Any]) -> Dict[str, Any]:
+    alert_info = dict(product_info or {})
+    stored_info = {}
+    product_id = product.get("productId")
+    if product_id:
+        stored_info = find_one("product-information", {"productId": product_id}) or {}
+
+    alert_info["title"] = _first_display_value(
+        stored_info.get("productTitle"),
+        stored_info.get("title"),
+        product_info.get("productTitle") if product_info else None,
+        product_info.get("title") if product_info else None,
+        fallback="tracked product",
+    )
+    alert_info["image"] = _first_display_value(
+        stored_info.get("productImageUrl"),
+        stored_info.get("image"),
+        product_info.get("productImageUrl") if product_info else None,
+        product_info.get("image") if product_info else None,
+        fallback="",
+    )
+    return alert_info
+
+
+def build_price_alert_subject(product_info: Dict[str, Any]) -> str:
+    title = _display_value(product_info.get("title"), "tracked product")
+    price = _display_value(product_info.get("price"), "a lower price")
+    return f"Price drop: {title} is now {price}"
+
+
+def build_price_alert_email(
+    product: Dict[str, Any],
+    product_info: Dict[str, Any],
+    matching_targets: List[Dict[str, Any]],
+) -> str:
+    product_title = escape(_display_value(product_info.get("title"), "Your tracked product"))
+    product_price = escape(_display_value(product_info.get("price"), "the latest tracked price"))
+    product_url = escape(_display_value(product.get("productUrl"), "#"))
+    product_id = escape(_display_value(product.get("productId"), ""))
+    image_url = escape(str(product_info.get("image") or "").strip())
+
+    target_rows = "".join(
+        f"""
+        <tr>
+          <td style="padding:6px 10px; border:1px solid #e5e7eb;">{escape(str(target.get("targetPrice", "")))}</td>
+          <td style="padding:6px 10px; border:1px solid #e5e7eb;">{escape(str(target.get("thresholdPrice", "")))}</td>
+        </tr>
+        """
+        for target in matching_targets
+    )
+    targets_table = ""
+    if target_rows:
+        targets_table = f"""
+        <table style="border-collapse:collapse; margin:12px 0;">
+          <thead>
+            <tr>
+              <th align="left" style="padding:6px 10px; border:1px solid #e5e7eb;">Your target</th>
+              <th align="left" style="padding:6px 10px; border:1px solid #e5e7eb;">Alert threshold</th>
+            </tr>
+          </thead>
+          <tbody>{target_rows}</tbody>
+        </table>
+        """
+
+    image_block = ""
+    if image_url:
+        image_block = f'<p><img src="{image_url}" alt="{product_title}" style="max-width:220px; height:auto; border:1px solid #e5e7eb;" /></p>'
+
     return f"""
 <html>
   <body style="font-family: Arial, sans-serif; line-height:1.6; color:#1f2937;">
     <h3 style="margin-bottom: 8px;">Price drop alert</h3>
-    <p>{product_info.get("title", "Your tracked product")} is now listed at {product_info.get("price", "")}.</p>
-    <p><a href="{product.get("productUrl", "")}">View product</a></p>
+    <p><strong>{product_title}</strong> is now listed at <strong style="color:#047857;">{product_price}</strong>.</p>
+    {image_block}
+    {targets_table}
+    <p>Product ID: {product_id}</p>
+    <p><a href="{product_url}" target="_blank" rel="noopener noreferrer">View product</a></p>
   </body>
 </html>
 """
@@ -308,25 +401,88 @@ def build_price_alert_email(product: Dict[str, Any], product_info: Dict[str, Any
 
 def send_price_alerts(product: Dict[str, Any], product_info: Dict[str, Any]) -> int:
     product_price = extract_price(product_info.get("price"))
-    alerted_user_ids: Set[str] = set()
+    if product_price <= 0:
+        return 0
+
+    product_id = product.get("productId")
+    if not product_id:
+        return 0
+
+    eligible_targets_by_user: Dict[str, List[Dict[str, Any]]] = {}
+    checked_at = datetime.now(timezone.utc).isoformat()
+
     for user_targets in product.get("userTargetPrices", []):
         user_id = user_targets.get("userId")
         for target in user_targets.get("targetPrices", []):
             target_price = extract_price(target)
-            if user_id and product_price <= target_price + (PRICE_ALERT_MARGIN_PERCENT * target_price // 100):
-                alerted_user_ids.add(user_id)
+            if not user_id or target_price <= 0:
+                continue
 
-    if not alerted_user_ids:
+            state_query = {
+                "productId": product_id,
+                "userId": user_id,
+                "targetPrice": str(target),
+            }
+            threshold = target_price + (PRICE_ALERT_MARGIN_PERCENT * target_price // 100)
+            if product_price <= threshold:
+                eligible_targets_by_user.setdefault(user_id, []).append(
+                    {
+                        "query": state_query,
+                        "targetPrice": target,
+                        "targetPriceValue": target_price,
+                        "thresholdPrice": threshold,
+                    }
+                )
+            else:
+                col(PRICE_ALERT_STATE_COLLECTION).update_one(
+                    state_query,
+                    {
+                        "$set": {
+                            "active": False,
+                            "lastSeenPrice": product_price,
+                            "lastCheckedAt": checked_at,
+                            "updatedAt": checked_at,
+                        },
+                        "$setOnInsert": {"createdAt": checked_at},
+                    },
+                    upsert=True,
+                )
+
+    if not eligible_targets_by_user:
         return 0
 
-    users = find("users", {"userId": {"$in": list(alerted_user_ids)}})
+    alert_product_info = product_info_for_alert(product, product_info)
+    users = find("users", {"userId": {"$in": list(eligible_targets_by_user.keys())}})
     sent = 0
     for user in users:
         email = (user.get("email") or "").strip()
         if not email:
             continue
         try:
-            send_brevo_email("Price drop alert", email, build_price_alert_email(product, product_info))
+            matching_targets = eligible_targets_by_user.get(user.get("userId"), [])
+            send_brevo_email(
+                build_price_alert_subject(alert_product_info),
+                email,
+                build_price_alert_email(product, alert_product_info, matching_targets),
+            )
+            for target_state in eligible_targets_by_user.get(user.get("userId"), []):
+                col(PRICE_ALERT_STATE_COLLECTION).update_one(
+                    target_state["query"],
+                    {
+                        "$set": {
+                            "active": True,
+                            "targetPriceValue": target_state["targetPriceValue"],
+                            "thresholdPrice": target_state["thresholdPrice"],
+                            "lastAlertedPrice": product_price,
+                            "lastSeenPrice": product_price,
+                            "lastAlertedAt": checked_at,
+                            "lastCheckedAt": checked_at,
+                            "updatedAt": checked_at,
+                        },
+                        "$setOnInsert": {"createdAt": checked_at},
+                    },
+                    upsert=True,
+                )
             sent += 1
         except Exception:
             continue
