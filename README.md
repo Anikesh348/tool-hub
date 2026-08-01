@@ -1,209 +1,213 @@
 # ToolHub
 
-ToolHub is a comprehensive microservice-based web application that provides multiple productivity and tracking tools. Currently featuring price tracking and LeetCode problem management, with a modern, extensible architecture that supports adding new features easily.
+ToolHub is a self-hosted portal for personal productivity, media, monitoring, publishing, and homelab administration. It combines public pages, authenticated user tools, and tightly restricted admin controls behind a React frontend and a FastAPI backend.
 
-## Features
+## What ToolHub includes
 
-### Authentication & User Management
+### Public and authenticated tools
 
-- User registration and authentication with JWT tokens
-- Secure password hashing and validation
+- **Price Tracker** — product search, saved products, price history, scheduled checks, and alerts
+- **LeetCode Manager** — questions, completion state, notes, and progress tracking
+- **Flight Tracker** — airport/place lookup, saved watches, manual checks, and history
+- **BuzzWatch** — movie and TV discovery, preferences, people/credits, and media requests
+- **MovieHub** — search, request, availability, playback, download status, and access requests
+- **Speed Test** — browser-to-server latency, download, and upload measurements
+- **Blogs** — public Markdown articles, term summaries, reactions, comments, and versioned publishing
+- **Global notifications** — user notifications and authenticated event ingestion
+- **YouTube downloads** — format discovery, download requests, progress streaming, and library management
 
-### Price Drop Tracker
+### Administration
 
-- Track products from multiple e-commerce platforms
-- Set target prices and receive alerts when prices drop
-- Automated price checks (hourly scheduling)
-- Email notifications via SendGrid
-- Price history visualization with charts
-- Multi-platform scraping support (Amazon, Flipkart, etc.)
+Admin-only routes and screens provide:
 
-### LeetCode Problem Manager
+- Blog editing, versioning, publishing, assets, and analytics
+- Daily Ubuntu and Home Assistant log digests
+- System metrics, API route analytics, and uptime monitoring
+- Fleet speed tests and operational status/audit views
+- Home Assistant safeguard controls and Raspberry Pi remote actions
+- MovieHub approvals, access management, download controls, and media deletion
+- Embedded Beszel, Netdata, Gatus, file-management, Docker, AI, and media-console tools
+- ToolHub cache clearing, refresh actions, service restart, and narrowly scoped host controls
 
-- Add and track LeetCode problems
-- Manage problem status (solved/unsolved)
-- Organize by difficulty level and tags
-- Add personal notes and comments to problems
-- Filter and search problems efficiently
-- Track your learning progress
-
-### Additional Features
-
-- Dark/Light theme toggle
-- Responsive modern UI
-- Real-time notifications
-- Batch processing for scheduled tasks
+The frontend also supports responsive navigation, light/dark themes, Google sign-in, installable PWA metadata, and service-worker caching.
 
 ## Architecture
 
-- **Frontend**: React 18 + Vite + Tailwind CSS with TypeScript. Modern, responsive UI for all tools. Located in the `frontend/` folder.
-- **Backend**: Java 21 application built with [Vert.x](https://vertx.io/). Handles REST APIs, authentication, product/question management, scheduling, email alerts, and batch processing. Located in the `backend/` folder.
-- **Scraper Services**:
-  - `scraper-v2/`: Python Flask service for scraping Amazon, Flipkart, etc. Modular platform support.
-  - `scrapper/`: Legacy Python Flask service for scraping Amazon (uses Selenium).
-- **Docker Compose**: Orchestrates all services for local development.
+| Component | Technology | Purpose |
+|---|---|---|
+| `frontend/` | React, TypeScript, Vite, Tailwind CSS, Nginx | Web UI, static blog entry pages, API proxying, and authenticated admin-tool proxying |
+| `backend-python/` | Python 3.12, FastAPI, Uvicorn | Active API, authorization, tools, schedulers, blogs, notifications, media workflows, and Prometheus metrics |
+| `toolhub-auth` | Shared Google auth service | Login/session lifecycle and token validation; built from the sibling `google-auth-common` checkout |
+| `redis` | Redis 7 | Caching and transient BuzzWatch state |
+| MongoDB | External service | Users, products, blogs, notifications, requests, and other persistent application data |
+| `scraper-beautifulsoup/` | Python, FastAPI, Beautiful Soup | Product search and scraping |
+| `docker-compose.yml` | Docker Compose | Main service orchestration and health dependencies |
+
+The older `backend/`, `scraper-v2/`, and `scrapper/` directories are retained for historical or compatibility work. The main Compose stack uses `backend-python/` and `scraper-beautifulsoup/`.
+
+## Repository layout
+
+```text
+tool-hub/
+├── backend-python/          # Active FastAPI application
+│   └── app/
+│       ├── middlewares/     # Auth, metrics, and MovieHub access gates
+│       ├── routes/          # HTTP route modules
+│       ├── services/        # Domain and integration logic
+│       └── seed/            # Seeded blog content
+├── frontend/                # React application and Nginx proxy configuration
+├── scraper-beautifulsoup/   # Active product scraper
+├── dev-content/             # Draft/source blog content
+├── docker-compose.yml       # Main stack
+└── docker-compose.dev.yml   # Isolated preview stack for prebuilt dev images
+```
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- Node.js (for frontend development)
-- Java 21 (for backend development)
-- Python 3.8+ (for scraper services)
-- MongoDB instance
-- SendGrid API key
+- Docker Engine with Docker Compose v2
+- An accessible MongoDB instance
+- The shared `google-auth-common` repository at the path expected by `docker-compose.yml` (`../../google-auth-common` from this checkout)
+- Provider credentials only for the integrations you enable
+
+For direct, non-container development you also need Node.js 24+, Python 3.12+, and npm.
 
 ## Configuration
 
-Create an `.env` file inside the `backend` directory with:
+Runtime secrets are intentionally not committed. The main stack reads backend and auth configuration from `backend/.env.dev`; the frontend image selects `frontend/.env.dev` or `frontend/.env.prod` using the `ENVIRONMENT` build argument.
+
+Core configuration covers:
+
+- MongoDB connection and database names
+- JWT/auth service secrets, issuer, cookie names, and token lifetimes
+- Google OAuth client and internal auth-service settings
+- Public ToolHub URL and frontend backend URL
+
+Optional integrations add their own variables for services such as TMDB/OMDb, Radarr, Sonarr, Jellyfin, OpenAI, Home Assistant webhooks, email delivery, scraper endpoints, admin agents, and notification ingestion.
+
+Relevant frontend variables:
+
+- `VITE_BASE_BACKEND_URL`
+- `VITE_GOOGLE_CLIENT_ID`
+
+Never commit `.env` files, tokens, API keys, mounted secret files, or production host credentials.
+
+> **Portability note:** the checked-in Compose and Nginx configuration includes homelab-specific private endpoints, read-only host mounts, external monitoring services, and admin-agent integrations. Review and replace those values before running the stack in another environment. Do not expose admin proxy routes or host-control endpoints directly to the public internet.
+
+## Run with Docker Compose
+
+After providing the required environment files and the sibling auth-service checkout:
 
 ```bash
-DB_URL=<mongodb-connection-string>
-JWT_SECRET=<jwt-secret>
-SENDGRID_API_KEY=<sendgrid-api-key>
+ENVIRONMENT=dev docker compose up --build -d
+docker compose ps
 ```
 
-## Running the Application
+Default local ports:
 
-Build and run all services with Docker Compose:
+| Service | URL |
+|---|---|
+| Frontend | `http://localhost:3000` |
+| FastAPI backend | `http://localhost:8080` |
+| OpenAPI docs | `http://localhost:8080/docs` |
+| Product scraper | `http://localhost:8001` |
+
+Useful checks:
 
 ```bash
-docker compose up --build
+docker compose config -q
+curl --fail http://localhost:8080/health
+docker compose logs --tail=100 backend frontend
 ```
 
-- Backend: `http://localhost:8080`
-- Frontend: `http://localhost:5173`
-- Scraper-v2: `http://localhost:8120`
-- Scrapper: `http://localhost:8110`
-
-## Frontend Usage
-
-### Landing Page
-
-1. Open `http://localhost:5173` in your browser.
-
-### Price Tracker
-
-2. Register or log in.
-3. Navigate to "Price Tracker" or click the price tracker card on the dashboard.
-4. Add product URLs and set target prices.
-5. View tracked products and price history with charts.
-6. Receive email alerts when prices drop to your target.
-
-### LeetCode Manager
-
-2. Register or log in.
-3. Navigate to "LeetCode" or click the LeetCode card on the dashboard.
-4. Add LeetCode problem URLs with difficulty and tags.
-5. Filter problems by difficulty, status, or tags.
-6. Add notes to problems for your personal learning.
-7. Mark problems as solved/unsolved to track progress.
-
-## API Endpoints (Backend)
-
-### Authentication
-
-- `POST /api/register` – Register a new user. Requires `userName`, `email`, and `password`.
-- `POST /api/login` – Authenticate and receive a JWT token.
-
-### Price Tracking
-
-- `POST /api/protected/save-product` – Save a product URL with a target price. Requires Authorization header with bearer token.
-
-Example payload:
-
-```json
-{
-  "productUrl": "https://www.amazon.com/example",
-  "targetPrice": "500"
-}
-```
-
-- `GET /api/protected/get-products` – Retrieve all tracked products for the authenticated user.
-- `DELETE /api/protected/delete-product/{productId}` – Remove a product from tracking.
-- `GET /api/protected/price-history/{productId}` – Get price history for a specific product.
-
-### LeetCode Problem Management
-
-- `POST /api/protected/add-question` – Add a new LeetCode problem. Requires `questionTitle`, `difficulty`, `tags`, and `url`.
-
-Example payload:
-
-```json
-{
-  "questionTitle": "Two Sum",
-  "difficulty": "Easy",
-  "tags": ["Array", "Hash Table"],
-  "url": "https://leetcode.com/problems/two-sum/"
-}
-```
-
-- `GET /api/protected/get-questions` – Retrieve all tracked problems for the authenticated user.
-- `PUT /api/protected/update-question/{questionId}` – Update problem status or notes.
-- `DELETE /api/protected/delete-question/{questionId}` – Remove a problem from tracking.
-- `GET /api/protected/get-questions/filter` – Filter problems by difficulty, solved status, or tags.
-
-## Scraper Services
-
-### Scraper-v2
-
-- `POST /scrape` – Expects `{ "urls": ["<product-url>"] }`. Returns price and title for each URL.
-- Supports Amazon, Flipkart, and more (see `platforms/` folder).
-
-### Scrapper (Legacy)
-
-- `POST /scrape` – Expects `{ "urls": ["<amazon-url>"] }`. Returns price and title.
-
-## Application Logic
-
-### Price Tracking
-
-- Scheduler queries all tracked products every hour.
-- Stores price history and sends email alerts when price is within 10% of target price.
-- Product is removed from tracking after alert is sent.
-
-### LeetCode Problem Management
-
-- Problems are stored with metadata (title, difficulty, tags, status).
-- Users can update problem status and add personal notes.
-- Efficient filtering by difficulty level and tag combinations.
-- Search functionality for quick problem lookup.
-
-## Development
-
-Start each service individually for development:
-
-### Frontend Development
+Stop the stack with:
 
 ```bash
-cd frontend && npm install && npm run dev
+docker compose down
 ```
 
-### Backend Development
+Named volumes are not removed by that command. Avoid `docker compose down -v` unless deleting persisted application data is intentional.
+
+## Local development
+
+### Frontend
 
 ```bash
-cd backend && ./gradlew run
+cd frontend
+npm ci
+npm run dev
 ```
 
-### Scraper Services Development
+Vite uses the configured frontend environment file. The production-style frontend build is:
 
 ```bash
-# Scraper-v2 (recommended)
-cd scraper-v2 && pip install -r requirements.txt && python app.py
-
-# Legacy Scrapper
-cd scrapper && pip install -r requirements.txt && python app.py
+npm run build
 ```
 
-## Notes
+### FastAPI backend
 
-- No production database credentials are included. Supply valid environment variables and run MongoDB separately or use a managed service.
-- For production deployment, review and update `fly.toml` and Dockerfiles as needed.
-- The project is designed to be extensible. New tools/features can be added by:
-  - Creating new components in the frontend
-  - Adding new service modules in the backend
-  - Registering new API routes in the main Vert.x application
-  - Following the existing batch processor pattern for scheduled tasks
+```bash
+cd backend-python
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+```
 
----
+The backend still requires its database, auth service, Redis, and any selected integrations to be reachable.
 
-Contributions and issues are welcome!
+### Product scraper
+
+```bash
+cd scraper-beautifulsoup
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+uvicorn scrape:app --reload --host 0.0.0.0 --port 8001
+```
+
+## API overview
+
+The OpenAPI document at `/openapi.json` is the authoritative endpoint reference. Major route groups include:
+
+| Prefix | Purpose |
+|---|---|
+| `/v2/register`, `/v2/login`, `/v2/session` | Registration and session lifecycle |
+| `/v2/products`, `/v2/save-product`, `/v2/pricehistory` | Product tracking |
+| `/v2/leetcode` | LeetCode questions, status, and notes |
+| `/v2/flights` | Flight providers, places, watches, and history |
+| `/v2/buzzwatch` | Discovery, preferences, details, and requests |
+| `/v2/moviehub` | Media search, requests, playback, downloads, chat, and access |
+| `/v2/speedtest` | Speed-test sessions and transfer probes |
+| `/v2/blogs` | Public articles, comments, reactions, and analytics events |
+| `/v2/notifications` | Notification reads, events, and dismissal |
+| `/v2/yt` | YouTube format and download workflows |
+| `/v2/admin` | Admin-only controls, analytics, approvals, settings, and embedded-tool authorization |
+| `/health` | Container health check |
+| `/metrics` | Prometheus metrics; protect this route in deployed environments |
+
+Authentication and authorization requirements vary by route. Do not treat a route merely being reachable through the backend as permission to expose it publicly; `/v2/admin/*`, host controls, media administration, and metrics require the intended authenticated proxy and secret boundaries.
+
+## Validation
+
+The following checks match the current containerized stack:
+
+```bash
+docker compose config -q
+python3 -m compileall -q backend-python/app
+docker compose build frontend
+```
+
+For feature work, also exercise the affected route through the real frontend/auth path and inspect backend logs. Admin and notification tests can have user-visible or operational side effects, so use non-mutating endpoints unless those effects are intentional.
+
+## Production notes
+
+- The backend health check is `/health`; the frontend waits for a healthy backend.
+- Redis persistence uses an append-only named volume.
+- Prometheus metrics are available at `/metrics` and are expected to sit behind the deployment's metrics-token boundary.
+- Admin embeds rely on Nginx authorization subrequests and private upstream services.
+- Blog seed/index setup, notification indexes, and the price-check scheduler run during FastAPI startup.
+- `docker-compose.dev.yml` expects prebuilt dev images plus the existing production network and is not a standalone first-run environment.
+
+## License
+
+ToolHub is available under the [MIT License](LICENSE).
