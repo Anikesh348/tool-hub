@@ -1,0 +1,39 @@
+services:
+  jellyfin-control:
+    build: .
+    container_name: jellyfin-control
+
+    # 🔥 VERY IMPORTANT
+    pid: "host"
+
+    # Intel Quick Sync / VA-API. The optimizer auto-falls back to software when
+    # this is a Raspberry Pi or when a usable Intel media device is unavailable.
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+
+    group_add:
+      - "992"
+
+    environment:
+      JELLYFIN_VIDEO_BACKEND: qsv
+      JELLYFIN_DRI_DEVICE: ${JELLYFIN_DRI_DEVICE:-/dev/dri/renderD128}
+      JELLYFIN_HW_DECODE: ${JELLYFIN_HW_DECODE:-1}
+      JELLYFIN_HW_REQUIRED: "1"
+      JELLYFIN_HW_VENDOR: ${JELLYFIN_HW_VENDOR:-intel}
+      JELLYFIN_HW_PRESET: ${JELLYFIN_HW_PRESET:-slow}
+      JELLYFIN_QSV_ASYNC_DEPTH: ${JELLYFIN_QSV_ASYNC_DEPTH:-4}
+
+    volumes:
+      - /srv/jellyfin-control/jellyfin-control.py:/app/jellyfin-control.py:ro
+      - /srv/jellyfin-control/docker-compose.yml:/srv/jellyfin-control/docker-compose.yml:ro
+      - /srv/docker/apps/jellyfin-automation/bazarr/config/config/config.yaml:/srv/jellyfin-control/bazarr-config.yaml:ro
+      - /srv/jellyfin-control/scripts:/srv/jellyfin-control/scripts
+      - /srv/scripts:/srv/scripts
+      - /srv/data/media:/srv/data/media
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp:/tmp
+
+    ports:
+      - "5050:5050"
+
+    restart: unless-stopped
