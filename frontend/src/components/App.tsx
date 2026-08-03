@@ -23,6 +23,9 @@ import BlogIndex from "./blogs/BlogIndex";
 import BlogArticle from "./blogs/BlogArticle";
 import AdminBlogEditor from "./blogs/AdminBlogEditor";
 import AdminBlogAnalytics from "./blogs/AdminBlogAnalytics";
+import AIChat from "./AIChat";
+import CourseIndex from "./courses/CourseIndex";
+import CourseReader from "./courses/CourseReader";
 import { locationPath, rememberAuthReturnPath } from "../utils/authRedirect";
 
 const DEFAULT_TITLE = "ToolHub";
@@ -45,6 +48,8 @@ const getPageTitle = (pathname: string) => {
   if (pathname.startsWith("/blogs/")) return "Homelab Blog | ToolHub";
   if (pathname === "/admin/blogs") return "Blog Studio | ToolHub";
   if (pathname === "/admin/blogs/analytics") return "Blog Analytics | ToolHub";
+  if (pathname === "/admin/ai") return "AI Assistant | ToolHub";
+  if (pathname.startsWith("/admin/courses")) return "My Courses | ToolHub";
   if (pathname.startsWith("/admin/tools/")) {
     const tool = getAdminTool(pathname.split("/").pop());
     return tool ? `${tool.title} | ToolHub` : DEFAULT_TITLE;
@@ -130,7 +135,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function App() {
   const { pathname } = useLocation();
   const isLanding = pathname === "/";
-  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/settings" || pathname === "/remote";
+  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/settings" || pathname === "/remote";
 
   return (
     <NotificationProvider>
@@ -208,6 +213,22 @@ function App() {
                   <AdminBlogAnalytics />
                 </AdminRoute>
               }
+            />
+            <Route
+              path="/admin/ai"
+              element={
+                <AdminRoute>
+                  <AIChat />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/courses"
+              element={<AdminRoute><CourseIndex /></AdminRoute>}
+            />
+            <Route
+              path="/admin/courses/:courseId/modules/:moduleSlug"
+              element={<AdminRoute><CourseReader /></AdminRoute>}
             />
             <Route
               path="/admin/tools/:toolKey"

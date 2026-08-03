@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
   ArrowRight,
+  BookOpen,
   ChartNoAxesCombined,
   Clapperboard,
   Code2,
@@ -16,6 +17,16 @@ import {
 import { adminTools } from "../adminTools";
 
 const tools = [
+  {
+    key: "my-courses",
+    path: "/admin/courses",
+    title: "My Courses",
+    description: "Learn with contextual AI explanations",
+    icon: BookOpen,
+    tone: "blue",
+    adminOnly: true,
+    publicAccess: false,
+  },
   {
     key: "speedtest",
     path: "/speedtest",

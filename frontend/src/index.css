@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+.ai-markdown > :first-child { margin-top: 0; }
+.ai-markdown > :last-child { margin-bottom: 0; }
+.ai-markdown p, .ai-markdown ul, .ai-markdown ol, .ai-markdown pre,
+.ai-markdown blockquote, .ai-markdown table { margin: 0.75rem 0; }
+.ai-markdown ul { list-style: disc; padding-left: 1.25rem; }
+.ai-markdown ol { list-style: decimal; padding-left: 1.25rem; }
+.ai-markdown code { border-radius: 0.35rem; background: rgba(15, 23, 42, 0.8); padding: 0.1rem 0.3rem; font-size: 0.85em; }
+.ai-markdown pre { overflow-x: auto; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 0.75rem; background: #020617; padding: 0.9rem; }
+.ai-markdown pre code { background: transparent; padding: 0; }
+.ai-markdown a { color: #a78bfa; text-decoration: underline; }
+.ai-markdown blockquote { border-left: 3px solid rgba(139, 92, 246, 0.7); padding-left: 0.9rem; color: #94a3b8; }
+.ai-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.ai-markdown th, .ai-markdown td { border: 1px solid rgba(148, 163, 184, 0.16); padding: 0.4rem 0.65rem; }
+
 :root {
   --bg-1: #f8fafc; /* light */
   --bg-2: #e6f0ff;

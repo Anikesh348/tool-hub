@@ -119,6 +119,15 @@ type SearchEntry = {
 
 const searchableTools: SearchEntry[] = [
   {
+    to: "/admin/courses",
+    label: "My Courses",
+    description: "Read courses and ask contextual AI questions",
+    icon: BookOpen,
+    adminOnly: true,
+    keywords: ["courses", "learning", "linux", "lessons", "ai"],
+    kind: "tool",
+  },
+  {
     to: "/blogs",
     label: "Blogs",
     description: "Read notes from the homelab",
@@ -384,7 +393,7 @@ function Header() {
   const searchResultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const isLanding = pathname === "/";
-  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/settings" || pathname === "/remote";
+  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/settings" || pathname === "/remote";
   const showSidebar = isLanding || isAdminToolPage;
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const showSignIn = !isAuthenticated && !isAuthPage;
@@ -616,6 +625,12 @@ function Header() {
               <Link to="/leetcode" className="toolhub-side-link text-yellow-200">
                 <Code2 className="h-4 w-4" />
                 LeetCode Manager
+              </Link>
+            )}
+            {isAdmin && (
+              <Link to="/admin/courses" className={`toolhub-side-link text-blue-200 ${pathname.startsWith("/admin/courses") ? "toolhub-side-link-active" : ""}`}>
+                <BookOpen className="h-4 w-4" />
+                My Courses
               </Link>
             )}
             <Link to="/moviehub" className="toolhub-side-link text-violet-300">
@@ -901,6 +916,12 @@ function Header() {
                 <span className="truncate">{label}</span>
               </Link>
             ))}
+            {isAdmin && (
+              <Link to="/admin/courses" className="toolhub-mobile-link min-w-0">
+                <BookOpen className="h-4 w-4 shrink-0" />
+                <span className="truncate">My Courses</span>
+              </Link>
+            )}
           </div>
           {isAdmin && (
             <>
