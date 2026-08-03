@@ -194,12 +194,26 @@ export const AdminToolFrame = () => {
           <iframe
             key={frameKey}
             src={frameSrc}
+            onLoad={(event) => {
+              if (!isMediaConsole || mediaService.key !== "qbittorrent") return;
+
+              const frameWindow = event.currentTarget.contentWindow;
+              if (!frameWindow) return;
+
+              const refreshEmbeddedLayout = () => {
+                frameWindow.dispatchEvent(new frameWindow.Event("resize"));
+              };
+
+              frameWindow.requestAnimationFrame(refreshEmbeddedLayout);
+              window.setTimeout(refreshEmbeddedLayout, 250);
+              window.setTimeout(refreshEmbeddedLayout, 1000);
+            }}
             title={
               isMediaConsole
                 ? `${mediaService.label} | ${tool.title}`
                 : tool.title
             }
-            className="min-h-0 flex-1 border-0 bg-white"
+            className="min-h-0 min-w-0 w-full flex-1 basis-0 border-0 bg-white"
             allow="clipboard-read; clipboard-write; fullscreen"
           />
         )

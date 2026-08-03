@@ -23,6 +23,15 @@ export interface AdminTool {
 
 export const adminTools: AdminTool[] = [
   {
+    key: "ai-assistant",
+    path: "/admin/ai",
+    proxyPath: "",
+    title: "AI Assistant",
+    description: "Chat with the private Codex intelligence layer",
+    icon: Bot,
+    tone: "violet",
+  },
+  {
     key: "log-digest",
     path: "/admin/tools/log-digest",
     proxyPath: "",
