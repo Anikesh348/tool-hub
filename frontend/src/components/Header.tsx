@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
+  CalendarClock,
   ChartNoAxesCombined,
   Check,
   ChevronDown,
@@ -94,6 +95,11 @@ const publishingLinks = [
 ];
 
 const workspaceLinks = [
+  {
+    to: "/admin/scheduler",
+    label: "Scheduled Jobs",
+    icon: CalendarClock,
+  },
   {
     to: "/settings",
     label: "Settings",
@@ -393,7 +399,7 @@ function Header() {
   const searchResultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const isLanding = pathname === "/";
-  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/settings" || pathname === "/remote";
+  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/scheduler" || pathname === "/settings" || pathname === "/remote";
   const showSidebar = isLanding || isAdminToolPage;
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const showSignIn = !isAuthenticated && !isAuthPage;

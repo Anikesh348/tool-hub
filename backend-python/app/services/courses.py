@@ -10,7 +10,7 @@ from typing import Any, Dict
 from fastapi import HTTPException
 from pymongo import ASCENDING, DESCENDING
 
-from app.services.ai_gateway import gateway_request
+from app.services.ai_provider_router import routed_gateway_request
 from app.services.mongo import col
 from app.utils.responses import jsonable, now_iso
 
@@ -453,7 +453,7 @@ def complete_course_question_safely(question_id: str) -> None:
             context.append({"type": "text", "label": "Selected passage", "text": selected})
         if surrounding:
             context.append({"type": "text", "label": "Surrounding lesson context", "text": surrounding})
-        response = gateway_request(
+        provider, response = routed_gateway_request(
             "POST",
             "/v1/responses",
             payload={
@@ -484,6 +484,7 @@ def complete_course_question_safely(question_id: str) -> None:
                 "answer": answer,
                 "status": "completed",
                 "error": "",
+                "provider": provider,
                 "providerRequestId": str(response.get("id") or ""),
                 "providerConversationId": str((response.get("conversation") or {}).get("providerConversationId") or ""),
                 "updatedAt": now_iso(),

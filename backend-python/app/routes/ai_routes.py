@@ -13,7 +13,13 @@ from app.services.ai_chats import (
     get_chat,
     list_chats,
 )
-from app.services.ai_gateway import AIGatewayError, gateway_request
+from app.services.ai_gateway import (
+    SUPPORTED_PROVIDERS,
+    AIGatewayError,
+    gateway_request,
+    provider_configured,
+)
+from app.services.ai_provider_router import active_provider, provider_state
 from app.utils.responses import success
 
 
@@ -29,10 +35,40 @@ def _gateway_error(exc: AIGatewayError) -> JSONResponse:
 
 @router.get("/v2/admin/ai/health")
 def ai_health(_: Dict[str, str] = Depends(admin_user)):
-    try:
-        return success(gateway_request("GET", "/readyz", timeout=5))
-    except AIGatewayError as exc:
-        return _gateway_error(exc)
+    providers: Dict[str, Any] = {}
+    for provider in SUPPORTED_PROVIDERS:
+        if not provider_configured(provider):
+            providers[provider] = {"status": "not_configured"}
+            continue
+        try:
+            gateway_request("GET", "/readyz", timeout=5, provider=provider)
+            providers[provider] = {"status": "ready"}
+        except AIGatewayError as exc:
+            providers[provider] = {"status": "down", "code": exc.code, "message": str(exc)}
+    state = provider_state()
+    ready = [name for name, item in providers.items() if item["status"] == "ready"]
+    if not ready:
+        # Report the active provider's own failure so the cause stays visible.
+        active = state["active"]
+        detail = providers.get(active) or {}
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "code": detail.get("code", "gateway_unavailable"),
+                    "message": detail.get("message", "No AI provider gateway is available"),
+                },
+                "providers": providers,
+                "routing": state,
+            },
+        )
+    return success({
+        "status": "ready",
+        # Kept for existing clients that read a single provider name.
+        "provider": active_provider() if active_provider() in ready else ready[0],
+        "providers": providers,
+        "routing": state,
+    })
 
 
 @router.post("/v2/admin/ai/chats")

@@ -32,9 +32,12 @@ services:
       NETDATA_DEFAULT_NODE: pi5
       TOOLHUB_PI_ADMIN_URL: http://100.99.75.123:3901
       TOOLHUB_CODEX_ADMIN_URL: http://100.111.189.107:3902
-      AI_CODEX_GATEWAY_URL: http://100.77.18.27:8765
       AI_GATEWAY_CLIENT_ID: toolhub-admin
+      AI_CODEX_GATEWAY_URL: http://100.77.18.27:8765
       AI_GATEWAY_SECRET_FILE: /run/secrets/ai_gateway_client_secret
+      AI_CLAUDE_GATEWAY_URL: http://100.77.18.27:8767
+      AI_CLAUDE_GATEWAY_SECRET_FILE: /run/secrets/ai_claude_gateway_client_secret
+      AI_PROVIDER_ACTIVE_TTL_SECONDS: "86400"
     depends_on:
       toolhub-auth:
         condition: service_healthy
@@ -50,6 +53,7 @@ services:
       - /srv/docker/apps/route-observability/metrics-token:/run/secrets/toolhub_metrics_token:ro
       - /srv/toolhub/log-digest:/data/log-digest:ro
       - /etc/codex-gateway/toolhub-admin.secret:/run/secrets/ai_gateway_client_secret:ro
+      - /etc/claude-gateway/toolhub-admin.secret:/run/secrets/ai_claude_gateway_client_secret:ro
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
