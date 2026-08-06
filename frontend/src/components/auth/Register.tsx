@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { User, AuthService } from "../../apis/auth/auth";
 import { useApiFetcher } from "../../hooks/useApiFetcher";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { Loader } from "../Loader";
 import { useAuth } from "../../context/AuthContext";
 import { useNotification } from "../../context/NotificationContext";
+import { clearAuthReturnPath, resolveAuthReturnPath } from "../../utils/authRedirect";
+import { loadGoogleIdentity } from "../../utils/googleIdentity";
 
 function Register() {
   const { loading, data, error, fetchData } = useApiFetcher();
   const { login, isAuthenticated } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnPath = resolveAuthReturnPath(location.state);
   const [user, setUser] = useState({
     name: "",
     email: "",
@@ -21,39 +25,20 @@ function Register() {
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   useEffect(() => {
-    const loadGoogleScript = () => {
-      return new Promise<void>((resolve, reject) => {
-        if (document.getElementById("google-login-script")) {
-          resolve();
-          return;
-        }
-        const script = document.createElement("script");
-        script.src = "https://accounts.google.com/gsi/client";
-        script.async = true;
-        script.defer = true;
-        script.id = "google-login-script";
-        script.onload = () => resolve();
-        script.onerror = () => reject("Google script failed to load");
-        document.body.appendChild(script);
-      });
-    };
-
-    loadGoogleScript()
+    loadGoogleIdentity()
       .then(() => {
-        if (!isAuthenticated && window.google && GOOGLE_CLIENT_ID) {
+        const container = document.getElementById("google-signin-button-register");
+        if (!isAuthenticated && window.google?.accounts?.id && GOOGLE_CLIENT_ID && container) {
           window.google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
             callback: handleCredentialResponse,
           });
 
-          window.google.accounts.id.renderButton(
-            document.getElementById("google-signin-button-register"),
-            { theme: "outline", size: "large" }
-          );
+          window.google.accounts.id.renderButton(container, { theme: "outline", size: "large" });
         }
       })
-      .catch((err) => console.error(err));
-  }, [GOOGLE_CLIENT_ID, isAuthenticated]);
+      .catch(() => addNotification("Unable to load Google sign-in. Please refresh.", "error"));
+  }, [GOOGLE_CLIENT_ID, isAuthenticated, addNotification]);
 
   const handleCredentialResponse = (response: any) => {
     const idToken = response.credential;
@@ -69,22 +54,22 @@ function Register() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/");
+      clearAuthReturnPath();
+      navigate(returnPath, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, returnPath]);
 
   useEffect(() => {
     if (data && data?.status === 200) {
       addNotification("Registration successful!", "success");
-      const accessToken = data.body?.accessToken || data.body?.token;
-      const refreshToken = data.body?.refreshToken;
-      if (accessToken && refreshToken) {
+      if (data.body?.authenticated && data.body?.user) {
         // If registration auto-logs in
-        login(accessToken, refreshToken, data.body.user);
-        navigate("/");
+        login(data.body.user);
+        clearAuthReturnPath();
+        navigate(returnPath, { replace: true });
       } else {
         // If registration doesn't auto-login, redirect to login
-        navigate("/login");
+        navigate("/login", { replace: true, state: { from: returnPath } });
       }
     } else if (data && data?.status !== 200) {
       addNotification(
@@ -92,7 +77,7 @@ function Register() {
         "error"
       );
     }
-  }, [data, error, navigate, login, addNotification]);
+  }, [data, error, navigate, login, addNotification, returnPath]);
 
   const isFormValid =
     user.name.trim() !== "" &&
@@ -101,7 +86,7 @@ function Register() {
     user.password.length >= 6;
 
   return (
-    <div className="min-h-screen w-full landing-bg transition-colors duration-300">
+    <div className="portal-page min-h-screen w-full transition-colors duration-300">
       {/* Main Content */}
       <div className="flex items-center justify-center min-h-screen pt-16">
         <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-3xl p-8 w-full max-w-md mx-4 shadow-xl">
@@ -209,6 +194,7 @@ function Register() {
             Already have an account?{" "}
             <Link
               to="/login"
+              state={{ from: returnPath }}
               className="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
             >
               Sign In

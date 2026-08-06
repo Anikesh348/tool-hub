@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 import bcrypt
-import jwt
 import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.core.config import JWT_ISSUER, JWT_SECRET, MOVIEHUB_ACCESS_USERS_COLLECTION
+from app.core.config import MOVIEHUB_ACCESS_USERS_COLLECTION
+from app.middlewares.auth import request_user
 from app.services.mongo import find_one
 from app.utils.responses import error
 
@@ -27,12 +27,9 @@ async def moviehub_access_middleware(request: Request, call_next):
     )
     if not guarded:
         return await call_next(request)
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return JSONResponse(status_code=401, content=error("Missing or invalid Authorization header"))
     try:
-        payload = jwt.decode(auth.removeprefix("Bearer ").strip(), JWT_SECRET, algorithms=["HS256"], issuer=JWT_ISSUER)
-    except Exception:
+        payload = request_user(request, request.headers.get("Authorization"))
+    except HTTPException:
         return JSONResponse(status_code=401, content=error("Invalid token"))
     if payload.get("role", "").upper() == "ADMIN":
         return await call_next(request)

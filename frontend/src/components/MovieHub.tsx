@@ -22,9 +22,9 @@ import {
 } from "../apis/moviehub/moviehub";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
+import { locationPath } from "../utils/authRedirect";
 import { MovieHubSection, SectionConfig } from "./moviehub/types";
 import { MovieHubNav } from "./moviehub/MovieHubNav";
-import { MovieHubTopBar } from "./moviehub/MovieHubTopBar";
 import { MovieHubRequestSection } from "./moviehub/MovieHubRequestSection";
 import { MovieHubStatusSection } from "./moviehub/MovieHubStatusSection";
 import { MovieHubAdminSection } from "./moviehub/MovieHubAdminSection";
@@ -41,6 +41,7 @@ import { CinePilotLauncher } from "./CineBotLauncher";
 import { CinePilotChat } from "./CineBot";
 
 const DEFAULT_QUALITY: MovieHubQuality = "any";
+const MOVIEHUB_PORTAL_URL = "https://openmovies.hostingfrompurva.xyz";
 
 const formatDateTime = (value?: string) => {
   if (!value) return "-";
@@ -66,6 +67,32 @@ const parseSsePayload = (rawEvent: string): string | null => {
   return payload || null;
 };
 
+const MOVIEHUB_SECTION_ROUTES: Record<MovieHubSection, string> = {
+  available: "/moviehub",
+  open: "/moviehub/watch",
+  request: "/moviehub/browse",
+  status: "/moviehub/my-list",
+  downloading: "/moviehub/downloads",
+  admin_approve: "/moviehub/admin/approvals",
+  admin_yt_download: "/moviehub/admin/youtube",
+  admin_access: "/moviehub/admin/access",
+  admin_users: "/moviehub/admin/members",
+};
+
+const MOVIEHUB_ADMIN_SECTIONS = new Set<MovieHubSection>([
+  "admin_approve",
+  "admin_yt_download",
+  "admin_access",
+  "admin_users",
+]);
+
+const getSectionFromPath = (pathname: string): MovieHubSection => {
+  const match = Object.entries(MOVIEHUB_SECTION_ROUTES).find(
+    ([, route]) => route === pathname,
+  );
+  return (match?.[0] as MovieHubSection | undefined) || "available";
+};
+
 export const MovieHub: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,10 +100,14 @@ export const MovieHub: React.FC = () => {
   const { addNotification } = useNotification();
   const isAdmin = user?.role === "ADMIN";
   const isChatPage = location.pathname.startsWith("/moviehub/chat");
+  const toolHubSessionKey = useMemo(
+    () => user?.userId || user?.email || authToken || "anonymous",
+    [authToken, user?.email, user?.userId],
+  );
 
-  const [activeSection, setActiveSection] = useState<MovieHubSection>("open");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<MovieHubSection>(() =>
+    getSectionFromPath(location.pathname),
+  );
   const [showCinePilot, setShowCinePilot] = useState(false);
   const [mediaType, setMediaType] = useState<"MOVIES" | "SHOWS">("MOVIES");
   const [query, setQuery] = useState("");
@@ -115,6 +146,9 @@ export const MovieHub: React.FC = () => {
   const [deletingAvailableMediaId, setDeletingAvailableMediaId] = useState<
     string | null
   >(null);
+  const [playingMediaTitle, setPlayingMediaTitle] = useState<string | null>(
+    null,
+  );
   const [downloadControlLoading, setDownloadControlLoading] = useState(false);
   const [deletingQueueItemKey, setDeletingQueueItemKey] = useState<
     string | null
@@ -166,6 +200,11 @@ export const MovieHub: React.FC = () => {
   );
   const [ytDownloadInProgress, setYtDownloadInProgress] = useState(false);
   const [ytDownloadError, setYtDownloadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccessStatus(null);
+    setPortalUserName("");
+  }, [toolHubSessionKey]);
 
   const {
     loading: accessStatusLoading,
@@ -258,6 +297,10 @@ export const MovieHub: React.FC = () => {
     fetchData: fetchDeleteDownload,
   } = useApiFetcher();
   const {
+    data: playMediaData,
+    fetchData: fetchPlayMedia,
+  } = useApiFetcher();
+  const {
     loading: completedDownloadsLoading,
     data: completedDownloadsData,
     fetchData: fetchCompletedDownloads,
@@ -345,39 +388,37 @@ export const MovieHub: React.FC = () => {
   const sectionConfig = useMemo(() => {
     const baseSectionConfig: SectionConfig[] = [
       {
+        id: "available",
+        label: "Home",
+        compactLabel: "HM",
+      },
+      {
         id: "open",
-        label: "Open Streaming Portal",
-        compactLabel: "OP",
+        label: "Watch",
+        compactLabel: "WT",
       },
       {
         id: "request",
-        label: isAdmin ? "Search & Download" : "Request a Movie/Series",
-        compactLabel: "RQ",
+        label: "Browse",
+        compactLabel: "BR",
       },
       {
         id: "status",
-        label: "My Requests",
-        compactLabel: "ST",
-      },
-      {
-        id: "available",
-        label: "Available Library",
-        compactLabel: "AV",
+        label: "My List",
+        compactLabel: "ML",
       },
       {
         id: "downloading",
-        label: "Download Queue",
+        label: "Downloads",
         compactLabel: "DL",
       },
     ];
     if (!isAdmin) return baseSectionConfig;
     return [
-      ...baseSectionConfig.filter((section) =>
-        ["open", "request"].includes(section.id),
-      ),
+      ...baseSectionConfig,
       {
         id: "admin_approve" as MovieHubSection,
-        label: "Review Download Requests",
+        label: "Approvals",
         compactLabel: "AP",
         adminOnly: true,
         badgeCount: pendingAdminRequestsCount,
@@ -390,28 +431,61 @@ export const MovieHub: React.FC = () => {
       },
       {
         id: "admin_access" as MovieHubSection,
-        label: "Review Access Requests",
+        label: "Access",
         compactLabel: "AC",
         adminOnly: true,
         badgeCount: pendingAccessRequestsCount,
       },
       {
         id: "admin_users" as MovieHubSection,
-        label: "Manage Members",
+        label: "Members",
         compactLabel: "US",
         adminOnly: true,
       },
-      ...baseSectionConfig.filter((section) =>
-        ["available", "downloading"].includes(section.id),
-      ),
     ];
   }, [isAdmin, pendingAdminRequestsCount, pendingAccessRequestsCount]);
 
   useEffect(() => {
-    if (isUnauthenticated) {
-      navigate("/login", { state: { from: "/moviehub" } });
+    if (isChatPage) return;
+    const nextSection = getSectionFromPath(location.pathname);
+    if (MOVIEHUB_ADMIN_SECTIONS.has(nextSection) && !isAdmin) {
+      if (!isAuthLoading) {
+        navigate("/moviehub", { replace: true });
+      }
+      return;
     }
-  }, [isUnauthenticated, navigate]);
+    setActiveSection(nextSection);
+  }, [
+    isAdmin,
+    isAuthLoading,
+    isChatPage,
+    location.pathname,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (!playMediaData) return;
+    if (playMediaData.status >= 200 && playMediaData.status < 300) {
+      setActiveSection("open");
+      navigate(MOVIEHUB_SECTION_ROUTES.open);
+      addNotification(
+        `Playing ${playMediaData.body?.response?.title || "your selection"}`,
+        "success",
+      );
+    } else {
+      addNotification(
+        playMediaData.body?.error || "MovieHub could not start playback",
+        "error",
+      );
+    }
+    setPlayingMediaTitle(null);
+  }, [playMediaData, addNotification, navigate]);
+
+  useEffect(() => {
+    if (isUnauthenticated) {
+      navigate("/login", { state: { from: locationPath(location) } });
+    }
+  }, [isUnauthenticated, location, navigate]);
 
   const loadMyRequests = useCallback(() => {
     const { url, options } = MovieHubService.getMyRequests();
@@ -562,9 +636,13 @@ export const MovieHub: React.FC = () => {
     if (!accessStatusData) return;
     if (accessStatusData.status >= 200 && accessStatusData.status < 300) {
       const response = accessStatusData.body?.response || {};
+      if (response.userId && user?.userId && response.userId !== user.userId) {
+        return;
+      }
       const resolvedStatus =
         response.status || (response.exists ? "APPROVED" : "NOT_REQUESTED");
       const status: MovieHubAccessStatus = {
+        userId: response.userId || user?.userId || "",
         hasAccess: Boolean(response.exists),
         exists: Boolean(response.exists),
         status: resolvedStatus,
@@ -573,16 +651,14 @@ export const MovieHub: React.FC = () => {
         showTemporaryPasswordNotice: Boolean(response.showTemporaryPasswordNotice),
       };
       setAccessStatus(status);
-      if (status?.movieHubUserName && !portalUserName) {
-        setPortalUserName(status.movieHubUserName);
-      }
+      setPortalUserName(status.movieHubUserName || "");
       return;
     }
     addNotification(
       accessStatusData.body?.error || "Failed to fetch moviehub access status",
       "error",
     );
-  }, [accessStatusData, portalUserName, addNotification]);
+  }, [accessStatusData, addNotification, user?.userId]);
 
   useEffect(() => {
     if (!createAccessRequestData) return;
@@ -1114,8 +1190,12 @@ export const MovieHub: React.FC = () => {
   }, [activeSection, isAdmin, ytDownloadRequests, streamDownloadingStatus]);
 
   useEffect(() => {
-    setIsMobileNavOpen(false);
-  }, [activeSection]);
+    const sectionTitle = isChatPage
+      ? "MovieHub AI Chat"
+      : sectionConfig.find((section) => section.id === activeSection)?.label ||
+        "MovieHub";
+    document.title = `${sectionTitle} | ToolHub`;
+  }, [activeSection, isChatPage, sectionConfig]);
 
   useEffect(() => {
     if (activeSection !== "available") return;
@@ -1314,9 +1394,9 @@ export const MovieHub: React.FC = () => {
     [fetchDeleteAccessUser],
   );
 
-  const handleOpenMovieHub = useCallback(() => {
+  const handleOpenMovieHub = useCallback((url: string) => {
     window.open(
-      "https://openmovies.hostingfrompurva.xyz",
+      url,
       "_blank",
       "noopener,noreferrer",
     );
@@ -1504,19 +1584,36 @@ export const MovieHub: React.FC = () => {
 
   const handleSelectSection = useCallback(
     (section: MovieHubSection) => {
-      if (isChatPage) {
-        navigate("/moviehub");
-      }
-      if (section === "admin_yt_download") {
-        navigate("/moviehub/yt");
-        return;
-      }
       if (section === "status" && authToken && !isAuthLoading) {
         loadMyRequests();
       }
       setActiveSection(section);
+      navigate(MOVIEHUB_SECTION_ROUTES[section]);
     },
-    [isChatPage, navigate, authToken, isAuthLoading, loadMyRequests],
+    [navigate, authToken, isAuthLoading, loadMyRequests],
+  );
+
+  const handlePlayMedia = useCallback(
+    (item: MovieHubAvailableMedia) => {
+      if (!portalUserName.trim()) {
+        addNotification(
+          "Open the Watch tab and sign in to MovieHub before starting playback",
+          "warning",
+        );
+        setActiveSection("open");
+        navigate(MOVIEHUB_SECTION_ROUTES.open);
+        return;
+      }
+      setPlayingMediaTitle(item.title);
+      setActiveSection("open");
+      navigate(MOVIEHUB_SECTION_ROUTES.open);
+      const { url, options } = MovieHubService.playMedia(
+        item,
+        portalUserName,
+      );
+      window.setTimeout(() => fetchPlayMedia(url, options), 350);
+    },
+    [addNotification, fetchPlayMedia, navigate, portalUserName],
   );
 
   const handleSetMediaType = useCallback((type: "MOVIES" | "SHOWS") => {
@@ -1556,12 +1653,6 @@ export const MovieHub: React.FC = () => {
     loadDownloadQueue(downloadScope);
     loadCompletedDownloads(downloadScope);
   }, [loadDownloadQueue, loadCompletedDownloads, downloadScope]);
-
-  const openMobileNav = useCallback(() => setIsMobileNavOpen(true), []);
-  const closeMobileNav = useCallback(() => setIsMobileNavOpen(false), []);
-  const toggleSidebar = useCallback(() => {
-    setIsSidebarCollapsed((prev) => !prev);
-  }, []);
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => {
@@ -1619,9 +1710,7 @@ export const MovieHub: React.FC = () => {
     });
   }, [completedDownloadItems]);
 
-  const activeSectionConfig = sectionConfig.find(
-    (section) => section.id === activeSection,
-  );
+  const isOpenPortalView = !isChatPage && activeSection === "open";
 
   if (isAuthLoading || isUnauthenticated) {
     return <Loader />;
@@ -1647,40 +1736,45 @@ export const MovieHub: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-4 overflow-x-hidden">
-      <div className="max-w-7xl mx-auto">
+    <div
+      className={`portal-page moviehub-cinema-page w-full overflow-x-hidden ${
+        isOpenPortalView
+          ? "h-[100dvh] max-h-[100dvh] min-h-0 overflow-hidden pt-16"
+          : "min-h-screen pb-10 pt-16"
+      }`}
+    >
+      <div
+        className={`mx-auto flex w-full flex-col ${
+          isOpenPortalView
+            ? "h-full min-h-0 max-w-none"
+            : "max-w-[1600px]"
+        }`}
+      >
         <div
-          className={`grid grid-cols-1 gap-4 md:gap-6 md:items-start ${
-            isSidebarCollapsed
-              ? "md:grid-cols-[72px_minmax(0,1fr)]"
-              : "md:grid-cols-[300px_minmax(0,1fr)]"
+          className={`flex min-h-0 flex-col ${
+            isOpenPortalView ? "h-full" : ""
           }`}
         >
           <MovieHubNav
             sectionConfig={sectionConfig}
             activeSection={activeSection}
-            isSidebarCollapsed={isSidebarCollapsed}
-            isMobileNavOpen={isMobileNavOpen}
-            onToggleSidebar={toggleSidebar}
-            onCloseMobileNav={closeMobileNav}
             onSelectSection={handleSelectSection}
           />
 
-          <section className="min-w-0 space-y-4">
-            <MovieHubTopBar
-              sectionLabel={
-                isChatPage
-                  ? "CinePilot Assistant"
-                  : activeSectionConfig?.label || "Media workspace"
-              }
-              compactLabel={
-                isChatPage ? "AI" : activeSectionConfig?.compactLabel || ""
-              }
-              onOpenMobileNav={openMobileNav}
-            />
-
-            <div className="moviehub-panel rounded-2xl p-4 sm:p-6 min-h-[520px] overflow-x-hidden relative">
-              <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/70 to-transparent" />
+          <section
+            className={`min-w-0 ${
+              isOpenPortalView
+                ? "flex min-h-0 flex-1 flex-col"
+                : "px-3 pb-6 pt-4 sm:px-5 lg:px-8"
+            }`}
+          >
+            <div
+              className={`relative overflow-x-hidden ${
+                isOpenPortalView
+                  ? "min-h-0 flex-1 overflow-hidden"
+                  : "min-h-[520px]"
+              }`}
+            >
               {isChatPage && (
                 <CinePilotChat
                   mode="page"
@@ -1692,20 +1786,30 @@ export const MovieHub: React.FC = () => {
                 />
               )}
 
-              {!isChatPage && activeSection === "open" && (
-                <MovieHubOpenSection
-                  isAdmin={isAdmin}
-                  username={portalUserName}
-                  userEmail={accessStatus?.email || ""}
-                  showTemporaryPasswordNotice={Boolean(
-                    accessStatus?.showTemporaryPasswordNotice,
-                  )}
-                  resending={resendPasswordLoading}
-                  confirmingPasswordReset={confirmPasswordResetLoading}
-                  onOpen={handleOpenMovieHub}
-                  onResendPassword={handleResendPassword}
-                  onConfirmPasswordReset={handleConfirmPasswordReset}
-                />
+              {!isChatPage && (
+                <div
+                  className={
+                    activeSection === "open"
+                      ? "flex h-full min-h-0 w-full flex-1"
+                      : "hidden"
+                  }
+                >
+                  <MovieHubOpenSection
+                    isAdmin={isAdmin}
+                    username={portalUserName}
+                    userEmail={accessStatus?.email || ""}
+                    portalUrl={MOVIEHUB_PORTAL_URL}
+                    sessionKey={`${toolHubSessionKey}:${portalUserName || "pending"}`}
+                    showTemporaryPasswordNotice={Boolean(
+                      accessStatus?.showTemporaryPasswordNotice,
+                    )}
+                    resending={resendPasswordLoading}
+                    confirmingPasswordReset={confirmPasswordResetLoading}
+                    onOpenExternal={handleOpenMovieHub}
+                    onResendPassword={handleResendPassword}
+                    onConfirmPasswordReset={handleConfirmPasswordReset}
+                  />
+                </div>
               )}
 
               {!isChatPage && activeSection === "request" && (
@@ -1836,6 +1940,8 @@ export const MovieHub: React.FC = () => {
                   onRefresh={refreshAvailable}
                   onDelete={handleDeleteAvailableMedia}
                   formatDateTime={formatDateTime}
+                  onWatch={handlePlayMedia}
+                  playingMediaTitle={playingMediaTitle}
                 />
               )}
 

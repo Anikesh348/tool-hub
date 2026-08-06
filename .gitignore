@@ -36,3 +36,5 @@ frontend/fly.toml
 frontend/nginx.conf
 
 scripts
+# Suffixed env backups (e.g. .env.dev.pre-powercut-...) also hold live secrets
+.env.*

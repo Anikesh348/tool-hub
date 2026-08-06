@@ -17,6 +17,9 @@ MEDIA_REQUESTS_COLLECTION = "mediarequests"
 MOVIEHUB_ACCESS_REQUESTS_COLLECTION = "moviehubaccessrequest"
 MOVIEHUB_ACCESS_USERS_COLLECTION = "moviehubusers"
 YT_DOWNLOADS_COLLECTION = "ytdownloads"
+BUZZWATCH_ITEMS_COLLECTION = "buzzwatchitems"
+BUZZWATCH_META_COLLECTION = "buzzwatchmeta"
+BUZZWATCH_PREFERENCES_COLLECTION = "buzzwatchpreferences"
 
 moviehub_conversations: Dict[str, Dict[str, Any]] = {}
 mongo_client: Optional[MongoClient] = None

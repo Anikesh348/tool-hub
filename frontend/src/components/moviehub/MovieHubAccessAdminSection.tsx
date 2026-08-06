@@ -1,6 +1,7 @@
 import React from "react";
 import { Loader } from "../Loader";
 import { MovieHubAccessRequest } from "../../apis/moviehub/moviehub";
+import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 
 type MovieHubAccessAdminSectionProps = {
   requests: MovieHubAccessRequest[];
@@ -24,6 +25,15 @@ export const MovieHubAccessAdminSection: React.FC<MovieHubAccessAdminSectionProp
   formatDateTime,
 }) => {
   const pendingCount = requests.length;
+  const {
+    currentPage,
+    pageCount,
+    pageSize,
+    paginatedItems,
+    setCurrentPage,
+    setPageSize,
+  } = usePaginatedItems(requests, 6);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
@@ -59,7 +69,15 @@ export const MovieHubAccessAdminSection: React.FC<MovieHubAccessAdminSectionProp
         <p className="text-sm text-gray-600 dark:text-gray-300">No pending access requests.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {requests.map((request) => (
+          <MovieHubPagination
+            currentPage={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            totalItems={requests.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
+          {paginatedItems.map((request) => (
             <div
               key={request.requestId}
               className="moviehub-section-card rounded-2xl p-4"
@@ -98,6 +116,14 @@ export const MovieHubAccessAdminSection: React.FC<MovieHubAccessAdminSectionProp
               </div>
             </div>
           ))}
+          <MovieHubPagination
+            currentPage={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            totalItems={requests.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
         </div>
       )}
     </div>

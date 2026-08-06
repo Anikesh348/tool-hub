@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.services.mongo import db
+from app.services.redis_cache import cache_ping
 
 router = APIRouter()
 
@@ -20,6 +21,6 @@ router = APIRouter()
 def health():
     try:
         db().command("ping")
-        return {"status": "ok", "mongo": "up"}
+        return {"status": "ok", "mongo": "up", "redis": "up" if cache_ping() else "degraded"}
     except Exception as exc:
         return JSONResponse(status_code=503, content={"status": "degraded", "mongo": "down", "error": str(exc)})

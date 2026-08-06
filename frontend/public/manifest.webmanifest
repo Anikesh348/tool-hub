@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "ToolHub",
+  "short_name": "ToolHub",
+  "description": "Anikesh's self-hosted tools and homelab admin console.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080d17",
+  "theme_color": "#080d17",
+  "icons": [
+    {
+      "src": "/favicon-v2.png",
+      "sizes": "500x500",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -389,7 +389,7 @@ def queue_media_download(request_record: Dict[str, Any]) -> None:
         payload = {
             "title": lookup.get("title"),
             "qualityProfileId": quality_profile_id(quality),
-            "rootFolderPath": "/uhdmovies" if str(quality).lower() in {"4k", "2160p", "uhd", "ultra-hd"} else "/movies",
+            "rootFolderPath": "/data/uhdmovies" if str(quality).lower() in {"4k", "2160p", "uhd", "ultra-hd"} else "/data/movies",
             "monitored": True,
             "addOptions": {"searchForMovie": True},
             "tmdbId": lookup.get("tmdbId"),

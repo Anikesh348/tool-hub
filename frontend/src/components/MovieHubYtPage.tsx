@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Download, History, Search, ArrowLeft } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useApiFetcher } from "../hooks/useApiFetcher";
@@ -16,6 +16,7 @@ import { YtDownloadComposer } from "./moviehub/yt/YtDownloadComposer";
 import { YtCurrentDownloadingStatusPanel } from "./moviehub/yt/YtCurrentDownloadingStatusPanel";
 import { YtLibraryItemsTable } from "./moviehub/yt/YtLibraryItemsTable";
 import { YtDownloadRequestsTable } from "./moviehub/yt/YtDownloadRequestsTable";
+import { locationPath } from "../utils/authRedirect";
 
 type YtWorkspaceSection =
   | "search_download"
@@ -74,6 +75,7 @@ const ytSectionItems: Array<{
 
 export const MovieHubYtPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { authToken, isAuthLoading, user } = useAuth();
   const { addNotification } = useNotification();
   const isAdmin = user?.role === "ADMIN";
@@ -137,9 +139,9 @@ export const MovieHubYtPage: React.FC = () => {
 
   useEffect(() => {
     if (isUnauthenticated) {
-      navigate("/login", { state: { from: "/moviehub/yt" } });
+      navigate("/login", { state: { from: locationPath(location) } });
     }
-  }, [isUnauthenticated, navigate]);
+  }, [isUnauthenticated, location, navigate]);
 
   useEffect(() => {
     if (isAuthLoading || !authToken) return;
@@ -525,6 +527,10 @@ export const MovieHubYtPage: React.FC = () => {
     [activeSection],
   );
 
+  useEffect(() => {
+    document.title = `${activeSectionMeta?.label || "YT Console"} | MovieHub | ToolHub`;
+  }, [activeSectionMeta]);
+
   if (isAuthLoading || isUnauthenticated) {
     return <Loader />;
   }
@@ -535,7 +541,7 @@ export const MovieHubYtPage: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full moviehub-bg pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-24 pb-8 sm:pb-12 px-4 overflow-x-hidden">
-      <div className="max-w-7xl mx-auto">
+      <div className="toolhub-desktop-container max-w-7xl mx-auto">
         <div
           className={`grid grid-cols-1 gap-4 md:gap-6 md:items-start ${
             isSidebarCollapsed
