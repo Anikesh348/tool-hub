@@ -7,6 +7,8 @@
 
 It runs on `hp-codex` because that VM is the dedicated low-blast-radius management guest. It does not run on `hp-purva`, the Proxmox hypervisor.
 
+Since 2026-08-05 a sibling wrapper for Claude runs on its own dedicated guest, `hp-claude` (Tailscale `100.109.98.8:8773`), following the same “one provider, one low-blast-radius VM” rule rather than sharing `hp-codex`. It answers the identical `/v1/execute` contract described in 5.2–5.4 — same request shape (`input` / `providerConversationId` / `capabilityProfile`), same response shape, same HMAC/nonce authentication from the gateway — confirmed from the Claude gateway's executor adapter, which calls it exactly as 4.4/5.2 describe. This lesson otherwise documents `hp-codex`'s wrapper specifically; the Claude wrapper's own CLI invocation, environment allowlist and systemd sandbox are that VM's implementation detail and aren't covered here in the same depth — treat 5.3–5.10 as “this is how the Codex side does it,” not as a literal description of `hp-claude`.
+
 ## 5.2 Private executor API
 
 The executor exposes:

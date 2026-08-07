@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { LeetCodeService } from "../apis/question/question";
 import { useApiFetcher } from "../hooks/useApiFetcher";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -6,8 +6,12 @@ import { useAuth } from "../context/AuthContext";
 import Filters from "./Filters";
 import { Loader } from "./Loader";
 import { useNotification } from "../context/NotificationContext";
-import { BookOpenCheck, CheckCircle2, Circle, Plus } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, ChevronDown, Circle, Plus, Sparkles } from "lucide-react";
 import { locationPath } from "../utils/authRedirect";
+import LeetcodeAIBubble from "./LeetcodeAIBubble";
+
+const DIFFICULTY_RANK: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+const PAGE_SIZE = 10;
 
 export const Leetcode = () => {
   const { authToken, isAuthLoading } = useAuth();
@@ -30,6 +34,18 @@ export const Leetcode = () => {
   const [solvedFilter, setSolvedFilter] = useState<string>("all");
   const [tagsOptions, setTagsOptions] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [difficultySort, setDifficultySort] = useState<"none" | "asc" | "desc">("none");
+  const [page, setPage] = useState(1);
+
+  // Topic-first browsing (mirrors leetcode.com's tag pages): a single active
+  // topic pill by default, plus AI-curated collections shown the same way.
+  const [selectedTopic, setSelectedTopic] = useState<string>("");
+  const [selectedCollection, setSelectedCollection] = useState<string>("");
+  const topicDefaultSetRef = useRef(false);
+
+  // Add Questions starts collapsed so the page opens on the browsing view,
+  // not a form - it only expands when the user actually wants to add something.
+  const [addQuestionsOpen, setAddQuestionsOpen] = useState(false);
 
   const fetchedRef = useRef(false);
 
@@ -129,6 +145,7 @@ export const Leetcode = () => {
       addNotification("Questions added successfully!", "success");
       fetchQuestions(); // refetch updated list
       setUrls("");
+      setAddQuestionsOpen(false);
     } else if (addData?.status && addData.status !== 200) {
       addNotification(
         addData?.body?.message || "Failed to add questions",
@@ -212,6 +229,58 @@ export const Leetcode = () => {
     setTagsOptions(Array.from(tagsSet));
   }, [questions]);
 
+  // Topic and AI-collection counts, derived client-side from the questions
+  // already loaded (same source the "Tags" filter uses), sorted most-popular
+  // first so the default view lands on whichever topic has the most problems.
+  const topicCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    questions.forEach((q) => {
+      (q.tags || []).forEach((t: string) => counts.set(t, (counts.get(t) || 0) + 1));
+    });
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [questions]);
+
+  const collectionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    questions.forEach((q) => {
+      if (q.collectionLabel) counts.set(q.collectionLabel, (counts.get(q.collectionLabel) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [questions]);
+
+  // Default to the most common topic (e.g. "Array") the first time questions
+  // load, like leetcode.com's own tag pages - but only once, so it doesn't
+  // fight the user's own topic pick on later refetches.
+  useEffect(() => {
+    if (topicDefaultSetRef.current || questions.length === 0) return;
+    topicDefaultSetRef.current = true;
+    if (topicCounts.length > 0) setSelectedTopic(topicCounts[0].name);
+  }, [questions, topicCounts]);
+
+  const handleSelectTopic = (topic: string) => {
+    setSelectedTopic(topic);
+    setSelectedCollection("");
+  };
+
+  const handleSelectCollection = (collection: string) => {
+    setSelectedCollection(collection);
+    setSelectedTopic("");
+  };
+
+  const handleViewCollection = (label: string) => {
+    handleSelectCollection(label);
+    window.setTimeout(() => {
+      document.getElementById("question-library")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  };
+
   // Track applied tags and operation for UI
   const [appliedTags, setAppliedTags] = useState<string[]>([]);
   const [appliedOperation, setAppliedOperation] = useState<
@@ -246,6 +315,11 @@ export const Leetcode = () => {
 
   // Filtered questions for display (UI-level for difficulty and solved)
   const filteredQuestions = questions.filter((q) => {
+    if (selectedCollection) {
+      if ((q.collectionLabel || "") !== selectedCollection) return false;
+    } else if (selectedTopic) {
+      if (!(q.tags || []).includes(selectedTopic)) return false;
+    }
     if (difficultyFilter !== "all") {
       if (!q.difficulty) return false;
       if (q.difficulty.toLowerCase() !== difficultyFilter.toLowerCase())
@@ -264,6 +338,36 @@ export const Leetcode = () => {
     }
     return true;
   });
+
+  // Any change to what's being shown should land back on page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [
+    selectedTopic,
+    selectedCollection,
+    difficultyFilter,
+    solvedFilter,
+    searchQuery,
+    difficultySort,
+  ]);
+
+  // Sort by difficulty (client-side, on top of the active filters)
+  const sortedQuestions =
+    difficultySort === "none"
+      ? filteredQuestions
+      : [...filteredQuestions].sort((a, b) => {
+          const rankA = DIFFICULTY_RANK[(a.difficulty || "").toLowerCase()] ?? 3;
+          const rankB = DIFFICULTY_RANK[(b.difficulty || "").toLowerCase()] ?? 3;
+          return difficultySort === "asc" ? rankA - rankB : rankB - rankA;
+        });
+
+  const totalPages = Math.max(1, Math.ceil(sortedQuestions.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedQuestions = sortedQuestions.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
   const solvedCount = questions.filter(
     (question) => question.status === "solved" || question.solved === true,
   ).length;
@@ -274,7 +378,7 @@ export const Leetcode = () => {
   return (
     <div className="portal-page leetcode-workspace min-h-screen w-full transition-colors duration-300">
       <div className="toolhub-desktop-container max-w-6xl mx-auto py-12 px-4 sm:px-6 lg:px-8 pt-24">
-        <header className="mb-8 max-w-3xl">
+        <header className="mb-5 max-w-3xl">
           <p className="tool-workspace-kicker">Coding workspace</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             LeetCode Manager
@@ -284,7 +388,128 @@ export const Leetcode = () => {
           </p>
         </header>
 
-        <div className="tool-metric-grid mb-6">
+        {/* Add Question Section - collapsed by default, top of page */}
+        <div
+          id="add-questions"
+          className="tool-workspace-card scroll-mt-24 mb-5 overflow-hidden"
+        >
+          <button
+            type="button"
+            onClick={() => setAddQuestionsOpen((open) => !open)}
+            className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 text-left"
+          >
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="tool-workspace-icon shrink-0">
+                <Plus className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
+                  Add Questions
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  Paste LeetCode URLs to track your practice
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${
+                addQuestionsOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {addQuestionsOpen && (
+            <div className="space-y-3 sm:space-y-4 px-4 sm:px-6 pb-4 sm:pb-6 pt-1 border-t border-gray-200 dark:border-gray-700">
+              <div className="relative">
+                <textarea
+                  className="w-full border-2 border-gray-300 dark:border-gray-600 rounded-lg sm:rounded-xl p-3 sm:p-4 resize-none bg-white dark:bg-gray-800/50 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 font-mono text-xs sm:text-sm"
+                  rows={3}
+                  autoFocus
+                  placeholder="Paste URLs (comma or new line)&#10;Example: https://leetcode.com/problems/two-sum/"
+                  value={urls}
+                  onChange={(e) => setUrls(e.target.value)}
+                />
+                <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 text-xs text-gray-400 dark:text-gray-500">
+                  {urls.split(/\n|,/).filter((u) => u.trim().length > 0).length >
+                    0 && (
+                    <span>
+                      {
+                        urls.split(/\n|,/).filter((u) => u.trim().length > 0)
+                          .length
+                      }{" "}
+                      URL(s)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs text-slate-500 order-2 sm:order-1">
+                  Separate URLs with a comma or new line.
+                </div>
+                <button
+                  onClick={handleSubmit}
+                  disabled={addingQuestions || urls.trim().length === 0}
+                  className="order-1 sm:order-2 w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-8 rounded-lg sm:rounded-xl text-white font-semibold text-sm sm:text-base bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  {addingQuestions ? "Submitting..." : "Submit"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Topics - primary, leetcode-style navigation */}
+        {(topicCounts.length > 0 || collectionCounts.length > 0) && (
+          <div className="mb-5">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              <button
+                onClick={() => handleSelectTopic("")}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${
+                  !selectedTopic && !selectedCollection
+                    ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow"
+                    : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/10"
+                }`}
+              >
+                All ({questions.length})
+              </button>
+              {topicCounts.map((topic) => (
+                <button
+                  key={topic.name}
+                  onClick={() => handleSelectTopic(topic.name)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${
+                    selectedTopic === topic.name
+                      ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow"
+                      : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/10"
+                  }`}
+                >
+                  {topic.name} ({topic.count})
+                </button>
+              ))}
+            </div>
+            {collectionCounts.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
+                {collectionCounts.map((collection) => (
+                  <button
+                    key={collection.name}
+                    onClick={() => handleSelectCollection(collection.name)}
+                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${
+                      selectedCollection === collection.name
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow"
+                        : "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/20"
+                    }`}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    {collection.name} ({collection.count})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="tool-metric-grid mb-5">
           <div className="tool-metric-card">
             <BookOpenCheck />
             <span><strong>{questions.length}</strong>Total problems</span>
@@ -303,66 +528,8 @@ export const Leetcode = () => {
           </div>
         </div>
 
-        {/* Add Question Section */}
-        <div
-          id="add-questions"
-          className="tool-workspace-card scroll-mt-24 p-4 sm:p-6 mb-6 sm:mb-8"
-        >
-          <div className="mb-4 sm:mb-6">
-            <div className="flex items-center gap-2 sm:gap-3 mb-2">
-              <div className="tool-workspace-icon">
-                <Plus className="h-5 w-5" />
-              </div>
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
-                Add Questions
-              </h2>
-            </div>
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 sm:ml-14">
-              Paste LeetCode URLs to track your practice
-            </p>
-          </div>
-
-          <div className="space-y-3 sm:space-y-4">
-            <div className="relative">
-              <textarea
-                className="w-full border-2 border-gray-300 dark:border-gray-600 rounded-lg sm:rounded-xl p-3 sm:p-4 resize-none bg-white dark:bg-gray-800/50 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 font-mono text-xs sm:text-sm"
-                rows={4}
-                placeholder="Paste URLs (comma or new line)&#10;Example: https://leetcode.com/problems/two-sum/"
-                value={urls}
-                onChange={(e) => setUrls(e.target.value)}
-              />
-              <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 text-xs text-gray-400 dark:text-gray-500">
-                {urls.split(/\n|,/).filter((u) => u.trim().length > 0).length >
-                  0 && (
-                  <span>
-                    {
-                      urls.split(/\n|,/).filter((u) => u.trim().length > 0)
-                        .length
-                    }{" "}
-                    URL(s)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-slate-500 order-2 sm:order-1">
-                Separate URLs with a comma or new line.
-              </div>
-              <button
-                onClick={handleSubmit}
-                disabled={addingQuestions || urls.trim().length === 0}
-                className="order-1 sm:order-2 w-full sm:w-auto py-2.5 sm:py-3 px-4 sm:px-8 rounded-lg sm:rounded-xl text-white font-semibold text-sm sm:text-base bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none transition-all duration-200 flex items-center justify-center gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                {addingQuestions ? "Submitting..." : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="mb-6 sm:mb-8">
+        {/* Filters - compact single-row toolbar, sits right above the list */}
+        <div className="mb-4">
           <Filters
             difficulty={difficultyFilter}
             solved={solvedFilter}
@@ -380,11 +547,7 @@ export const Leetcode = () => {
 
         {/* Applied Tags Section */}
         {appliedTags.length > 0 && (
-          <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8">
-            <h2 className="text-base sm:text-lg font-bold mb-3 sm:mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Filters
-            </h2>
+          <div className="glass-card border border-gray-200 dark:border-gray-700 rounded-xl p-3 sm:p-4 mb-4">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <span className="font-semibold text-xs sm:text-sm text-gray-700 dark:text-gray-300">
                 Tags:
@@ -392,19 +555,19 @@ export const Leetcode = () => {
               {appliedTags.map((tag) => (
                 <span
                   key={tag}
-                  className="px-2.5 sm:px-4 py-1 sm:py-2 rounded-full bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 text-blue-700 dark:text-blue-300 text-xs sm:text-sm font-medium border border-blue-200 dark:border-blue-700 truncate"
+                  className="px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 text-blue-700 dark:text-blue-300 text-xs sm:text-sm font-medium border border-blue-200 dark:border-blue-700 truncate"
                 >
                   {tag}
                 </span>
               ))}
               {appliedOperation && (
-                <span className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold border border-purple-300 dark:border-purple-700 whitespace-nowrap">
+                <span className="px-2 sm:px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold border border-purple-300 dark:border-purple-700 whitespace-nowrap">
                   {appliedOperation === "union" ? "Union" : "Intersection"}
                 </span>
               )}
               <button
                 onClick={handleResetTags}
-                className="ml-auto px-2.5 sm:px-4 py-1 sm:py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 text-xs sm:text-sm font-semibold transition-colors duration-200 border border-red-200 dark:border-red-800 whitespace-nowrap"
+                className="ml-auto px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 text-xs sm:text-sm font-semibold transition-colors duration-200 border border-red-200 dark:border-red-800 whitespace-nowrap"
               >
                 Reset
               </button>
@@ -417,23 +580,40 @@ export const Leetcode = () => {
           id="question-library"
           className="tool-workspace-card scroll-mt-24 p-4 sm:p-6 lg:p-8"
         >
-          <h3 className="text-base sm:text-lg font-semibold mb-4 sm:mb-6 text-gray-900 dark:text-white">
-            Your Questions ({filteredQuestions.length})
-          </h3>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
+              Your Questions ({sortedQuestions.length})
+            </h3>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Sort:
+              </label>
+              <select
+                value={difficultySort}
+                onChange={(e) => setDifficultySort(e.target.value as "none" | "asc" | "desc")}
+                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition cursor-pointer"
+              >
+                <option value="none">Default order</option>
+                <option value="asc">Difficulty: Easy → Hard</option>
+                <option value="desc">Difficulty: Hard → Easy</option>
+              </select>
+            </div>
+          </div>
 
           {loadingQuestions ? (
             <div className="flex justify-center items-center py-12">
               <Loader />
             </div>
-          ) : filteredQuestions.length === 0 ? (
+          ) : sortedQuestions.length === 0 ? (
             <div className="text-center py-8 sm:py-12">
               <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
                 No questions found. Try adjusting filters or add new questions.
               </p>
             </div>
           ) : (
+            <>
             <div className="space-y-2 sm:space-y-3">
-              {filteredQuestions.map((q, idx) => (
+              {paginatedQuestions.map((q, idx) => (
                 <div
                   key={q.questionId}
                   className="glass-card border border-gray-200 dark:border-gray-700 rounded-lg sm:rounded-xl p-3 sm:p-4 hover:shadow-md transition-all duration-300"
@@ -444,7 +624,7 @@ export const Leetcode = () => {
                     <div>
                       <div className="flex items-start gap-2 mb-2">
                         <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs">
-                          {idx + 1}
+                          {(currentPage - 1) * PAGE_SIZE + idx + 1}
                         </div>
                         <a
                           href={q.url}
@@ -555,7 +735,7 @@ export const Leetcode = () => {
                     {/* Left: Number & Question */}
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center font-bold text-sm">
-                        {idx + 1}
+                        {(currentPage - 1) * PAGE_SIZE + idx + 1}
                       </div>
                       <div className="min-w-0 flex-1">
                         <a
@@ -667,9 +847,43 @@ export const Leetcode = () => {
                 </div>
               ))}
             </div>
+
+            {totalPages > 1 && (
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+                  {Math.min(currentPage * PAGE_SIZE, sortedQuestions.length)} of{" "}
+                  {sortedQuestions.length}
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-2 text-xs sm:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>
+      <LeetcodeAIBubble
+        onQuestionsChanged={fetchQuestions}
+        onViewCollection={handleViewCollection}
+      />
     </div>
   );
 };

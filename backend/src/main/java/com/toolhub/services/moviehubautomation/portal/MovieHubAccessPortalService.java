@@ -141,7 +141,6 @@ public class MovieHubAccessPortalService {
                     String email = user.getString("email", "").trim();
                     if (email.isBlank()) {
                         return Future.succeededFuture(new JsonObject()
-                                .put("userId", userId)
                                 .put("exists", false)
                                 .put("email", "")
                                 .put("movieHubUserName", "")
@@ -158,7 +157,6 @@ public class MovieHubAccessPortalService {
                                     ? "NOT_REQUESTED"
                                     : latestRequest.getString("status", "NOT_REQUESTED");
                             return new JsonObject()
-                                    .put("userId", userId)
                                     .put("exists", false)
                                     .put("email", email)
                                     .put("movieHubUserName", latestRequest == null ? "" :
@@ -168,7 +166,6 @@ public class MovieHubAccessPortalService {
                         }
                         boolean showTemporaryPasswordNotice = mapping.getValue("passwordResetConfirmedAt") == null;
                         return new JsonObject()
-                                .put("userId", userId)
                                 .put("exists", true)
                                 .put("email", mapping.getString("userEmail", email))
                                 .put("movieHubUserName", mapping.getString("movieHubUserName", ""))
@@ -623,8 +620,9 @@ public class MovieHubAccessPortalService {
     }
 
     private JsonArray resolveAllowedFolderIds(JsonArray folders) {
-        String moviesId = null;
-        String tvShowsId = null;
+        JsonArray allowedFolderIds = new JsonArray();
+        boolean hasMovies = false;
+        boolean hasTvShows = false;
         for (Object folderObj : folders) {
             if (!(folderObj instanceof JsonObject folder)) {
                 continue;
@@ -638,20 +636,23 @@ public class MovieHubAccessPortalService {
             if (itemId == null || itemId.isBlank()) {
                 continue;
             }
-            if (moviesId == null && "movies".equals(normalizedName)) {
-                moviesId = itemId;
+            if (!hasMovies && normalizedName.contains("movie")) {
+                allowedFolderIds.add(itemId);
+                hasMovies = true;
+                continue;
             }
-            if (tvShowsId == null && ("tv shows".equals(normalizedName) || "tvshows".equals(normalizedName))) {
-                tvShowsId = itemId;
+            if (!hasTvShows && (normalizedName.contains("tv show")
+                    || normalizedName.contains("tv shows")
+                    || (normalizedName.contains("tv") && normalizedName.contains("show"))
+                    || normalizedName.contains("series"))) {
+                allowedFolderIds.add(itemId);
+                hasTvShows = true;
             }
         }
-        if (moviesId == null || tvShowsId == null) {
-            log.warn("Jellyfin exact folder matching incomplete hasMovies={} hasTvShows={}", moviesId != null, tvShowsId != null);
+        if (!hasMovies || !hasTvShows) {
+            log.warn("Jellyfin folder matching incomplete hasMovies={} hasTvShows={}", hasMovies, hasTvShows);
             return new JsonArray();
         }
-        JsonArray allowedFolderIds = new JsonArray()
-                .add(moviesId)
-                .add(tvShowsId);
         log.info("Resolved Jellyfin allowed folders for Movies/TV Shows count={}", allowedFolderIds.size());
         return allowedFolderIds;
     }

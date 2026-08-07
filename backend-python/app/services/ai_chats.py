@@ -7,7 +7,8 @@ from typing import Any, Dict
 from fastapi import HTTPException
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
-from app.services.ai_gateway import AIGatewayError, gateway_request
+from app.services.ai_gateway import SUPPORTED_PROVIDERS, AIGatewayError
+from app.services.ai_provider_router import PREFERRED_PROVIDER, routed_gateway_request
 from app.services.mongo import col
 from app.utils.responses import jsonable, now_iso
 
@@ -18,6 +19,24 @@ MAX_TITLE = 120
 MAX_MESSAGE = 16000
 MAX_CONTEXT = 8000
 logger = logging.getLogger(__name__)
+
+
+def _conversation_ids(chat: Dict[str, Any]) -> Dict[str, str]:
+    """Provider-scoped conversation ids, upgrading chats stored before failover."""
+    stored = chat.get("providerConversationIds")
+    if isinstance(stored, dict):
+        return {
+            provider: str(stored.get(provider) or "")
+            for provider in SUPPORTED_PROVIDERS
+            if stored.get(provider)
+        }
+    legacy = str(chat.get("providerConversationId") or "").strip()
+    if not legacy:
+        return {}
+    provider = str(chat.get("provider") or PREFERRED_PROVIDER).strip().lower()
+    if provider not in SUPPORTED_PROVIDERS:
+        provider = PREFERRED_PROVIDER
+    return {provider: legacy}
 
 
 def ensure_ai_indexes() -> None:
@@ -37,7 +56,7 @@ def _public_chat(document: Dict[str, Any], include_messages: bool = False) -> Di
         "provider": document.get("provider", "codex"),
         "status": document.get("status", "active"),
         "runStatus": document.get("runStatus", "idle"),
-        "providerConversationIdPresent": bool(document.get("providerConversationId")),
+        "providerConversationIdPresent": bool(_conversation_ids(document)),
         "createdAt": document["createdAt"],
         "updatedAt": document["updatedAt"],
     }
@@ -51,6 +70,7 @@ def _public_chat(document: Dict[str, Any], include_messages: bool = False) -> Di
                 "role": item["role"],
                 "content": item["content"],
                 "status": item.get("status", "completed"),
+                "provider": item.get("provider"),
                 "createdAt": item["createdAt"],
             }
             for item in records
@@ -67,20 +87,23 @@ def _owned_chat(chat_id: str, owner_id: str) -> Dict[str, Any]:
 
 def create_chat(owner_id: str, title: Any = None, provider: Any = None) -> Dict[str, Any]:
     clean_title = str(title or "New chat").strip()
-    clean_provider = str(provider or "codex").strip().lower()
+    clean_provider = str(provider or PREFERRED_PROVIDER).strip().lower()
     if not clean_title or len(clean_title) > MAX_TITLE:
         raise HTTPException(status_code=400, detail="Chat title must contain 1 to 120 characters")
-    if clean_provider != "codex":
+    if clean_provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail="Unsupported AI provider")
     now = now_iso()
     document = {
         "id": str(uuid.uuid4()),
         "ownerId": owner_id,
         "title": clean_title,
+        # Routing is decided per request by the provider router; this records
+        # which provider most recently answered in this chat.
         "provider": clean_provider,
         "status": "active",
         "runStatus": "idle",
         "providerConversationId": None,
+        "providerConversationIds": {},
         "createdAt": now,
         "updatedAt": now,
     }
@@ -164,14 +187,18 @@ def complete_message(
     clean_content: str,
     context: list[Dict[str, str]],
 ) -> Dict[str, Any]:
+    conversation_ids = _conversation_ids(chat)
     try:
-        response = gateway_request(
+        provider, response = routed_gateway_request(
             "POST",
             "/v1/responses",
-            payload={
+            payload_for_provider=lambda target: {
                 "input": clean_content,
+                # Conversation ids are provider-specific, so a chat that fails
+                # over starts a fresh thread on the new provider instead of
+                # replaying an identifier it cannot resolve.
                 "conversation": {
-                    "providerConversationId": chat.get("providerConversationId")
+                    "providerConversationId": conversation_ids.get(target) or None
                 },
                 "context": context,
                 "capabilityProfile": "read-only",
@@ -192,6 +219,7 @@ def complete_message(
             "role": "assistant",
             "content": assistant_text,
             "status": "completed",
+            "provider": provider,
             "providerRequestId": str(response.get("id") or ""),
             "createdAt": completed_at,
         }
@@ -199,8 +227,11 @@ def complete_message(
         col(MESSAGES).update_one(
             {"id": user_message["id"]}, {"$set": {"status": "completed"}}
         )
+        conversation_ids[provider] = provider_conversation_id
         updates: Dict[str, Any] = {
+            "provider": provider,
             "providerConversationId": provider_conversation_id,
+            "providerConversationIds": conversation_ids,
             "runStatus": "idle",
             "updatedAt": completed_at,
         }
@@ -210,6 +241,7 @@ def complete_message(
         user_message["status"] = "completed"
         return {
             "requestId": response.get("id"),
+            "provider": provider,
             "userMessage": jsonable(user_message),
             "assistantMessage": jsonable(assistant_message),
         }

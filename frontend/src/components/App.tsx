@@ -17,6 +17,7 @@ import { useAuth } from "../context/AuthContext";
 import { getAdminTool } from "../adminTools";
 import { ToastContainer } from "./Toast";
 import AdminSettings from "./AdminSettings";
+import ScheduledJobs from "./ScheduledJobs";
 import SpeedTest from "./SpeedTest";
 import AdminRemote from "./AdminRemote";
 import BlogIndex from "./blogs/BlogIndex";
@@ -49,6 +50,7 @@ const getPageTitle = (pathname: string) => {
   if (pathname === "/admin/blogs") return "Blog Studio | ToolHub";
   if (pathname === "/admin/blogs/analytics") return "Blog Analytics | ToolHub";
   if (pathname === "/admin/ai") return "AI Assistant | ToolHub";
+  if (pathname === "/admin/scheduler") return "Scheduled Jobs | ToolHub";
   if (pathname.startsWith("/admin/courses")) return "My Courses | ToolHub";
   if (pathname.startsWith("/admin/tools/")) {
     const tool = getAdminTool(pathname.split("/").pop());
@@ -135,7 +137,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function App() {
   const { pathname } = useLocation();
   const isLanding = pathname === "/";
-  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/settings" || pathname === "/remote";
+  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/admin/scheduler" || pathname === "/settings" || pathname === "/remote";
 
   return (
     <NotificationProvider>
@@ -219,6 +221,14 @@ function App() {
               element={
                 <AdminRoute>
                   <AIChat />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/scheduler"
+              element={
+                <AdminRoute>
+                  <ScheduledJobs />
                 </AdminRoute>
               }
             />

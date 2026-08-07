@@ -68,6 +68,16 @@ def cache_delete(key: str) -> bool:
         return False
 
 
+def cache_ttl(key: str) -> int:
+    """Remaining lifetime in seconds; 0 when the key is missing or has no expiry."""
+    try:
+        remaining = int(_redis().ttl(key))
+        return remaining if remaining > 0 else 0
+    except Exception as exc:
+        logger.warning("Redis cache ttl read failed for %s: %s", key, exc)
+        return 0
+
+
 def cache_delete_pattern(pattern: str) -> int:
     deleted = 0
     try:
