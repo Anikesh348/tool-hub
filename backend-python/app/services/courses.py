@@ -133,6 +133,14 @@ INTEGRATION_MODULE_SEEDS = (
         "excerpt": "Systemd hardening, private networking, health, failure modes, observability, rollback, trade-offs, and future providers.",
         "file": "07-operations-reliability-and-review.md",
     },
+    {
+        "slug": "leetcode-ai-a-second-application",
+        "position": 8,
+        "title": "LeetCode AI — a second application on the same gateway",
+        "duration": "75–90 minutes",
+        "excerpt": "A real second feature built on the same gateway and router: isolated persistence, a dedicated executor, slug re-resolution against LeetCode, and the public-path timeout that forced the background+poll rewrite.",
+        "file": "08-leetcode-ai-a-second-application.md",
+    },
 )
 
 COURSE_SEEDS = (
@@ -150,9 +158,9 @@ COURSE_SEEDS = (
         "id": "toolhub-codex-integration-architecture",
         "title": "ToolHub–Codex Integration Architecture",
         "subtitle": "A complete HLD and LLD review of ToolHub's reusable private AI platform.",
-        "description": "Understand every layer from the ToolHub course and chat interfaces through MongoDB, the signed provider-neutral gateway, the private hp-codex executor, and the Codex CLI runtime.",
+        "description": "Understand every layer from the ToolHub course and chat interfaces through MongoDB, the signed provider-neutral gateway, the private hp-codex executor, and the Codex CLI runtime — then see the platform reused end-to-end by a second application, LeetCode AI.",
         "level": "Intermediate",
-        "estimatedHours": "8–10 hours",
+        "estimatedHours": "9–11 hours",
         "source": "Verified production implementation and deployment documentation",
         "modules": INTEGRATION_MODULE_SEEDS,
     },
