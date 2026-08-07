@@ -17,14 +17,20 @@ export const LeetCodeService = {
     };
   },
 
-  getQuestions: (tags?: string[], operation?: "union" | "intersection") => {
+  getQuestions: (
+    tags?: string[],
+    operation?: "union" | "intersection",
+    collection?: string
+  ) => {
     let url = `${BASE_URL}/v2/leetcode/questions`;
+    const params = new URLSearchParams();
     if (tags && tags.length > 0) {
-      const params = new URLSearchParams();
       tags.forEach((tag) => params.append("tags", tag));
       if (operation) params.append("operation", operation);
-      url += `?${params.toString()}`;
     }
+    if (collection) params.append("collection", collection);
+    const query = params.toString();
+    if (query) url += `?${query}`;
     return {
       url,
       options: {

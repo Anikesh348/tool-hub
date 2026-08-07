@@ -4,5 +4,3 @@ beautifulsoup4~=4.12.2
 requests~=2.31.0
 lxml~=4.9.3
 pydantic~=2.11.5
-airportsdata
-fast-flights==3.0.2

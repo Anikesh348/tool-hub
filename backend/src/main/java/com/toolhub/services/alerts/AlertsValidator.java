@@ -34,16 +34,12 @@ public class AlertsValidator {
         int productPrice = Utility.extractPrice(productInfo.getString("price"));
         List<UserTargetPrices> userTargetPrices = product.getUserTargetPrices();
         Set<String> toBeAlertedUsers = new HashSet<>();
-        Map<String, List<String>> matchingTargetPricesByUser = new HashMap<>();
         userTargetPrices.forEach(userTargetPrice -> {
             String userId = userTargetPrice.getUserId();
             userTargetPrice.getTargetPrices().forEach(targetPriceStr -> {
                 int targetPrice = Utility.extractPrice(targetPriceStr);
                 if (productPrice <= targetPrice + ((MARGIN) * targetPrice / 100)) {
                    toBeAlertedUsers.add(userId);
-                   matchingTargetPricesByUser
-                           .computeIfAbsent(userId, ignored -> new ArrayList<>())
-                           .add(targetPriceStr);
                 }
             });
         });
@@ -57,13 +53,7 @@ public class AlertsValidator {
         }).onSuccess(usersObj -> {
             usersObj.forEach(userObj -> {
                 User user = Utility.castToClass(userObj, User.class);
-                AlertClient alertClient = new AlertClient(
-                        user,
-                        productInfo,
-                        product,
-                        vertx,
-                        client,
-                        matchingTargetPricesByUser.getOrDefault(user.getUserId(), List.of()));
+                AlertClient alertClient = new AlertClient(user, productInfo, product, vertx, client);
                 alertClient.sendAlerts();
             });
         });

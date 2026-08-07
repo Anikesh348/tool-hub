@@ -1,9 +1,11 @@
 > **Learning goal**
-> Walk through the reusable gateway’s internal request lifecycle and persistence model.
+> Walk through the reusable gateway’s internal request lifecycle and persistence model, then trace how the ToolHub backend chooses which gateway to call.
+
+Everything in 4.1–4.6 describes the Codex gateway process by name, but since 2026-08-05 it is one of two live instances of the same design: the Claude gateway (`claude-gateway.service`, `ubuntu-purva:8767`, user `claudegateway`) is built from the same server class, the same request lifecycle, the same SQLite audit/nonce schema and the same shared protocol modules — only its executor adapter and startup settings differ. Read this lesson as “how a provider gateway works,” with Codex as the concrete example, and see 4.8 for the router that decides which one gets called.
 
 ## 4.1 Process structure
 
-The gateway is a small Python HTTP service built on `ThreadingHTTPServer`. It runs as the dedicated `codexgateway` system user on `ubuntu-purva`. Threads allow health/auth work to proceed independently, while a bounded semaphore intentionally permits only one provider run.
+The gateway is a small Python HTTP service built on `ThreadingHTTPServer`. It runs as the dedicated `codexgateway` system user on `ubuntu-purva` (the Claude gateway runs the identical server class as `claudegateway`). Threads allow health/auth work to proceed independently, while a bounded semaphore intentionally permits only one provider run.
 
 At startup the server constructs:
 
@@ -104,9 +106,33 @@ The trade-off is explicit: concurrent callers receive `429` rather than queueing
 
 ## 4.7 Provider-neutral versus provider-specific code
 
-HMAC, scopes, request schema and application response shape are provider-neutral. `ExecutorClient` and the returned `provider="codex"` are Codex-specific. A Claude gateway can reuse the contract and protocol while adapting to a separate Claude executor.
+HMAC, scopes, request schema and application response shape are provider-neutral — literally so, not just by convention: both gateways import `verify_request`, `NonceStore` and `runtime_snapshot` from the same `ai_gateway_protocol.py` / `runtime_snapshot.py` files, each vendored byte-for-byte into that gateway's own `shared/` directory rather than loaded from one central install. `ExecutorClient` and the returned `provider` field (`"codex"` or `"claude"`) are the only genuinely provider-specific pieces — each gateway's adapter knows its own executor's URL, its own executor secret, and stamps its own provider name on the response.
 
-The current architecture chooses one gateway per provider rather than one large gateway loading every provider credential. That keeps failures, secrets and runtime behavior isolated.
+The current architecture chooses one gateway per provider rather than one large gateway loading every provider credential. That keeps failures, secrets and runtime behavior isolated: an outage or a compromised secret on the Codex side cannot touch the Claude gateway process, its SQLite files, or its executor.
+
+## 4.8 Provider router: choosing which gateway to call
+
+The gateway itself has no opinion about failover — it only knows how to serve `/v1/responses` for its one provider. The decision of *which* gateway to call for a given ToolHub request lives one layer up, in the ToolHub backend's `ai_provider_router.py`, and it wraps `gateway_request` (4.4's client-side counterpart) with `routed_gateway_request`:
+
+```text
+routed_gateway_request(method, path, payload_for_provider, timeout):
+  order = attempt_order()          # [active-or-preferred, ...configured others]
+  for provider in order:
+      try:
+          result = gateway_request(method, path, payload_for_provider(provider), provider=provider)
+      except AIGatewayError as exc:
+          if not is_usage_exhausted(exc):
+              raise                # genuine outages stay visible, no silent fallback
+          continue                 # try the next provider
+      pin_provider(provider)       # remember the winner in Redis for DEFAULT_ACTIVE_TTL_SECONDS (1 day)
+      return provider, result
+  release_provider()               # everything exhausted: stop pinning a dead provider
+  raise last_error
+```
+
+`attempt_order()` reads the Redis-stored pin (falling back to Codex, the `PREFERRED_PROVIDER`, if unset or unrecognized) and appends whichever configured providers aren't already first, filtered through `provider_configured()` so an unconfigured Claude deployment is simply skipped rather than attempted and failed. `pin_provider()` uses Redis `SET ... NX` (`cache_add`) so it only *sets* a pin when releasing back to the preferred provider isn't the case, and never silently extends an existing pin on every request — a pin lasts its original TTL, not a TTL that resets on each successful Claude call, so the system periodically re-tries Codex rather than staying on the fallback forever.
+
+Two things make this safe against surprises: `payload_for_provider` is a callable, not a fixed payload, because a request that fails over needs a *different* conversation ID (the target provider's own thread, not the one that just failed) — see 6.3. And `is_usage_exhausted` is a narrow classifier (3.6), so a busy gateway or a genuine network outage propagates as a normal error instead of quietly rerouting traffic.
 
 > **LLD exercise**
-> Trace where a reused nonce, oversized context, busy executor and missing provider thread ID each fail. Note which failures create or update a gateway audit record.
+> Trace where a reused nonce, oversized context, busy executor and missing provider thread ID each fail. Note which failures create or update a gateway audit record. Then trace a Codex usage-exhaustion error through `routed_gateway_request`: which Redis key changes, and what does the *next* unrelated request from a different admin see?

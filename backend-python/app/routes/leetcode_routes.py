@@ -15,8 +15,13 @@ async def leetcode_add(request: Request, user: Dict[str, str] = Depends(admin_us
 
 
 @router.get("/v2/leetcode/questions")
-def leetcode_questions(tags: List[str] = Query(default=[]), operation: str = "union", user: Dict[str, str] = Depends(admin_user)):
-    return get_questions(tags, operation, user)
+def leetcode_questions(
+    tags: List[str] = Query(default=[]),
+    operation: str = "union",
+    collection: str = "",
+    user: Dict[str, str] = Depends(admin_user),
+):
+    return get_questions(tags, operation, user, collection)
 
 
 @router.post("/v2/leetcode/update-status")
