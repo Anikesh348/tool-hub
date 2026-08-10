@@ -11,6 +11,7 @@ export default defineConfig({
         raspberryPiPersonalCloud: resolve(__dirname, 'blog-raspberry-pi-5-personal-cloud.html'),
         homelabPublicAccess: resolve(__dirname, 'blog-how-i-put-my-homelab-on-the-internet.html'),
         movieHubJellyfinRequestPath: resolve(__dirname, 'blog-moviehub-jellyfin-request-path.html'),
+        aiToolhubAgentConsoleToolBuilder: resolve(__dirname, 'blog-ai-toolhub-agent-console-tool-builder.html'),
       },
     },
   },

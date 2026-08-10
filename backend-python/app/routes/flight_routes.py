@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict
 
 from fastapi import APIRouter, Depends, Request
@@ -34,7 +35,8 @@ def flight_watches_route(user: Dict[str, str] = Depends(current_user)):
 
 @router.post("/v2/flights/watches")
 async def create_flight_watch_route(request: Request, user: Dict[str, str] = Depends(current_user)):
-    return create_flight_watch(await request.json(), user)
+    body = await request.json()
+    return await asyncio.to_thread(create_flight_watch, body, user)
 
 
 @router.delete("/v2/flights/watches/{watch_id}")

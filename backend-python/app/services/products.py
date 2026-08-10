@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.services.mail import send_brevo_email
 from app.services.mongo import col, find, find_one, insert
+from app.services.notifications import emit_notification
 from app.services.redis_cache import cache_get, cache_set, cache_token
 from app.utils.responses import error, success
 
@@ -460,10 +461,17 @@ def send_price_alerts(product: Dict[str, Any], product_info: Dict[str, Any]) -> 
             continue
         try:
             matching_targets = eligible_targets_by_user.get(user.get("userId"), [])
-            send_brevo_email(
-                build_price_alert_subject(alert_product_info),
-                email,
-                build_price_alert_email(product, alert_product_info, matching_targets),
+            alert_title = build_price_alert_subject(alert_product_info)
+            send_brevo_email(alert_title, email, build_price_alert_email(product, alert_product_info, matching_targets))
+            emit_notification(
+                audience="ADMIN",
+                title=alert_title,
+                message=f"{len(matching_targets)} saved target(s) reached. Notified {email}.",
+                severity="SUCCESS",
+                category="price_alert",
+                source="products",
+                action_url="/products",
+                metadata={"productId": product_id},
             )
             for target_state in eligible_targets_by_user.get(user.get("userId"), []):
                 col(PRICE_ALERT_STATE_COLLECTION).update_one(

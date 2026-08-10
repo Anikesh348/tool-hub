@@ -6,11 +6,13 @@ from fastapi.responses import JSONResponse
 
 from app.middlewares.moviehub_access import moviehub_access_middleware
 from app.middlewares.metrics import metrics_middleware, metrics_response
-from app.routes import admin_home_routes, admin_remote_routes, admin_routes, admin_settings_routes, ai_routes, blog_routes, buzzwatch_routes, course_routes, flight_routes, health_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, notification_routes, product_routes, scheduler_routes, speedtest_routes, user_routes, yt_download_routes
+from app.routes import admin_home_routes, admin_remote_routes, admin_routes, admin_settings_routes, ai_routes, blog_routes, buzzwatch_routes, course_routes, flight_routes, health_routes, leetcode_ai_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, notification_routes, product_routes, scheduler_routes, speedtest_routes, user_routes, yt_download_routes
 from app.services.blogs import ensure_blog_indexes_and_seed
 from app.services.blog_announcements import ensure_blog_announcement_indexes
 from app.services.ai_chats import ensure_ai_indexes
 from app.services.courses import ensure_course_indexes_and_seed
+from app.services.leetcode_ai import ensure_leetcode_ai_indexes
+from app.services.leetcode_set_wizard import ensure_leetcode_set_wizard_indexes
 from app.services.notifications import ensure_notification_indexes
 from app.services.scheduler_history import ensure_scheduler_history_indexes
 from app.services.schedule import price_check_scheduler
@@ -20,6 +22,8 @@ from app.utils.responses import error
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_ai_indexes()
+    ensure_leetcode_ai_indexes()
+    ensure_leetcode_set_wizard_indexes()
     ensure_course_indexes_and_seed()
     ensure_blog_indexes_and_seed()
     ensure_blog_announcement_indexes()
@@ -63,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(product_routes.router)
     app.include_router(flight_routes.router)
     app.include_router(leetcode_routes.router)
+    app.include_router(leetcode_ai_routes.router)
     app.include_router(buzzwatch_routes.router)
     app.include_router(speedtest_routes.router)
     app.include_router(yt_download_routes.router)

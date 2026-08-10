@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -8,7 +9,6 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import bcrypt
 import jwt
-import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -23,6 +23,8 @@ from app.routes.moviehub_routes import (
     generate_temp_password,
     send_moviehub_credentials_email,
 )
+from app.services.ai_gateway import AIGatewayError
+from app.services.ai_provider_router import routed_gateway_request
 from app.services.mongo import col, delete_one_or_404, find, find_one, insert, update_one_or_404
 from app.services.moviehub_automation import *
 from app.services import yt_download as yt_service
@@ -126,67 +128,50 @@ def resolve_chat_intent(text: str) -> str:
     return "UNKNOWN"
 
 
-def openai_json(prompt: str) -> Optional[Dict[str, Any]]:
-    url = os.getenv("OPEN_AI_URL") or "https://api.openai.com/v1/chat/completions"
-    key = os.getenv("OPEN_AI_API_KEY") or ""
-    if not key:
-        return None
+def gateway_completion(prompt: str, instructions: str, action: str) -> Optional[str]:
+    """Single-shot text completion via the private Codex/Claude gateway (see ai_provider_router)."""
     try:
-        res = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": "gpt-4o-mini",
-                "temperature": 0,
-                "max_tokens": 200,
-                "messages": [
-                    {"role": "system", "content": "You are a backend service. Respond with ONLY valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
+        _, response = routed_gateway_request(
+            "POST",
+            "/v1/responses",
+            payload={
+                "input": prompt,
+                "conversation": {"providerConversationId": None},
+                "context": [{"type": "text", "label": "Instructions", "text": instructions}],
+                "capabilityProfile": "knowledge-only",
+                "metadata": {"application": "toolhub-moviehub", "action": action},
             },
             timeout=45,
         )
-        if res.status_code < 200 or res.status_code >= 300:
-            return None
-        content = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    except AIGatewayError:
+        return None
+    except Exception:
+        return None
+    content = str(response.get("outputText") or "").strip()
+    return content or None
+
+
+def openai_json(prompt: str) -> Optional[Dict[str, Any]]:
+    content = gateway_completion(
+        prompt,
+        "You are a backend service. Respond with ONLY valid JSON.",
+        "chat-intent-json",
+    )
+    if not content:
+        return None
+    try:
         return json.loads(content)
     except Exception:
         return None
 
 
 def openai_text(prompt: str, max_tokens: int = 220) -> Optional[str]:
-    url = os.getenv("OPEN_AI_URL") or "https://api.openai.com/v1/chat/completions"
-    key = os.getenv("OPEN_AI_API_KEY") or ""
-    if not key:
-        return None
-    try:
-        res = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": "gpt-4o-mini",
-                "temperature": 0,
-                "max_tokens": max_tokens,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You summarize MovieHub download status for end users. "
-                            "Use only the supplied facts. Do not invent titles, progress, ETA, or completion state."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=45,
-        )
-        if res.status_code < 200 or res.status_code >= 300:
-            return None
-        content = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-        content = str(content or "").strip()
-        return content or None
-    except Exception:
-        return None
+    return gateway_completion(
+        prompt,
+        "You summarize MovieHub download status for end users. "
+        "Use only the supplied facts. Do not invent titles, progress, ETA, or completion state.",
+        "download-status-summary",
+    )
 
 
 def infer_media_type(text: str) -> str:
@@ -1024,6 +1009,10 @@ def handle_yt_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str
 
 async def moviehub_chat_response(request: Request, user: Dict[str, str], admin_route: bool = False):
     body = await request.json()
+    return await asyncio.to_thread(_moviehub_chat_response_sync, body, user, admin_route)
+
+
+def _moviehub_chat_response_sync(body: Dict[str, Any], user: Dict[str, str], admin_route: bool = False):
     conversation_id = body.get("conversationId")
     user_input = body.get("userInput")
     if not isinstance(conversation_id, str) or not conversation_id or not isinstance(user_input, str) or not user_input:

@@ -409,7 +409,7 @@ def queue_media_download(request_record: Dict[str, Any]) -> None:
         payload = {
             "title": lookup.get("title"),
             "qualityProfileId": quality_profile_id(quality),
-            "rootFolderPath": "/tv",
+            "rootFolderPath": "/data/shows",
             "monitored": True,
             "addOptions": {
                 "monitor": "all",

@@ -17,14 +17,20 @@ export const LeetCodeService = {
     };
   },
 
-  getQuestions: (tags?: string[], operation?: "union" | "intersection") => {
+  getQuestions: (
+    tags?: string[],
+    operation?: "union" | "intersection",
+    collection?: string
+  ) => {
     let url = `${BASE_URL}/v2/leetcode/questions`;
+    const params = new URLSearchParams();
     if (tags && tags.length > 0) {
-      const params = new URLSearchParams();
       tags.forEach((tag) => params.append("tags", tag));
       if (operation) params.append("operation", operation);
-      url += `?${params.toString()}`;
     }
+    if (collection) params.append("collection", collection);
+    const query = params.toString();
+    if (query) url += `?${query}`;
     return {
       url,
       options: {
@@ -47,6 +53,87 @@ export const LeetCodeService = {
           ...getBearerAuthHeader(),
         },
         body: JSON.stringify({ questionId }),
+      },
+    };
+  },
+
+  deleteCollection: (collectionLabel: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/delete-collection`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ collectionLabel }),
+      },
+    };
+  },
+
+  toggleBookmark: (questionId: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/toggle-bookmark`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ questionId }),
+      },
+    };
+  },
+
+  listSets: () => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  updateSet: (label: string, updates: { name?: string; description?: string }) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}`,
+      options: {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(updates),
+      },
+    };
+  },
+
+  toggleSetPin: (label: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}/pin`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  duplicateSet: (label: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}/duplicate`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
       },
     };
   },

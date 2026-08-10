@@ -2142,6 +2142,29 @@ html:not(.dark) .blog-prose th {
   background: #f1f5f9;
 }
 
+html:not(.dark) .ai-markdown code {
+  background: rgba(109, 40, 217, 0.1);
+  color: #4c1d95;
+}
+
+html:not(.dark) .ai-markdown pre {
+  border-color: rgba(148, 163, 184, 0.32);
+  background: #f1f5f9;
+}
+
+html:not(.dark) .ai-markdown pre code {
+  background: transparent;
+  color: #1e293b;
+}
+
+html:not(.dark) .ai-markdown a {
+  color: #6d28d9;
+}
+
+html:not(.dark) .ai-markdown blockquote {
+  color: #475569;
+}
+
 html:not(.dark) .blog-label {
   color: #475569;
 }

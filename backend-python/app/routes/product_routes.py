@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -10,7 +11,8 @@ router = APIRouter()
 
 @router.post("/v2/save-product")
 async def save_product_route(request: Request, user: Dict[str, str] = Depends(current_user)):
-    return save_product(await request.json(), user)
+    body = await request.json()
+    return await asyncio.to_thread(save_product, body, user)
 
 
 @router.get("/v2/products")

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import base64
 import hashlib
@@ -23,6 +24,7 @@ from app.services.mongo import col, find, find_one, insert, update_one_or_404, d
 from app.services.moviehub_automation import *
 from app.services.mail import send_brevo_email
 from app.services.notifications import emit_notification
+from app.services.action_tokens import mint_action_token, verify_action_token
 from app.utils.http import api_headers, base_url
 from app.utils.responses import error, now_iso, success
 
@@ -72,6 +74,9 @@ async def moviehub_create_request(request: Request, user: Dict[str, str] = Depen
         "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso(),
     }
     insert(MEDIA_REQUESTS_COLLECTION, record)
+    api_base = public_api_base_url()
+    approve_token = mint_action_token("moviehub-request-approve", record["requestId"])
+    reject_token = mint_action_token("moviehub-request-reject", record["requestId"])
     emit_notification(
         audience="ADMIN",
         title="New MovieHub request",
@@ -80,7 +85,15 @@ async def moviehub_create_request(request: Request, user: Dict[str, str] = Depen
         category="media_request",
         source="moviehub",
         action_url="/moviehub/admin/approvals",
-        metadata={"requestId": record["requestId"], "mediaType": mt, "title": title},
+        metadata={
+            "requestId": record["requestId"],
+            "mediaType": mt,
+            "title": title,
+            "ntfyActions": [
+                {"label": "Approve", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-approve?token={approve_token}"},
+                {"label": "Reject", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-reject?token={reject_token}"},
+            ],
+        },
     )
     return JSONResponse(status_code=201, content=success({"message": "request created", "requestId": record["requestId"], "status": "PENDING"}))
 
@@ -99,8 +112,7 @@ def moviehub_all_requests(_: Dict[str, str] = Depends(admin_user)):
     return success(formatted_requests({}))
 
 
-@router.post("/v2/admin/moviehub/requests/{request_id}/approve")
-def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+def _approve_media_request(request_id: str, actor_id: str):
     record = find_one(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
     if not record:
         return JSONResponse(status_code=404, content=error("request not found"))
@@ -111,9 +123,9 @@ def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(adm
     except Exception as exc:
         return JSONResponse(status_code=500, content=error(str(exc)))
     now = now_iso()
-    update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "updatedAt": now}})
+    update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": actor_id, "approvedAt": now, "updatedAt": now}})
     record["status"] = "APPROVED"
-    record["approvedBy"] = user["userId"]
+    record["approvedBy"] = actor_id
     record["approvedAt"] = now
     try:
         send_media_approval_email(record)
@@ -132,6 +144,52 @@ def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(adm
         metadata={"requestId": request_id, "mediaType": record.get("mediaType")},
     )
     return success({"message": "Request approved and media queued for download", "requestId": request_id, "notification": notification})
+
+
+def _reject_media_request(request_id: str, actor_id: str):
+    record = find_one(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
+    if not record:
+        return JSONResponse(status_code=404, content=error("request not found"))
+    if record.get("status") != "PENDING":
+        return JSONResponse(status_code=400, content=error("only pending requests can be rejected"))
+    now = now_iso()
+    update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "REJECTED", "rejectedBy": actor_id, "rejectedAt": now, "updatedAt": now}})
+    emit_notification(
+        audience="USER",
+        target_user_id=record.get("userId"),
+        title="MovieHub request rejected",
+        message=f"{record.get('title')} was not approved.",
+        severity="WARNING",
+        category="media_request",
+        source="moviehub",
+        action_url="/moviehub/requests",
+        metadata={"requestId": request_id, "mediaType": record.get("mediaType")},
+    )
+    return success({"message": "request rejected", "requestId": request_id, "status": "REJECTED"})
+
+
+@router.post("/v2/admin/moviehub/requests/{request_id}/approve")
+def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+    return _approve_media_request(request_id, user["userId"])
+
+
+@router.post("/v2/admin/moviehub/requests/{request_id}/reject")
+def moviehub_reject_request(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+    return _reject_media_request(request_id, user["userId"])
+
+
+@router.post("/v2/moviehub/requests/{request_id}/quick-approve")
+def moviehub_quick_approve_request(request_id: str, token: str = Query(...)):
+    if not verify_action_token("moviehub-request-approve", request_id, token):
+        raise HTTPException(status_code=401, detail="Invalid or expired action token")
+    return _confirm_quick_action("approval", "media_request", _approve_media_request(request_id, "ntfy-action"))
+
+
+@router.post("/v2/moviehub/requests/{request_id}/quick-reject")
+def moviehub_quick_reject_request(request_id: str, token: str = Query(...)):
+    if not verify_action_token("moviehub-request-reject", request_id, token):
+        raise HTTPException(status_code=401, detail="Invalid or expired action token")
+    return _confirm_quick_action("rejection", "media_request", _reject_media_request(request_id, "ntfy-action"))
 
 
 @router.post("/v2/moviehub/requests/{request_id}/delete")
@@ -236,6 +294,10 @@ def resolve_jellyfin_media_item(jellyfin: str, body: Dict[str, Any]) -> Dict[str
 @router.post("/v2/moviehub/play")
 async def moviehub_play(request: Request, user: Dict[str, str] = Depends(current_user)):
     body = await request.json()
+    return await asyncio.to_thread(_moviehub_play_sync, body, user)
+
+
+def _moviehub_play_sync(body: Dict[str, Any], user: Dict[str, str]):
     username = str(body.get("username") or "").strip()
     if not username:
         return JSONResponse(status_code=400, content=error("MovieHub username is required"))
@@ -669,7 +731,40 @@ def moviehub_portal_url() -> str:
 
 
 def toolhub_moviehub_url() -> str:
-    return (os.getenv("MOVIEHUB_PORTAL_URL") or "https://toolhub.hostingfrompurva.com/moviehub").strip().rstrip("/")
+    return (os.getenv("MOVIEHUB_PORTAL_URL") or "https://hostingfrompurva.xyz/moviehub").strip().rstrip("/")
+
+
+def public_api_base_url() -> str:
+    return (os.getenv("PUBLIC_API_BASE_URL") or "https://hostingfrompurva.xyz/api").strip().rstrip("/")
+
+
+def _confirm_quick_action(action_label: str, category: str, result: Any) -> Any:
+    """Push a follow-up ADMIN notification so a ntfy button tap always has visible
+    feedback, since the ntfy iOS app doesn't reliably reflect the tap itself."""
+    if isinstance(result, JSONResponse):
+        try:
+            detail = json.loads(bytes(result.body)).get("error", "action failed")
+        except Exception:
+            detail = "action failed"
+        emit_notification(
+            audience="ADMIN",
+            title=f"MovieHub {action_label} failed",
+            message=detail,
+            severity="ERROR",
+            category=category,
+            source="moviehub-quick-action",
+        )
+        return result
+    message = ((result or {}).get("response") or {}).get("message") or f"{action_label} completed."
+    emit_notification(
+        audience="ADMIN",
+        title=f"MovieHub {action_label} confirmed",
+        message=message,
+        severity="SUCCESS",
+        category=category,
+        source="moviehub-quick-action",
+    )
+    return result
 
 
 def build_moviehub_access_email(req: Dict[str, Any], password: str) -> str:
@@ -747,6 +842,9 @@ async def moviehub_access_request(request: Request, user: Dict[str, str] = Depen
     req_id = str(uuid.uuid4())
     record = {"requestId": req_id, "userId": user["userId"], "userEmail": email, "userName": db_user.get("name", db_user.get("userName", "")), "movieHubUserName": username, "movieHubUserNameLower": username.lower(), "encryptedPassword": encrypted_password, "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso()}
     insert(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, record)
+    api_base = public_api_base_url()
+    approve_token = mint_action_token("moviehub-access-approve", req_id)
+    reject_token = mint_action_token("moviehub-access-reject", req_id)
     emit_notification(
         audience="ADMIN",
         title="MovieHub access requested",
@@ -755,7 +853,14 @@ async def moviehub_access_request(request: Request, user: Dict[str, str] = Depen
         category="access",
         source="moviehub",
         action_url="/moviehub/admin/access",
-        metadata={"requestId": req_id, "userId": user["userId"]},
+        metadata={
+            "requestId": req_id,
+            "userId": user["userId"],
+            "ntfyActions": [
+                {"label": "Approve", "url": f"{api_base}/v2/moviehub/access/requests/{req_id}/quick-approve?token={approve_token}"},
+                {"label": "Reject", "url": f"{api_base}/v2/moviehub/access/requests/{req_id}/quick-reject?token={reject_token}"},
+            ],
+        },
     )
     return JSONResponse(status_code=201, content=success({"message": "moviehub access request submitted", "requestId": req_id, "status": "PENDING", "movieHubUserName": username}))
 
@@ -768,8 +873,7 @@ def moviehub_access_requests(status: Optional[str] = None, _: Dict[str, str] = D
     return success(sorted(find(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, query), key=lambda r: r.get("createdAt", ""), reverse=True))
 
 
-@router.post("/v2/admin/moviehub/access/requests/{request_id}/approve")
-def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+def _approve_moviehub_access(request_id: str, actor_id: str):
     req = find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id})
     if not req:
         return JSONResponse(status_code=404, content=error("request not found"))
@@ -800,8 +904,8 @@ def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admi
         return JSONResponse(status_code=500, content=error(f"failed to send credentials email: {exc}"))
     mapping_id = str(uuid.uuid4())
     now = now_iso()
-    insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": request_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "userName": req.get("userName"), "movieHubUserName": req.get("movieHubUserName"), "movieHubUserNameLower": req.get("movieHubUserNameLower"), "jellyfinUserId": jellyfin_user_id, "approvedBy": user["userId"], "approvedAt": now, "passwordResetConfirmedAt": None, "active": True, "createdAt": now, "updatedAt": now})
-    col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": user["userId"], "approvedAt": now, "jellyfinUserId": jellyfin_user_id, "credentialsSentAt": now, "updatedAt": now}})
+    insert(MOVIEHUB_ACCESS_USERS_COLLECTION, {"mappingId": mapping_id, "requestId": request_id, "userId": req.get("userId"), "userEmail": req.get("userEmail"), "userName": req.get("userName"), "movieHubUserName": req.get("movieHubUserName"), "movieHubUserNameLower": req.get("movieHubUserNameLower"), "jellyfinUserId": jellyfin_user_id, "approvedBy": actor_id, "approvedAt": now, "passwordResetConfirmedAt": None, "active": True, "createdAt": now, "updatedAt": now})
+    col(MOVIEHUB_ACCESS_REQUESTS_COLLECTION).update_one({"requestId": request_id}, {"$set": {"status": "APPROVED", "approvedBy": actor_id, "approvedAt": now, "jellyfinUserId": jellyfin_user_id, "credentialsSentAt": now, "updatedAt": now}})
     emit_notification(
         audience="USER",
         target_user_id=req.get("userId"),
@@ -816,12 +920,13 @@ def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admi
     return success({"message": "moviehub access approved and jellyfin user created", "requestId": request_id, "movieHubUserName": req.get("movieHubUserName"), "notification": "sent"})
 
 
-@router.post("/v2/admin/moviehub/access/requests/{request_id}/reject")
-def moviehub_access_reject(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+def _reject_moviehub_access(request_id: str, actor_id: str):
     req = find_one(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id})
     if not req:
         return JSONResponse(status_code=404, content=error("request not found"))
-    update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "REJECTED", "rejectedBy": user["userId"], "rejectedAt": now_iso(), "updatedAt": now_iso()}})
+    if req.get("status") != "PENDING":
+        return JSONResponse(status_code=400, content=error("only pending moviehub access requests can be rejected"))
+    update_one_or_404(MOVIEHUB_ACCESS_REQUESTS_COLLECTION, {"requestId": request_id}, {"$set": {"status": "REJECTED", "rejectedBy": actor_id, "rejectedAt": now_iso(), "updatedAt": now_iso()}})
     emit_notification(
         audience="USER",
         target_user_id=req.get("userId"),
@@ -834,6 +939,30 @@ def moviehub_access_reject(request_id: str, user: Dict[str, str] = Depends(admin
         metadata={"requestId": request_id},
     )
     return success({"message": "moviehub access request rejected", "requestId": request_id, "status": "REJECTED", "notification": "skipped"})
+
+
+@router.post("/v2/admin/moviehub/access/requests/{request_id}/approve")
+def moviehub_access_approve(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+    return _approve_moviehub_access(request_id, user["userId"])
+
+
+@router.post("/v2/admin/moviehub/access/requests/{request_id}/reject")
+def moviehub_access_reject(request_id: str, user: Dict[str, str] = Depends(admin_user)):
+    return _reject_moviehub_access(request_id, user["userId"])
+
+
+@router.post("/v2/moviehub/access/requests/{request_id}/quick-approve")
+def moviehub_access_quick_approve(request_id: str, token: str = Query(...)):
+    if not verify_action_token("moviehub-access-approve", request_id, token):
+        raise HTTPException(status_code=401, detail="Invalid or expired action token")
+    return _confirm_quick_action("access approval", "access", _approve_moviehub_access(request_id, "ntfy-action"))
+
+
+@router.post("/v2/moviehub/access/requests/{request_id}/quick-reject")
+def moviehub_access_quick_reject(request_id: str, token: str = Query(...)):
+    if not verify_action_token("moviehub-access-reject", request_id, token):
+        raise HTTPException(status_code=401, detail="Invalid or expired action token")
+    return _confirm_quick_action("access rejection", "access", _reject_moviehub_access(request_id, "ntfy-action"))
 
 
 @router.get("/v2/admin/moviehub/access/users")

@@ -3,7 +3,7 @@
 
 ## 3.1 Application contract
 
-The gateway exposes one response route:
+Both the Codex gateway and the Claude gateway expose the identical route, and an application caller cannot tell them apart from the shape of the request or response — only the `provider` field in the response and which port the caller signed for differ:
 
 ```http
 POST /v1/responses
@@ -34,6 +34,8 @@ The successful response normalizes provider output:
   "conversation": {"providerConversationId": "opaque-id"}
 }
 ```
+
+`provider` is `"codex"` or `"claude"` depending on which gateway actually served the request — the caller's `ai_provider_router` records this value on the returned message rather than assuming it always matches whichever provider it thought it was calling first.
 
 Only text context exists in v1. Metadata is correlation data and never grants permissions.
 
@@ -78,14 +80,16 @@ The nonce is stored in SQLite with an expiry. A copied, perfectly signed request
 
 ## 3.4 Scopes and identities
 
-ToolHub is registered at the gateway with scopes such as:
+ToolHub is registered at each gateway with scopes such as:
 
 ```text
 gateway:read
 responses:create
 ```
 
-The gateway has a separate identity at the executor:
+using the same client id (`toolhub-admin`) at both gateways, but two entirely separate registries and two separate secret files (one per provider, mounted read-only into the backend container from `/etc/codex-gateway/toolhub-admin.secret` and `/etc/claude-gateway/toolhub-admin.secret`). A shared client id is only a label; it does not imply a shared secret, and the gateways never compare notes.
+
+Each gateway has its own separate identity at its own executor:
 
 ```text
 executor:read
@@ -93,6 +97,8 @@ executor:invoke
 ```
 
 Each registry entry points to a secret file and may restrict source addresses. Secrets are generated during deployment, mounted read-only where needed and never committed.
+
+The same registry pattern also serves entirely different applications: the ops scheduler is registered at both gateways under its own client id and its own secret, with wider input/timeout limits than ToolHub's — same protocol, same servers, no shared credentials with ToolHub.
 
 ## 3.5 Input limits
 
@@ -106,6 +112,8 @@ Each registry entry points to a secret file and may restrict source addresses. S
 | Gateway-to-executor timeout | 310 seconds |
 | Codex CLI timeout | 300 seconds |
 | Authentication clock skew | 60 seconds |
+
+These are the defaults for both application-facing gateways — Codex's and Claude's own `config.py` fall back to the identical numbers unless a deployment overrides them. They are not universal, though: the scheduler-only operator gateways (2.2) are configured with a 32,000-character input limit and a 3,600-second executor timeout, because a scheduled job's prompt and run time look nothing like an interactive chat message.
 
 Limits prevent accidental or hostile unbounded requests and keep the composed prompt below the executor boundary.
 
@@ -121,6 +129,8 @@ Errors have stable machine codes:
 
 Expected statuses include `400`, `401`, `404`, `409`, `413`, `429` and `503`. Provider stderr, prompts, secrets and hidden runtime output are not returned.
 
+Since 2026-08-05 the ToolHub backend also recognizes a family of usage-exhaustion codes at the application layer (`provider_usage_exhausted`, `provider_quota_exhausted`, `usage_limit_reached`, `quota_exceeded`, `insufficient_quota`, `rate_limit_exceeded`) and falls back to message-text markers (“usage limit”, “quota”, “credit balance”, and similar) when a provider's error surface doesn't use a stable code. `gateway_busy` and `executor_busy` are explicitly excluded from this set — they mean momentary contention on the single run slot, not a finished allowance, and must never trigger the provider fallback in 1.7.
+
 ## 3.7 Threat review
 
 | Threat | Control |
@@ -133,6 +143,8 @@ Expected statuses include `400`, `401`, `404`, `409`, `413`, `429` and `503`. Pr
 | Prompt asks to bypass policy | Fixed executor configuration and disabled tools |
 | Oversized payload exhausts service | Body, input, context and response limits |
 | Concurrent runs exhaust small VM | Single bounded run slot |
+| Momentary contention mistaken for exhausted usage | Busy codes are excluded from the usage-exhaustion classifier (3.6), so contention returns `429` without pinning the app onto the fallback provider |
+| One provider's usage allowance runs out | Router fails over to the other configured provider and pins the choice in Redis; see 1.7 |
 
 > **Security checkpoint**
 > HMAC proves which application signed a request. Why does it not replace ToolHub’s admin authorization or the executor capability sandbox?

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.middlewares.auth import admin_user
 from app.services.scheduler_history import list_runs, record_run
+from app.services.scheduler_jobs import list_jobs, set_enabled, set_schedule
 from app.utils.responses import error, success
 
 router = APIRouter(tags=["scheduler"])
@@ -48,3 +49,44 @@ def scheduler_runs(
     _: Dict[str, str] = Depends(admin_user),
 ):
     return success({"runs": list_runs(job=job, limit=limit)})
+
+
+@router.get("/v2/admin/scheduler/jobs")
+def scheduler_jobs(_: Dict[str, str] = Depends(admin_user)):
+    try:
+        return success(list_jobs())
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content=error(str(exc)))
+
+
+@router.post("/v2/admin/scheduler/jobs/{slug}/schedule")
+async def scheduler_job_schedule(
+    slug: str, request: Request, _: Dict[str, str] = Depends(admin_user)
+):
+    body = await request.json()
+    try:
+        return success(set_schedule(slug, body.get("schedule")))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=error(str(exc)))
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content=error(str(exc)))
+
+
+@router.post("/v2/admin/scheduler/jobs/{slug}/enable")
+def scheduler_job_enable(slug: str, _: Dict[str, str] = Depends(admin_user)):
+    try:
+        return success(set_enabled(slug, True))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=error(str(exc)))
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content=error(str(exc)))
+
+
+@router.post("/v2/admin/scheduler/jobs/{slug}/disable")
+def scheduler_job_disable(slug: str, _: Dict[str, str] = Depends(admin_user)):
+    try:
+        return success(set_enabled(slug, False))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=error(str(exc)))
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content=error(str(exc)))

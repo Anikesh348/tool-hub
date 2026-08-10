@@ -100,8 +100,9 @@ export const MovieHubOpenSection: React.FC<MovieHubOpenSectionProps> = ({
     const hasSessionGuard =
       window.localStorage.getItem(MOVIEHUB_SESSION_GUARD_KEY) === "ready";
     const isDifferentExpectedUser =
-      previousUsername.length > 0 &&
-      previousUsername.toLowerCase() !== normalizedUsername.toLowerCase();
+      !hasSessionGuard ||
+      (previousUsername.length > 0 &&
+        previousUsername.toLowerCase() !== normalizedUsername.toLowerCase());
 
     setIsPreparingSession(isDifferentExpectedUser);
     setLogoutFrameUrl("");

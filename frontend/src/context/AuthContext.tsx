@@ -63,7 +63,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     let cancelled = false;
     clearLegacyStoredAuth();
 
-    fetchCurrentSession().then((sessionUser) => {
+    const bootstrapSession = async () => {
+      try {
+        return await fetchCurrentSession();
+      } catch {
+        // The check itself failed (network hiccup, or a reload racing a
+        // slow-but-legitimate response elsewhere) - not a confirmed logout.
+        // Give it one more try before accepting the user is signed out, so a
+        // single blip doesn't bounce an otherwise-logged-in user to /login.
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        try {
+          return await fetchCurrentSession();
+        } catch {
+          return null;
+        }
+      }
+    };
+
+    bootstrapSession().then((sessionUser) => {
       if (!cancelled) applySession(sessionUser);
     });
 
@@ -82,8 +99,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
   useEffect(() => {
     const onSessionUpdated = async () => {
-      const sessionUser = await fetchCurrentSession();
-      applySession(sessionUser);
+      try {
+        const sessionUser = await fetchCurrentSession();
+        applySession(sessionUser);
+      } catch {
+        // A refresh just succeeded, so the session is known-good - a
+        // transient failure here shouldn't override that with a logout.
+      }
     };
     const onLogout = () => applySession(null);
 

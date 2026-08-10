@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.services.mail import send_brevo_email
 from app.services.mongo import col, find, find_one, insert
+from app.services.notifications import emit_notification
 from app.services.redis_cache import cache_get, cache_set, cache_token
 from app.utils.responses import error, jsonable, now_iso, success
 
@@ -419,10 +420,17 @@ def _send_alert_if_needed(watch: Dict[str, Any], result: Dict[str, Any]) -> bool
     if not recipient:
         return False
 
-    send_brevo_email(
-        f"Flight drop: {_route_label(watch)} is {_format_money(price, result.get('currency') or watch.get('currency', 'INR'))}",
-        recipient,
-        _build_flight_alert_email(watch, result),
+    alert_title = f"Flight drop: {_route_label(watch)} is {_format_money(price, result.get('currency') or watch.get('currency', 'INR'))}"
+    send_brevo_email(alert_title, recipient, _build_flight_alert_email(watch, result))
+    emit_notification(
+        audience="ADMIN",
+        title=alert_title,
+        message=f"Threshold was {_format_money(threshold, result.get('currency') or watch.get('currency', 'INR'))}. Notified {recipient}.",
+        severity="SUCCESS",
+        category="price_alert",
+        source="flights",
+        action_url="/flights",
+        metadata={"watchId": watch.get("watchId")},
     )
     col(FLIGHT_ALERT_STATE_COLLECTION).update_one(
         state_query,
@@ -476,10 +484,40 @@ def _record_failed_check(watch: Dict[str, Any], message: str) -> None:
     )
 
 
+def _relevant_travel_date(watch: Dict[str, Any]) -> str:
+    # A round trip is only truly "done" once the return leg has passed; a
+    # one-way trip is done once its single departure has passed.
+    return watch.get("returnDate") or watch.get("departureDate") or ""
+
+
+def _is_expired(watch: Dict[str, Any]) -> bool:
+    date_str = _relevant_travel_date(watch)
+    if not date_str:
+        return False
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date() < _utc_now().date()
+    except ValueError:
+        return False
+
+
+def _retire_expired_watch(watch: Dict[str, Any]) -> None:
+    now = now_iso()
+    col(FLIGHT_WATCHES_COLLECTION).update_one(
+        {"watchId": watch.get("watchId")},
+        {"$set": {"active": False, "expired": True, "lastError": "", "lastCheckedAt": now, "updatedAt": now}},
+    )
+
+
 def check_one_flight_watch(watch_id: str, user: Dict[str, str]):
     watch = find_one(FLIGHT_WATCHES_COLLECTION, {"watchId": watch_id, "userId": user["userId"]})
     if not watch:
         return JSONResponse(status_code=404, content=error("Flight watch not found"))
+    if _is_expired(watch):
+        _retire_expired_watch(watch)
+        return JSONResponse(
+            status_code=400,
+            content=error("This trip's date has already passed. Create a new watch with an upcoming date to keep tracking this route."),
+        )
     try:
         return success(check_flight_watch(watch))
     except Exception as exc:
@@ -490,7 +528,21 @@ def check_one_flight_watch(watch_id: str, user: Dict[str, str]):
 
 def check_all_flight_watches() -> Dict[str, Any]:
     watches = find(FLIGHT_WATCHES_COLLECTION, {"active": True})
-    summary = {"total": len(watches), "checked": 0, "historySaved": 0, "alertsSent": 0, "failed": 0}
+    summary = {"total": len(watches), "checked": 0, "historySaved": 0, "alertsSent": 0, "failed": 0, "expired": 0}
+    if not watches:
+        return summary
+
+    # Watches whose travel date has already passed can never return a fare —
+    # retiring them here stops the hourly job from hammering the scraper (and
+    # recording a fresh "failed" check) for a trip that's already over.
+    pending_watches = []
+    for watch in watches:
+        if _is_expired(watch):
+            _retire_expired_watch(watch)
+            summary["expired"] += 1
+        else:
+            pending_watches.append(watch)
+    watches = pending_watches
     if not watches:
         return summary
 

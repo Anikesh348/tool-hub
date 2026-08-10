@@ -25,11 +25,13 @@ def _admin_request(
     *,
     socket_path: str | None = None,
     base_url: str | None = None,
+    body: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     if not secret:
         raise RuntimeError("Host administration agent is not configured")
 
     request_path = path
+    body_bytes = json.dumps(body).encode("utf-8") if body is not None else None
     if base_url:
         parsed = urlparse(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -41,7 +43,10 @@ def _admin_request(
         connection = UnixHTTPConnection(socket_path or "/run/toolhub-admin/agent.sock", timeout=timeout)
 
     try:
-        connection.request(method, request_path, headers={"X-ToolHub-Admin-Secret": secret})
+        headers = {"X-ToolHub-Admin-Secret": secret}
+        if body_bytes is not None:
+            headers["Content-Type"] = "application/json"
+        connection.request(method, request_path, body=body_bytes, headers=headers)
         response = connection.getresponse()
         payload = json.loads(response.read().decode("utf-8") or "{}")
         if response.status >= 400:
@@ -53,13 +58,16 @@ def _admin_request(
         connection.close()
 
 
-def host_admin_request(method: str, path: str, timeout: int = 5) -> Dict[str, Any]:
+def host_admin_request(
+    method: str, path: str, timeout: int = 5, body: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     return _admin_request(
         method,
         path,
         os.getenv("TOOLHUB_ADMIN_AGENT_SECRET", "").strip(),
         timeout,
         socket_path=os.getenv("TOOLHUB_ADMIN_SOCKET", "/run/toolhub-admin/agent.sock"),
+        body=body,
     )
 
 
