@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   CalendarClock,
   MonitorOff,
@@ -40,6 +41,13 @@ export const serverAppLinks: ServerAppLink[] = [
     title: "Scheduled Jobs",
     icon: CalendarClock,
     tone: "amber",
+  },
+  {
+    key: "activity",
+    path: "/admin/activity",
+    title: "Activity",
+    icon: Activity,
+    tone: "violet",
   },
   {
     key: "settings",
