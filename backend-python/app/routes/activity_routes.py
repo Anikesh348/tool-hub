@@ -4,7 +4,7 @@ from typing import Dict
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.middlewares.auth import admin_user, current_user
-from app.services.activity import live_count, record_events, summary, touch_presence
+from app.services.activity import get_summary, live_count, record_events, touch_presence
 from app.utils.responses import success
 
 router = APIRouter(tags=["activity"])
@@ -29,4 +29,4 @@ async def activity_live_count(_: Dict[str, str] = Depends(admin_user)):
 
 @router.get("/v2/activity/summary")
 async def activity_summary(hours: int = Query(24, ge=1, le=2160), _: Dict[str, str] = Depends(admin_user)):
-    return success(await asyncio.to_thread(summary, hours))
+    return success(await asyncio.to_thread(get_summary, hours))

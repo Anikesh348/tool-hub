@@ -13,10 +13,15 @@ from app.utils.responses import now_iso
 logger = logging.getLogger("uvicorn.error")
 
 ACTIVITY_EVENTS_COLLECTION = "activity_events"
+ACTIVITY_SUMMARY_CACHE_COLLECTION = "activity_summary_cache"
 MAX_EVENTS_PER_BATCH = 200
 VALID_EVENT_TYPES = {"pageview", "click", "scroll"}
 PRESENCE_TTL_SECONDS = 60
 PRESENCE_KEY_PREFIX = "presence:user:"
+# Fixed set of windows the dashboard offers (see RANGE_OPTIONS in
+# ActivityDashboard.tsx) - these are the only ranges the rollup job
+# precomputes and caches; anything else falls back to a live aggregation.
+SUPPORTED_ROLLUP_RANGES = (24, 168, 720)
 
 
 def _retention_days() -> int:
@@ -93,7 +98,7 @@ def live_count() -> Dict[str, Any]:
     return {"liveUsers": cache_count_pattern(f"{PRESENCE_KEY_PREFIX}*")}
 
 
-def summary(hours: int) -> Dict[str, Any]:
+def _compute_summary(hours: int) -> Dict[str, Any]:
     hours = max(1, min(hours, 24 * 90))
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     collection = col(ACTIVITY_EVENTS_COLLECTION)
@@ -175,3 +180,37 @@ def summary(hours: int) -> Dict[str, Any]:
         "scrollDepth": [{"depth": row["_id"], "count": row["count"]} for row in scroll_depth],
         "eventsOverTime": [{"bucket": row["_id"], "count": row["count"]} for row in events_over_time],
     }
+
+
+def get_summary(hours: int) -> Dict[str, Any]:
+    """Read path used by GET /v2/activity/summary.
+
+    For the dashboard's fixed range options, this reads a cache document the
+    activity-rollup scheduled job refreshes every ACTIVITY_ROLLUP_INTERVAL_SECONDS
+    instead of re-aggregating raw events on every page load. Anything outside
+    those ranges (or before the first rollup has run) falls back to a live
+    aggregation so the endpoint never just returns nothing.
+    """
+    hours = max(1, min(hours, 24 * 90))
+    if hours in SUPPORTED_ROLLUP_RANGES:
+        cached = col(ACTIVITY_SUMMARY_CACHE_COLLECTION).find_one({"_id": f"range-{hours}"})
+        if cached:
+            cached.pop("_id", None)
+            return cached
+    return _compute_summary(hours)
+
+
+def run_activity_rollup() -> Dict[str, Any]:
+    """Scheduled job body - runs on the scheduler's own thread via
+    asyncio.to_thread (see ToolHubScheduler/FixedIntervalJob in schedule.py),
+    so this never blocks the event loop or any live request.
+    """
+    refreshed = []
+    for hours in SUPPORTED_ROLLUP_RANGES:
+        payload = _compute_summary(hours)
+        payload["computedAt"] = now_iso()
+        col(ACTIVITY_SUMMARY_CACHE_COLLECTION).replace_one(
+            {"_id": f"range-{hours}"}, {**payload, "_id": f"range-{hours}"}, upsert=True
+        )
+        refreshed.append(hours)
+    return {"rangesRefreshed": refreshed}
