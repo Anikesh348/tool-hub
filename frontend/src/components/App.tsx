@@ -145,7 +145,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function App() {
   const { pathname } = useLocation();
   const isLanding = pathname === "/";
-  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/admin/scheduler" || pathname === "/admin/activity" || pathname.startsWith("/admin/location") || pathname === "/settings" || pathname === "/remote";
+  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/admin/scheduler" || pathname === "/admin/activity" || pathname.startsWith("/admin/location") || pathname === "/settings" || pathname === "/remote";
 
   return (
     <NotificationProvider>

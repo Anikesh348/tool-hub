@@ -855,6 +855,12 @@ function Header() {
                 <span className="truncate">{label}</span>
               </Link>
             ))}
+            {isAdmin && (
+              <Link to="/admin/courses" className="toolhub-mobile-link min-w-0">
+                <BookOpen className="h-4 w-4 shrink-0" />
+                <span className="truncate">My Courses</span>
+              </Link>
+            )}
           </div>
           {isAdmin && (
             <>
