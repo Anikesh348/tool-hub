@@ -7,11 +7,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/leaflet": "^1.9.22",
     "dayjs": "^1.11.13",
     "jwt-decode": "^4.0.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.522.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-leaflet": "^4.2.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.0.0",
     "recharts": "^2.15.4",

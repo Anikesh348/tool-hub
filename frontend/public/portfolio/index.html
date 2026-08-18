@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08120f" />
+    <meta
+      name="description"
+      content="Anikesh Thakur's two-node homelab: a self-hosted application platform with VPS ingress, observability, automation, and production-minded engineering."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Anikesh Thakur — Systems I run from home" />
+    <meta
+      property="og:description"
+      content="Explore an interactive map of the two-node platform, its public ingress, operations layer, and the applications it runs."
+    />
+    <meta property="og:url" content="https://hostingfrompurva.xyz/portfolio/" />
+    <meta property="og:image" content="https://hostingfrompurva.xyz/portfolio/portfolio-social-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="canonical" href="https://hostingfrompurva.xyz/portfolio/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./portfolio.css?v=20260809b" />
+    <title>Anikesh Thakur — Self-hosted systems portfolio</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="wordmark" href="#top" aria-label="Anikesh Thakur, back to top">
+          <span class="wordmark-mark">AT</span>
+          <span>Anikesh Thakur</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="#about">About</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#projects">Projects</a>
+          <a href="#opensource">Open source</a>
+          <a href="#decisions">Decisions</a>
+        </nav>
+        <a class="header-link" href="https://github.com/Anikesh348" target="_blank" rel="noreferrer">
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </header>
+
+      <main id="main">
+        <section class="hero" id="top">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="status-dot"></span> Running from my home, reachable worldwide</p>
+            <h1>I build software.<br /><span>I run the platform too.</span></h1>
+            <p class="hero-lede">
+              A two-node homelab where I design, deploy, observe, and operate real applications—exposed through a VPS without opening my home network directly to the internet.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#architecture">Explore the system <span aria-hidden="true">↓</span></a>
+              <a class="button button-quiet" href="https://github.com/Anikesh348" target="_blank" rel="noreferrer">View source <span aria-hidden="true">↗</span></a>
+            </div>
+            <dl class="hero-facts" aria-label="Platform at a glance">
+              <div><dt>02</dt><dd>physical nodes</dd></div>
+              <div><dt>24/7</dt><dd>self-hosted services</dd></div>
+              <div><dt>01</dt><dd>public VPS gateway</dd></div>
+            </dl>
+          </div>
+          <div class="hero-console" aria-label="Live system summary">
+            <div class="console-bar"><span></span><span></span><span></span><b>platform.yaml</b></div>
+            <pre><code><span class="code-muted"># deliberately small, intentionally real</span>
+platform:
+  nodes: <span class="code-value">[compute, storage]</span>
+  ingress: <span class="code-value">VPS → WireGuard</span>
+  runtime: <span class="code-value">Docker + Proxmox</span>
+  access: <span class="code-value">OAuth + private mesh</span>
+  signals: <span class="code-value">metrics, logs, health</span>
+
+<span class="code-ok">● all public paths operational</span></code></pre>
+            <div class="console-pulse"><i></i><span>traffic</span><b></b><span>VPS</span><b></b><span>home lab</span></div>
+          </div>
+        </section>
+
+        <section class="section about-section" id="about">
+          <div class="about-grid">
+            <div class="about-profile">
+              <div class="profile-photo-wrap">
+                <img src="./anikesh-profile.jpg" alt="Anikesh Thakur" width="512" height="512" />
+                <span class="profile-status">Software Engineer III</span>
+              </div>
+              <div>
+                <p class="eyebrow">About me</p>
+                <h2>Product engineer.<br />Systems operator.</h2>
+                <p class="about-copy">I’m Anikesh, a Software Engineer III with 4+ years of experience building reliable backend and full-stack systems. At work, I focus on distributed services, data platforms, performance, and compliance. At home, I run the entire lifecycle—from an idea and a pull request to networking, deployment, observability, and recovery.</p>
+                <div class="about-links">
+                  <a class="button button-primary" href="https://www.linkedin.com/in/anikesh-thakur-962637170/" target="_blank" rel="noreferrer">LinkedIn ↗</a>
+                  <a class="button button-quiet" href="https://github.com/Anikesh348" target="_blank" rel="noreferrer">GitHub ↗</a>
+                </div>
+              </div>
+            </div>
+
+            <figure class="homelab-portrait">
+              <img src="./homelab-hardware.jpg" alt="Anikesh's physical homelab with an HP ProDesk and Raspberry Pi" width="1800" height="1350" />
+              <figcaption><span>THE PHYSICAL LAYER</span><strong>Two nodes, one UPS, and a lot of iteration.</strong></figcaption>
+              <figure class="observatory-inset">
+                <img src="./homelab-observatory.jpg" alt="Purva Homelab Observatory showing live fleet health" width="1600" height="1200" />
+                <figcaption>Homelab Observatory / live fleet view</figcaption>
+              </figure>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section architecture-section" id="architecture">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Architecture explorer</p>
+              <h2>Follow a request through the system.</h2>
+            </div>
+            <p>This is not a cloud diagram assembled for a slide. Select a path to see how the running platform handles traffic, data, and operations.</p>
+          </div>
+
+          <div class="architecture-card">
+            <div class="path-tabs" role="tablist" aria-label="Architecture paths">
+              <button class="path-tab is-active" role="tab" aria-selected="true" data-path="public">01 / Public request</button>
+              <button class="path-tab" role="tab" aria-selected="false" data-path="data">02 / Data &amp; storage</button>
+              <button class="path-tab" role="tab" aria-selected="false" data-path="ops">03 / Operations</button>
+            </div>
+
+            <div class="architecture-stage" data-active-path="public">
+              <div class="flow-explainer">
+                <div class="flow-heading">
+                  <div><span id="flow-number">PATH 01</span><h3 id="flow-title">A public request, end to end</h3></div>
+                  <p id="flow-description">The VPS is the only public edge. Traffic enters the home network through an encrypted tunnel and terminates at the intended application.</p>
+                </div>
+                <div class="flow-steps" id="flow-steps" aria-label="Public request path"></div>
+                <div class="flow-observability">
+                  <span class="observe-pulse"></span>
+                  <div><strong>Observed at every hop</strong><p>Health probes, route metrics, container signals, and alerts make this path diagnosable.</p></div>
+                  <span>Gatus · Prometheus · Grafana · SSE</span>
+                </div>
+              </div>
+
+              <aside class="arch-detail" aria-live="polite">
+                <p class="detail-kicker" id="detail-kicker">STEP 01 / CLIENT</p>
+                <h3 id="detail-title">The request starts in a normal browser.</h3>
+                <p id="detail-copy">A user opens a public application over HTTPS. Routes that expose personal or operational data require authentication before they continue.</p>
+                <ul id="detail-tags" class="tag-list"><li>Browser</li><li>HTTPS</li><li>OAuth where required</li></ul>
+                <p class="detail-hint">Select a numbered step to inspect it.</p>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="section projects-section" id="projects">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Selected systems</p>
+              <h2>Projects that have to keep working.</h2>
+            </div>
+            <p>Personal projects with production concerns: authentication, queues, caching, safe automation, deployment, monitoring, and recovery.</p>
+          </div>
+
+          <div class="project-toolbar" role="group" aria-label="Filter projects">
+            <button class="filter-chip is-active" data-filter="all" aria-pressed="true">All systems</button>
+            <button class="filter-chip" data-filter="product" aria-pressed="false">Products</button>
+            <button class="filter-chip" data-filter="platform" aria-pressed="false">Platform</button>
+            <button class="filter-chip" data-filter="automation" aria-pressed="false">Automation</button>
+          </div>
+
+          <div class="project-grid">
+            <article class="project-card project-featured" data-category="product platform">
+              <div class="project-topline"><span>01</span><span class="availability">PUBLIC SOURCE</span></div>
+              <div>
+                <p class="project-type">Application platform</p>
+                <h3>Home Operations Platform</h3>
+                <p>A single authenticated surface for the tools I actually use: price tracking, coding practice, flight monitoring, fleet diagnostics, and long-running workflows.</p>
+              </div>
+              <ul class="tech-list"><li>React</li><li>TypeScript</li><li>FastAPI</li><li>OAuth</li><li>Redis</li><li>MongoDB</li></ul>
+              <div class="project-links">
+                <a href="/" target="_blank">Open live platform ↗</a>
+                <a href="https://github.com/Anikesh348/tool-hub" target="_blank" rel="noreferrer">GitHub ↗</a>
+                <a href="/blogs/raspberry-pi-5-personal-cloud">Origin story →</a>
+              </div>
+            </article>
+
+            <article class="project-card" data-category="product automation">
+              <div class="project-topline"><span>02</span><span>EVENT-DRIVEN</span></div>
+              <div>
+                <p class="project-type">Distributed application</p>
+                <h3>Price Intelligence Tracker</h3>
+                <p>Scheduled product checks across stores with durable state, browser-based extraction, a reactive API, history, and user-facing alerts.</p>
+              </div>
+              <ul class="tech-list"><li>Java Vert.x</li><li>Playwright</li><li>React</li><li>MongoDB</li><li>SSO</li></ul>
+              <div class="project-links"><a href="/pricetracker" target="_blank">Open live tracker ↗</a><a href="https://github.com/Anikesh348/tool-hub" target="_blank" rel="noreferrer">Source ↗</a></div>
+            </article>
+
+            <article class="project-card" data-category="product automation">
+              <div class="project-topline"><span>03</span><span>AGENTIC</span></div>
+              <div>
+                <p class="project-type">Developer tooling</p>
+                <h3>Agent Console</h3>
+                <p>A self-hosted web console over coding agents, with separate general, tool-building, and operator workflows plus allowlisted workspace access.</p>
+              </div>
+              <ul class="tech-list"><li>React</li><li>FastAPI</li><li>Codex CLI</li><li>Docker</li><li>SSE</li></ul>
+              <div class="project-links">
+                <a href="https://github.com/purva-labs/agent-console" target="_blank" rel="noreferrer">GitHub ↗</a>
+                <a href="/blogs/ai-toolhub-agent-console-tool-builder">Build notes →</a>
+              </div>
+            </article>
+
+            <article class="project-card" data-category="platform">
+              <div class="project-topline"><span>04</span><span>DEFENCE IN DEPTH</span></div>
+              <div>
+                <p class="project-type">Networking &amp; security</p>
+                <h3>VPS Ingress Gateway</h3>
+                <p>A public Caddy edge with TLS and route controls, joined to the homelab over WireGuard so the residential network is never the public endpoint.</p>
+              </div>
+              <ul class="tech-list"><li>Caddy</li><li>WireGuard</li><li>Cloudflare</li><li>OAuth</li><li>NGINX</li></ul>
+              <div class="project-links"><a href="/blogs/how-i-put-my-homelab-on-the-internet">Architecture story →</a></div>
+            </article>
+
+            <article class="project-card" data-category="platform automation">
+              <div class="project-topline"><span>05</span><span>REAL-TIME</span></div>
+              <div>
+                <p class="project-type">Operations</p>
+                <h3>Fleet Observability</h3>
+                <p>Health probes, host and container metrics, route analytics, real-time SSE diagnostics, and alerts spanning the compute and storage nodes.</p>
+              </div>
+              <ul class="tech-list"><li>Prometheus</li><li>Grafana</li><li>Gatus</li><li>Netdata</li><li>Beszel</li><li>SSE</li></ul>
+              <div class="project-links"><a href="/admin/tools/system-metrics" target="_blank">Authenticated dashboard ↗</a><button class="text-button" data-open-path="ops">Trace the ops path →</button></div>
+            </article>
+
+            <article class="project-card" data-category="platform product">
+              <div class="project-topline"><span>06</span><span>DATA PLANE</span></div>
+              <div>
+                <p class="project-type">Private cloud</p>
+                <h3>Home Cloud &amp; Media</h3>
+                <p>Private photo backup, file storage, and controlled request-to-playback workflows, with compute-heavy services separated from bulk storage.</p>
+              </div>
+              <ul class="tech-list"><li>Immich</li><li>Jellyfin</li><li>NFS</li><li>SMB</li><li>QSV</li><li>Docker</li></ul>
+              <div class="project-links"><a href="/moviehub" target="_blank">Open MovieHub ↗</a><a href="/blogs/moviehub-jellyfin-request-path">Request workflow →</a></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section open-source-section" id="opensource">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Purva Labs / open source</p>
+              <h2>Small tools, published properly.</h2>
+            </div>
+            <p>I use Purva Labs to turn the useful parts of my homelab into focused, documented tools that other people can run themselves.</p>
+          </div>
+          <div class="org-banner">
+            <div class="org-mark">PL</div>
+            <div><small>GITHUB ORGANIZATION</small><h3>purva-labs</h3><p>Self-hosted developer and operations tooling, released under permissive licenses.</p></div>
+            <a class="button button-primary" href="https://github.com/purva-labs" target="_blank" rel="noreferrer">Visit organization ↗</a>
+          </div>
+          <div class="oss-grid">
+            <article class="oss-card">
+              <span>01 / AGENTIC DEV TOOLS</span><h3>Agent Console</h3>
+              <p>A self-hosted interface for coding agents with persistent conversations, General, Tool Builder, and allowlisted Operator modes.</p>
+              <a href="https://github.com/purva-labs/agent-console" target="_blank" rel="noreferrer">purva-labs/agent-console ↗</a>
+            </article>
+            <article class="oss-card">
+              <span>02 / CONTAINER OPERATIONS</span><h3>Docker Control</h3>
+              <p>A focused dashboard for container status, resource usage, logs, lifecycle actions, safe rebuilds, and rollback on recreation failure.</p>
+              <a href="https://github.com/purva-labs/docker-control" target="_blank" rel="noreferrer">purva-labs/docker-control ↗</a>
+            </article>
+            <article class="oss-card">
+              <span>03 / FILE OPERATIONS</span><h3>File Manager</h3>
+              <p>A lightweight web file manager scoped to one configured root, with previews, uploads, search, and protection against path escapes.</p>
+              <a href="https://github.com/purva-labs/file-manager" target="_blank" rel="noreferrer">purva-labs/file-manager ↗</a>
+            </article>
+          </div>
+        </section>
+
+        <section class="section decisions-section" id="decisions">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Engineering decisions</p>
+              <h2>The constraints are part of the project.</h2>
+            </div>
+            <p>A homelab is useful precisely because resources are finite and failure is personal. These choices keep the system understandable and recoverable.</p>
+          </div>
+          <div class="decision-console">
+            <div class="decision-list" role="tablist" aria-label="Engineering decisions">
+              <button class="decision-tab is-active" role="tab" aria-selected="true" data-decision="storage"><span>01</span>Keep state close to compute</button>
+              <button class="decision-tab" role="tab" aria-selected="false" data-decision="edge"><span>02</span>Put the public edge elsewhere</button>
+              <button class="decision-tab" role="tab" aria-selected="false" data-decision="access"><span>03</span>Separate the control plane</button>
+              <button class="decision-tab" role="tab" aria-selected="false" data-decision="failure"><span>04</span>Design for partial failure</button>
+            </div>
+            <div class="decision-detail" aria-live="polite">
+              <p class="detail-kicker">DECISION / STORAGE</p>
+              <h3 id="decision-title">Databases stay local. Bulk data travels.</h3>
+              <p id="decision-copy">Latency-sensitive databases and configuration live on the compute node's local disk. The Raspberry Pi remains the authoritative NFS storage node for photos, media, and backups.</p>
+              <div class="tradeoff"><span>Trade-off accepted</span><p id="decision-tradeoff">The storage node can still affect dependent apps, so mounts and startup order are monitored explicitly.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="closing">
+          <p class="eyebrow">Four years into building production software</p>
+          <h2>I like systems that are useful<br />after the demo ends.</h2>
+          <p>This platform is where product engineering, distributed systems, infrastructure, and operational discipline meet.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/Anikesh348" target="_blank" rel="noreferrer">Explore my GitHub ↗</a>
+            <a class="button button-quiet" href="#top">Back to top ↑</a>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>Designed, built, deployed, and operated by Anikesh Thakur.</p>
+        <p><span class="status-dot"></span> Served from the platform shown above.</p>
+      </footer>
+    </div>
+    <script src="./portfolio.js?v=20260809b" defer></script>
+  </body>
+</html>

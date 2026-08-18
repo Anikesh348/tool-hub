@@ -1,22 +1,38 @@
+import logging
 import os
 import re
 import hashlib
 from datetime import datetime, timezone
 from html import escape
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from fastapi.responses import JSONResponse
+from pymongo import ASCENDING
 
 from app.services.mail import send_brevo_email
 from app.services.mongo import col, find, find_one, insert
+from app.services.notifications import emit_notification
 from app.services.redis_cache import cache_get, cache_set, cache_token
 from app.utils.responses import error, success
 
 
+logger = logging.getLogger(__name__)
+
 PRICE_ALERT_MARGIN_PERCENT = 5
 PRICE_ALERT_STATE_COLLECTION = "price-alert-state"
+
+
+def ensure_product_indexes() -> None:
+    """Create indexes without making application startup depend on migration work."""
+    try:
+        col("products").create_index([("productId", ASCENDING)], unique=True)
+        col("products").create_index([("userTargetPrices.userId", ASCENDING)])
+        col("pricehistory").create_index([("productId", ASCENDING)])
+        col("pricehistory").create_index([("productId", ASCENDING), ("captureTime", -1)])
+    except Exception:
+        logger.exception("Unable to ensure product indexes")
 PRODUCT_SEARCH_CACHE_SECONDS = int(os.getenv("PRODUCT_SEARCH_CACHE_SECONDS", "600"))
 SUPPORTED_SEARCH_PLATFORMS = {
     "amazon",
@@ -271,11 +287,81 @@ def normalize_price_history_record(record: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+# A single tracked product can accumulate many thousands of price checks
+# (one every price-check-scheduler interval, indefinitely). Fetching the full
+# history transfers megabytes across the WAN to MongoDB Atlas and can take
+# 10s of seconds regardless of indexing - the productId index makes lookup
+# fast, but doesn't bound how much data has to be shipped back. Capping the
+# fetch to the most recent N points (indexed via productId+captureTime) keeps
+# this fast and bounded no matter how long a product has been tracked.
+PRICE_HISTORY_MAX_POINTS = 2000
+PRICE_SUMMARY_MAX_POINTS = 300
+PRICE_SUMMARY_SPARKLINE_POINTS = 20
+
+_PRICE_HISTORY_PROJECTION = {"_id": 0, "productPrice": 1, "captureTime": 1, "createdAt": 1}
+
+
 def get_price_history(product_id: str) -> List[Dict[str, Any]]:
-    return [
-        normalize_price_history_record(record)
-        for record in find("pricehistory", {"productId": product_id})
-    ]
+    cursor = (
+        col("pricehistory")
+        .find({"productId": product_id}, _PRICE_HISTORY_PROJECTION)
+        .sort("captureTime", -1)
+        .limit(PRICE_HISTORY_MAX_POINTS)
+    )
+    records = [normalize_price_history_record(record) for record in cursor]
+    records.reverse()
+    return records
+
+
+def _parse_price_amount(value: Any) -> Optional[float]:
+    digits = re.sub(r"[^0-9.]", "", str(value or ""))
+    if not digits:
+        return None
+    try:
+        return float(digits)
+    except ValueError:
+        return None
+
+
+def get_price_summaries(product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Compute per-product current/previous/peak price + sparkline.
+
+    Runs one capped, indexed query per product rather than one unbounded
+    query across all of them - each query is small and fast regardless of
+    how much history a product has accumulated (see PRICE_HISTORY_MAX_POINTS
+    comment above for why capping matters here).
+    """
+    unique_ids = [pid for pid in dict.fromkeys(product_ids) if pid]
+    summaries: Dict[str, Dict[str, Any]] = {}
+
+    for product_id in unique_ids:
+        cursor = (
+            col("pricehistory")
+            .find({"productId": product_id}, _PRICE_HISTORY_PROJECTION)
+            .sort("captureTime", -1)
+            .limit(PRICE_SUMMARY_MAX_POINTS)
+        )
+        points: List[tuple] = []
+        for record in cursor:
+            price = _parse_price_amount(record.get("productPrice"))
+            if price is None:
+                continue
+            capture_time = record.get("captureTime") or record.get("createdAt") or None
+            points.append((price, capture_time))
+        if not points:
+            continue
+        points.reverse()
+
+        current_price, last_time = points[-1]
+        previous_price = points[-2][0] if len(points) > 1 else None
+        summaries[product_id] = {
+            "currentPrice": current_price,
+            "previousPrice": previous_price,
+            "peakPrice": max(price for price, _ in points),
+            "lastCheckedIso": last_time,
+            "sparkline": [price for price, _ in points[-PRICE_SUMMARY_SPARKLINE_POINTS:]],
+        }
+    return summaries
 
 
 def delete_product_target(product_id: str, target_price: str, user: Dict[str, str]):
@@ -460,10 +546,17 @@ def send_price_alerts(product: Dict[str, Any], product_info: Dict[str, Any]) -> 
             continue
         try:
             matching_targets = eligible_targets_by_user.get(user.get("userId"), [])
-            send_brevo_email(
-                build_price_alert_subject(alert_product_info),
-                email,
-                build_price_alert_email(product, alert_product_info, matching_targets),
+            alert_title = build_price_alert_subject(alert_product_info)
+            send_brevo_email(alert_title, email, build_price_alert_email(product, alert_product_info, matching_targets))
+            emit_notification(
+                audience="ADMIN",
+                title=alert_title,
+                message=f"{len(matching_targets)} saved target(s) reached. Notified {email}.",
+                severity="SUCCESS",
+                category="price_alert",
+                source="products",
+                action_url="/products",
+                metadata={"productId": product_id},
             )
             for target_state in eligible_targets_by_user.get(user.get("userId"), []):
                 col(PRICE_ALERT_STATE_COLLECTION).update_one(

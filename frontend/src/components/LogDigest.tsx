@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { refreshAccessToken } from "../apis/auth/authSession";
 import { useAuth } from "../context/AuthContext";
+import { formatIstDateTime, formatIstDay } from "../utils/formatIst";
 
 type Severity = "critical" | "error" | "warning";
 
@@ -71,18 +72,9 @@ const severityStyles: Record<Severity, string> = {
   warning: "border-amber-500/30 bg-amber-500/10 text-amber-100",
 };
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+const formatDate = formatIstDateTime;
 
-const formatDay = (value: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date(`${value}T00:00:00`));
+const formatDay = formatIstDay;
 
 const number = new Intl.NumberFormat();
 

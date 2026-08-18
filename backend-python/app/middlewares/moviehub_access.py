@@ -20,10 +20,12 @@ async def moviehub_access_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
     path = request.url.path
+    is_quick_action = path.startswith("/v2/moviehub/requests/") and path.endswith(("/quick-approve", "/quick-reject"))
     guarded = (
         path.startswith("/v2/moviehub/")
         and not path.startswith("/v2/moviehub/access")
         and path != "/v2/moviehub/reconcile-downloads"
+        and not is_quick_action
     )
     if not guarded:
         return await call_next(request)

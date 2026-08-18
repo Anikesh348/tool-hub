@@ -57,6 +57,87 @@ export const LeetCodeService = {
     };
   },
 
+  deleteCollection: (collectionLabel: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/delete-collection`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ collectionLabel }),
+      },
+    };
+  },
+
+  toggleBookmark: (questionId: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/toggle-bookmark`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ questionId }),
+      },
+    };
+  },
+
+  listSets: () => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets`,
+      options: {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  updateSet: (label: string, updates: { name?: string; description?: string }) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}`,
+      options: {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify(updates),
+      },
+    };
+  },
+
+  toggleSetPin: (label: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}/pin`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
+  duplicateSet: (label: string) => {
+    return {
+      url: `${BASE_URL}/v2/leetcode/sets/${encodeURIComponent(label)}/duplicate`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+      },
+    };
+  },
+
   updateQuestionStatus: (questionId: string, status: string) => {
     return {
       url: `${BASE_URL}/v2/leetcode/update-status`,

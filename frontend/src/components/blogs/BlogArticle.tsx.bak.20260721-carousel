@@ -1,0 +1,583 @@
+import { ArrowLeft, Clock3, Eye, Heart, Maximize2, MessageCircle, Share2, Sparkles, Trash2, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import { Link, useLocation, useParams } from "react-router-dom";
+import remarkGfm from "remark-gfm";
+import { blogEventUrl, BlogComment, BlogPost, BlogService, BlogTermSummary } from "../../apis/blogs/blogs";
+import { useAuth } from "../../context/AuthContext";
+import TermSummaryDialog from "./TermSummaryDialog";
+
+const getId = (storage: Storage, key: string) => {
+  const existing = storage.getItem(key);
+  if (existing) return existing;
+  const value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  storage.setItem(key, value);
+  return value;
+};
+
+const formatDate = (value?: string) =>
+  value
+    ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric" }).format(new Date(value))
+    : "";
+
+const formatCommentDate = (value: string) =>
+  new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+    timeZoneName: "short",
+  }).format(new Date(value));
+
+export default function BlogArticle() {
+  const { slug = "" } = useParams();
+  const location = useLocation();
+  const { isAuthenticated, isAuthLoading } = useAuth();
+  const [post, setPost] = useState<BlogPost | null>(null);
+  const [error, setError] = useState("");
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [shareCount, setShareCount] = useState(0);
+  const [reactionLoading, setReactionLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
+  const [comments, setComments] = useState<BlogComment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState("");
+  const [commentError, setCommentError] = useState("");
+  const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [activeTerm, setActiveTerm] = useState<{ termId: string; term: string } | null>(null);
+  const [termSummary, setTermSummary] = useState<BlogTermSummary | null>(null);
+  const [termSummaryLoading, setTermSummaryLoading] = useState(false);
+  const [termSummaryError, setTermSummaryError] = useState("");
+  const [readProgress, setReadProgress] = useState(0);
+  const modalCloseRef = useRef<HTMLButtonElement | null>(null);
+  const readingStartRef = useRef<HTMLElement | null>(null);
+  const readingEndRef = useRef<HTMLDivElement | null>(null);
+  const termCache = useRef(new Map<string, BlogTermSummary>());
+  const termRequestId = useRef(0);
+  const trackedView = useRef(false);
+  const completed = useRef(false);
+  const engagementSent = useRef(false);
+  const startedAt = useRef(Date.now());
+  const visitorId = useMemo(() => getId(localStorage, "toolhub-blog-visitor"), []);
+  const sessionId = useMemo(() => getId(sessionStorage, "toolhub-blog-session"), []);
+  const readingMinutes = Math.max(1, Math.ceil((post?.content || "").split(/\s+/).length / 220));
+  const readPercent = Math.min(100, Math.round(readProgress * 100));
+  const readPercentLeft = Math.max(0, 100 - readPercent);
+  const readingMinutesLeft = Math.max(0, Math.ceil(readingMinutes * (1 - readProgress)));
+
+  useEffect(() => {
+    setPost(null);
+    setError("");
+    setActiveTerm(null);
+    setTermSummary(null);
+    termCache.current.clear();
+    trackedView.current = false;
+    BlogService.get(slug)
+      .then(setPost)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load article"));
+  }, [slug]);
+
+  useEffect(() => {
+    setCommentError("");
+    BlogService.comments(slug)
+      .then(({ items }) => setComments(items))
+      .catch((reason) => setCommentError(reason instanceof Error ? reason.message : "Unable to load comments"));
+  }, [slug]);
+
+  useEffect(() => {
+    if (!post || trackedView.current) return;
+    document.title = `${post.title} | ToolHub`;
+    trackedView.current = true;
+    BlogService.track(post.slug, {
+      eventType: "view",
+      visitorId,
+      sessionId,
+      referrer: document.referrer,
+      screenWidth: window.screen.width,
+    }).catch(() => undefined);
+  }, [post, sessionId, visitorId]);
+
+  useEffect(() => {
+    if (!post) return;
+    setLikeCount(post.likeCount || 0);
+    setShareCount(post.shareCount || 0);
+    setShareMessage("");
+    BlogService.reaction(post.slug, visitorId, "status")
+      .then((reaction) => {
+        setLiked(reaction.liked);
+        setLikeCount(reaction.likeCount);
+        setShareCount(reaction.shareCount);
+      })
+      .catch(() => undefined);
+  }, [post?.slug, visitorId]);
+
+  useEffect(() => {
+    if (location.hash !== "#comments" || !post || isAuthLoading) return;
+    const timeoutId = window.setTimeout(() => {
+      document.getElementById("comments")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      if (isAuthenticated) {
+        (document.getElementById("blog-comment") as HTMLTextAreaElement | null)?.focus({
+          preventScroll: true,
+        });
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [isAuthLoading, isAuthenticated, location.hash, post]);
+
+  useEffect(() => {
+    if (!expandedImage) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    modalCloseRef.current?.focus();
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpandedImage(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus();
+    };
+  }, [expandedImage]);
+
+  const explainTerm = useCallback(async (termId: string, term: string) => {
+    const cacheKey = `${slug}:${termId}`;
+    const cached = termCache.current.get(cacheKey);
+    const requestId = ++termRequestId.current;
+    setActiveTerm({ termId, term });
+    setTermSummaryError("");
+    if (cached) {
+      setTermSummary(cached);
+      setTermSummaryLoading(false);
+      return;
+    }
+
+    setTermSummary(null);
+    setTermSummaryLoading(true);
+    try {
+      const result = await BlogService.termSummary(slug, termId);
+      if (termRequestId.current !== requestId) return;
+      termCache.current.set(cacheKey, result);
+      setTermSummary(result);
+    } catch (reason) {
+      if (termRequestId.current !== requestId) return;
+      setTermSummaryError(reason instanceof Error ? reason.message : "Unable to explain this term right now");
+    } finally {
+      if (termRequestId.current === requestId) setTermSummaryLoading(false);
+    }
+  }, [slug]);
+
+  const closeTermSummary = useCallback(() => {
+    termRequestId.current += 1;
+    setActiveTerm(null);
+    setTermSummary(null);
+    setTermSummaryLoading(false);
+    setTermSummaryError("");
+  }, []);
+
+  const toggleLike = async () => {
+    if (!post || reactionLoading) return;
+    setReactionLoading(true);
+    try {
+      const reaction = await BlogService.reaction(post.slug, visitorId, liked ? "unlike" : "like");
+      setLiked(reaction.liked);
+      setLikeCount(reaction.likeCount);
+    } finally {
+      setReactionLoading(false);
+    }
+  };
+
+  const shareArticle = async () => {
+    if (!post || shareLoading) return;
+    setShareLoading(true);
+    setShareMessage("");
+    const url = `${window.location.origin}/blogs/${post.slug}`;
+    let channel = "copy";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text: post.excerpt, url });
+        channel = "native";
+        setShareMessage("Shared");
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareMessage("Link copied");
+      }
+      const result = await BlogService.track(post.slug, {
+        eventType: "share",
+        visitorId,
+        sessionId,
+        channel,
+        screenWidth: window.screen.width,
+      });
+      setShareCount((current) => result.shareCount ?? current + 1);
+    } catch (reason) {
+      if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+        setShareMessage("Could not share");
+      }
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const submitComment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const content = commentText.trim();
+    if (!post || !content || commentLoading) return;
+    setCommentLoading(true);
+    setCommentError("");
+    try {
+      const comment = await BlogService.createComment(post.slug, content);
+      setComments((current) => [...current, comment]);
+      setCommentText("");
+    } catch (reason) {
+      setCommentError(reason instanceof Error ? reason.message : "Unable to post comment");
+    } finally {
+      setCommentLoading(false);
+    }
+  };
+
+  const deleteComment = async (comment: BlogComment) => {
+    if (!post || deletingCommentId || !window.confirm("Delete this comment? This cannot be undone.")) return;
+    setDeletingCommentId(comment.commentId);
+    setCommentError("");
+    try {
+      await BlogService.deleteComment(post.slug, comment.commentId);
+      setComments((current) => current.filter((item) => item.commentId !== comment.commentId));
+    } catch (reason) {
+      setCommentError(reason instanceof Error ? reason.message : "Unable to delete comment");
+    } finally {
+      setDeletingCommentId("");
+    }
+  };
+
+  useEffect(() => {
+    if (!post) return;
+    startedAt.current = Date.now();
+    engagementSent.current = false;
+    completed.current = false;
+    const payload = (eventType: "engagement" | "complete", seconds = 0) => ({
+      eventType,
+      visitorId,
+      sessionId,
+      seconds,
+      screenWidth: window.screen.width,
+    });
+    const sendEngagement = () => {
+      if (engagementSent.current) return;
+      engagementSent.current = true;
+      const seconds = Math.max(1, Math.round((Date.now() - startedAt.current) / 1000));
+      navigator.sendBeacon(blogEventUrl(post.slug), new Blob([JSON.stringify(payload("engagement", seconds))], { type: "application/json" }));
+    };
+    const onScroll = () => {
+      const progress = (window.scrollY + window.innerHeight) / document.documentElement.scrollHeight;
+      if (progress >= 0.82 && !completed.current) {
+        completed.current = true;
+        BlogService.track(post.slug, payload("complete")).catch(() => undefined);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", sendEngagement);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", sendEngagement);
+      sendEngagement();
+    };
+  }, [post, sessionId, visitorId]);
+
+  useEffect(() => {
+    if (!post) return;
+    let animationFrame = 0;
+
+    const updateReadProgress = () => {
+      animationFrame = 0;
+      const readingStart = readingStartRef.current;
+      const readingEnd = readingEndRef.current;
+      if (!readingStart || !readingEnd) return;
+
+      const start = readingStart.getBoundingClientRect().top + window.scrollY;
+      const end = readingEnd.getBoundingClientRect().top + window.scrollY;
+      const finalScrollPosition = Math.max(start + 1, end - window.innerHeight);
+      const nextProgress = Math.min(1, Math.max(0, (window.scrollY - start) / (finalScrollPosition - start)));
+      setReadProgress((current) => Math.abs(current - nextProgress) < 0.002 ? current : nextProgress);
+    };
+
+    const requestProgressUpdate = () => {
+      if (!animationFrame) animationFrame = window.requestAnimationFrame(updateReadProgress);
+    };
+
+    setReadProgress(0);
+    updateReadProgress();
+    window.addEventListener("scroll", requestProgressUpdate, { passive: true });
+    window.addEventListener("resize", requestProgressUpdate);
+
+    return () => {
+      window.removeEventListener("scroll", requestProgressUpdate);
+      window.removeEventListener("resize", requestProgressUpdate);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
+  }, [post?.slug]);
+
+  if (error) return <div className="blog-page min-h-screen w-full px-5 pt-32 text-center text-rose-300">{error}</div>;
+  if (!post) return <div className="blog-page min-h-screen w-full px-5 pt-32 text-center text-slate-500">Loading article…</div>;
+
+  return (
+    <div className="blog-page min-h-screen w-full pb-24 pt-24">
+      <div
+        className="blog-reading-progress"
+        role="progressbar"
+        aria-label="Article reading progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={readPercent}
+        aria-valuetext={`${readPercentLeft}% left, approximately ${readingMinutesLeft} minutes left`}
+      >
+        <div className="blog-reading-progress-track">
+          <span className="blog-reading-progress-fill" style={{ width: `${readPercent}%` }} />
+        </div>
+        <div className="blog-reading-progress-meta">
+          <span>{readPercentLeft}% left</span>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1">
+            <Clock3 className="h-3 w-3" />
+            {readingMinutesLeft > 0 ? `~${readingMinutesLeft} min left` : "Finished"}
+          </span>
+        </div>
+      </div>
+      <article>
+        <div className="px-5 pt-4 sm:pt-6">
+          <Link to="/blogs" className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-violet-300 hover:text-violet-200">
+            <ArrowLeft className="h-4 w-4" /> All stories
+          </Link>
+        </div>
+        <header ref={readingStartRef} className="mx-auto max-w-4xl px-5 pb-10 pt-8 text-center sm:px-8 sm:pt-10">
+          {post.series && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Part {post.seriesPart || 1} of {post.series}</p>}
+          <h1 className="mx-auto mt-4 max-w-3xl font-sans text-4xl font-bold leading-[1.12] tracking-[-0.03em] text-white sm:text-5xl">{post.title}</h1>
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-400">{post.excerpt}</p>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500">
+            <span>{post.author}</span><span>·</span><span>{formatDate(post.publishedAt)}</span><span>·</span>
+            <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{readingMinutes} min read</span>
+            <span className="inline-flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" />{post.viewCount || 0} views</span>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={toggleLike}
+              disabled={reactionLoading}
+              aria-pressed={liked}
+              className={`blog-engagement-button ${liked ? "blog-engagement-liked" : ""}`}
+            >
+              <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
+              <span>{liked ? "Liked" : "Like"}</span>
+              <strong>{likeCount}</strong>
+            </button>
+            <button
+              type="button"
+              onClick={shareArticle}
+              disabled={shareLoading}
+              className="blog-engagement-button"
+            >
+              <Share2 className="h-4 w-4" />
+              <span>Share</span>
+              {shareCount > 0 && <strong>{shareCount}</strong>}
+            </button>
+            {shareMessage && <span className="px-2 text-xs font-medium text-violet-300" role="status">{shareMessage}</span>}
+          </div>
+        </header>
+
+        {post.coverImage && <div className="mx-auto max-w-6xl px-5 sm:px-8"><img src={post.coverImage} alt={`${post.title} cover image`} className="max-h-[650px] w-full rounded-3xl border border-white/10 bg-[#090e18] object-contain" /></div>}
+
+        <div className="blog-prose mx-auto mt-12 max-w-3xl px-5 sm:px-8">
+          {post.content?.includes("](#term:") && (
+            <p className="blog-term-guide">
+              <Sparkles className="h-4 w-4" /> Dotted terms open a short, AI-generated explanation for this article.
+            </p>
+          )}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => {
+                if (href?.startsWith("#term:")) {
+                  const termId = href.slice("#term:".length);
+                  const term = React.Children.toArray(children).join("") || termId.replace(/-/g, " ");
+                  return (
+                    <button
+                      type="button"
+                      className="blog-term"
+                      onClick={() => explainTerm(termId, term)}
+                      aria-haspopup="dialog"
+                      title={`Explain ${term} in this context`}
+                    >
+                      {children}<span aria-hidden="true">✦</span>
+                    </button>
+                  );
+                }
+                return <a href={href}>{children}</a>;
+              },
+              img: ({ src, alt }) => {
+                const imageSrc = typeof src === "string" ? src : "";
+                if (!imageSrc) return null;
+                const imageAlt = alt || "Article image";
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedImage({ src: imageSrc, alt: imageAlt })}
+                    className="group relative my-8 block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-white/10 bg-[#090e18] text-left shadow-lg transition hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                    aria-label={`Expand image: ${imageAlt}`}
+                  >
+                    <img src={imageSrc} alt={imageAlt} loading="lazy" className="!m-0 w-full rounded-2xl !border-0 !bg-transparent" />
+                    <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/70 px-3 py-1.5 text-xs font-semibold text-white opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <Maximize2 className="h-3.5 w-3.5" /> Expand
+                    </span>
+                  </button>
+                );
+              },
+            }}
+          >
+            {post.content || ""}
+          </ReactMarkdown>
+        </div>
+
+        <div ref={readingEndRef} aria-hidden="true" />
+
+        <section id="comments" className="mx-auto mt-16 max-w-3xl scroll-mt-24 border-t border-white/10 px-5 pt-10 sm:px-8" aria-labelledby="blog-comments-title">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.17em] text-violet-300">Discussion</p>
+              <h2 id="blog-comments-title" className="mt-2 flex items-center gap-2 text-2xl font-bold text-white">
+                <MessageCircle className="h-5 w-5" /> Comments
+              </h2>
+            </div>
+            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-slate-400">{comments.length}</span>
+          </div>
+
+          {!isAuthLoading && isAuthenticated && (
+            <form onSubmit={submitComment} className="blog-comment-composer mt-6">
+              <label htmlFor="blog-comment" className="blog-label">Add to the conversation</label>
+              <textarea
+                id="blog-comment"
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                maxLength={1200}
+                rows={4}
+                placeholder="Share a thought, question or suggestion…"
+                className="blog-input resize-y"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-[11px] text-slate-500">{commentText.length}/1200</span>
+                <button type="submit" disabled={!commentText.trim() || commentLoading} className="portal-primary-button min-h-0 px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50">
+                  {commentLoading ? "Posting…" : "Post comment"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {!isAuthLoading && !isAuthenticated && (
+            <div className="blog-comment-signin mt-6">
+              <p className="text-sm text-slate-400">Comments are open to signed-in ToolHub users.</p>
+              <Link to="/login" state={{ from: `/blogs/${post.slug}#comments` }} className="mt-3 inline-flex text-sm font-semibold text-violet-300 hover:text-violet-200">Sign in to comment →</Link>
+            </div>
+          )}
+
+          {commentError && <p className="mt-4 text-sm text-rose-300" role="alert">{commentError}</p>}
+
+          <div className="mt-8 space-y-4">
+            {comments.length ? comments.map((comment) => (
+              <article key={comment.commentId} className="blog-comment-card">
+                <div className="flex items-start gap-3">
+                  {comment.authorProfilePicture ? (
+                    <img src={comment.authorProfilePicture} alt="" className="h-9 w-9 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-600 text-xs font-bold text-white">
+                      {comment.authorName.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-white">{comment.authorName}</h3>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <time dateTime={comment.createdAt} className="text-[11px] text-slate-500">{formatCommentDate(comment.createdAt)}</time>
+                        {comment.canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => deleteComment(comment)}
+                            disabled={Boolean(deletingCommentId)}
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+                            aria-label={`Delete comment by ${comment.authorName}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            {deletingCommentId === comment.commentId ? "Deleting…" : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-300">{comment.content}</p>
+                  </div>
+                </div>
+              </article>
+            )) : (
+              <p className="rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-slate-500">No comments yet. You can start the conversation.</p>
+            )}
+          </div>
+        </section>
+      </article>
+
+      {expandedImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-3 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={expandedImage.alt}
+          onClick={() => setExpandedImage(null)}
+        >
+          <button
+            ref={modalCloseRef}
+            type="button"
+            onClick={() => setExpandedImage(null)}
+            className="absolute right-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/70 text-white shadow-xl transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 sm:right-6 sm:top-6"
+            aria-label="Close expanded image"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <figure
+            className="relative z-10 flex max-h-full max-w-[96vw] flex-col items-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              src={expandedImage.src}
+              alt={expandedImage.alt}
+              className="max-h-[86vh] max-w-full rounded-xl object-contain shadow-2xl"
+            />
+            {expandedImage.alt && (
+              <figcaption className="mt-3 max-w-3xl text-center text-sm text-slate-300">
+                {expandedImage.alt}
+              </figcaption>
+            )}
+          </figure>
+        </div>
+      )}
+
+      {activeTerm && (
+        <TermSummaryDialog
+          term={activeTerm.term}
+          summary={termSummary}
+          loading={termSummaryLoading}
+          error={termSummaryError}
+          onClose={closeTermSummary}
+          onRetry={() => explainTerm(activeTerm.termId, activeTerm.term)}
+        />
+      )}
+    </div>
+  );
+}

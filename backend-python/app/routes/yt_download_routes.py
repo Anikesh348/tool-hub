@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -21,7 +22,8 @@ router = APIRouter()
 
 @router.post("/v2/yt/formats")
 async def yt_formats(request: Request, _: Dict[str, str] = Depends(current_user)):
-    return get_formats(await request.json())
+    body = await request.json()
+    return await asyncio.to_thread(get_formats, body)
 
 
 @router.post("/v2/admin/yt/download/add")

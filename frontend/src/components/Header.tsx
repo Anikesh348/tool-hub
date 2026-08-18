@@ -12,12 +12,15 @@ import {
   Download,
   Flame,
   Gauge,
+  Globe2,
   Home,
+  LayoutDashboard,
   LibraryBig,
   LogOut,
   Menu,
   MessageCircle,
   MonitorOff,
+  Navigation,
   Plane,
   Play,
   Plus,
@@ -30,87 +33,15 @@ import {
   X,
 } from "lucide-react";
 import { adminTools } from "../adminTools";
+import { TOOLS } from "../toolsRegistry";
+import { serverAppLinks } from "../serverAppLinks";
 import { useAuth } from "../context/AuthContext";
 import { useNotification } from "../context/NotificationContext";
 import ThemeToggle from "./ThemeToggle";
 import GlobalNotifications from "./GlobalNotifications";
 import { locationPath } from "../utils/authRedirect";
 
-const toolLinks = [
-  {
-    to: "/blogs",
-    label: "Blogs",
-    icon: BookOpen,
-    adminOnly: false,
-  },
-  {
-    to: "/speedtest",
-    label: "Speed Test",
-    icon: Gauge,
-    adminOnly: false,
-  },
-  {
-    to: "/buzzwatch",
-    label: "BuzzWatch",
-    icon: Flame,
-    adminOnly: false,
-  },
-  {
-    to: "/moviehub",
-    label: "MovieHub",
-    icon: Clapperboard,
-    adminOnly: false,
-  },
-  {
-    to: "/pricetracker",
-    label: "Price Tracker",
-    icon: ChartNoAxesCombined,
-    adminOnly: false,
-  },
-  {
-    to: "/flighttracker",
-    label: "Flight Tracker",
-    icon: Plane,
-    adminOnly: false,
-  },
-  {
-    to: "/leetcode",
-    label: "LeetCode Manager",
-    icon: Code2,
-    adminOnly: true,
-  },
-];
-
-const publishingLinks = [
-  {
-    to: "/admin/blogs",
-    label: "Blog Studio",
-    icon: SquarePen,
-  },
-  {
-    to: "/admin/blogs/analytics",
-    label: "Blog Analytics",
-    icon: BarChart3,
-  },
-];
-
-const workspaceLinks = [
-  {
-    to: "/admin/scheduler",
-    label: "Scheduled Jobs",
-    icon: CalendarClock,
-  },
-  {
-    to: "/settings",
-    label: "Settings",
-    icon: Settings,
-  },
-  {
-    to: "/remote",
-    label: "Remote",
-    icon: MonitorOff,
-  },
-];
+const serverApps = [...adminTools, ...serverAppLinks];
 
 type SearchEntry = {
   to: string;
@@ -122,6 +53,40 @@ type SearchEntry = {
   parent?: string;
   kind: "tool" | "feature";
 };
+
+// Auto-generated from the same registries that drive the sidebar/landing
+// grid (TOOLS, adminTools, serverAppLinks), so a tool added to any of those
+// is guaranteed to be searchable even before anyone hand-writes a richer
+// `searchableTools` entry for it with curated keywords/deep links below.
+const REGISTRY_SEARCH_ENTRIES: SearchEntry[] = [
+  ...TOOLS.map((tool) => ({
+    to: tool.path,
+    label: tool.label,
+    description: tool.description,
+    icon: tool.icon,
+    adminOnly: tool.adminOnly,
+    keywords: [tool.label.toLowerCase(), tool.key, "tool"],
+    kind: "tool" as const,
+  })),
+  ...adminTools.map((tool) => ({
+    to: tool.path,
+    label: tool.title,
+    description: tool.description,
+    icon: tool.icon,
+    adminOnly: true,
+    keywords: [tool.title.toLowerCase(), tool.key, "admin", "server"],
+    kind: "tool" as const,
+  })),
+  ...serverAppLinks.map((link) => ({
+    to: link.path,
+    label: link.title,
+    description: `Open ${link.title}`,
+    icon: link.icon,
+    adminOnly: true,
+    keywords: [link.title.toLowerCase(), link.key, "admin", "server"],
+    kind: "tool" as const,
+  })),
+];
 
 const searchableTools: SearchEntry[] = [
   {
@@ -399,33 +364,21 @@ function Header() {
   const searchResultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const isLanding = pathname === "/";
-  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/scheduler" || pathname === "/settings" || pathname === "/remote";
+  const isLocationSection = pathname.startsWith("/admin/location");
+  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/admin/scheduler" || pathname === "/admin/activity" || isLocationSection || pathname === "/settings" || pathname === "/remote";
   const showSidebar = isLanding || isAdminToolPage;
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const showSignIn = !isAuthenticated && !isAuthPage;
   const isAdmin = user?.role === "ADMIN";
-  const visibleToolLinks = toolLinks.filter(
+  const visibleToolLinks = TOOLS.filter(
     ({ adminOnly }) => !adminOnly || isAdmin
   );
+  const curatedPaths = new Set(searchableTools.map((entry) => entry.to));
+  const uncuratedRegistryEntries = REGISTRY_SEARCH_ENTRIES.filter((entry) => !curatedPaths.has(entry.to));
   const availableSearchTools: SearchEntry[] = [
     ...searchableTools.filter(({ adminOnly }) => !adminOnly || isAdmin),
+    ...uncuratedRegistryEntries.filter(({ adminOnly }) => !adminOnly || isAdmin),
     ...(isAdmin ? movieHubAdminFeatures : []),
-    ...(isAdmin
-      ? adminTools.map(({ path, title, description, icon }) => ({
-          to: path,
-          label: title,
-          description,
-          icon,
-          adminOnly: true as const,
-          keywords: [
-            title.toLowerCase(),
-            description.toLowerCase(),
-            "admin",
-            "server",
-          ],
-          kind: "tool" as const,
-        }))
-      : []),
     ...(isAdmin ? jellyfinFeatures : []),
   ];
   const normalizedQuery = quickSearch.trim().toLowerCase();
@@ -598,98 +551,78 @@ function Header() {
           </Link>
 
           <nav className="px-3 pt-2">
-            <Link
-              to="/"
-              className="toolhub-side-link toolhub-side-link-active"
-            >
-              <Home className="h-4 w-4" />
-              Home
-            </Link>
-            {visibleToolLinks.map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} className="toolhub-side-link">
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            ))}
-            <div className="my-4 border-t border-white/[0.07]" />
-            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Tools
-            </p>
-            <Link to="/pricetracker" className="toolhub-side-link text-amber-300">
-              <ChartNoAxesCombined className="h-4 w-4" />
-              Amazon Price Tracker
-            </Link>
-            <Link to="/buzzwatch" className="toolhub-side-link text-cyan-300">
-              <Flame className="h-4 w-4" />
-              BuzzWatch
-            </Link>
-            <Link to="/flighttracker" className="toolhub-side-link text-sky-300">
-              <Plane className="h-4 w-4" />
-              Flight Tracker
-            </Link>
-            {isAdmin && (
-              <Link to="/leetcode" className="toolhub-side-link text-yellow-200">
-                <Code2 className="h-4 w-4" />
-                LeetCode Manager
-              </Link>
-            )}
-            {isAdmin && (
-              <Link to="/admin/courses" className={`toolhub-side-link text-blue-200 ${pathname.startsWith("/admin/courses") ? "toolhub-side-link-active" : ""}`}>
-                <BookOpen className="h-4 w-4" />
-                My Courses
-              </Link>
-            )}
-            <Link to="/moviehub" className="toolhub-side-link text-violet-300">
-              <Clapperboard className="h-4 w-4" />
-              MovieHub
-            </Link>
-            {isAdmin && (
+            {isLocationSection ? (
               <>
-                <div className="my-4 border-t border-white/[0.07]" />
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
-                  Server applications
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Location
                 </p>
-                {adminTools.map(({ key, path, title, icon: Icon }) => (
+                <Link
+                  to="/admin/location"
+                  className={`toolhub-side-link ${pathname === "/admin/location" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  Overview
+                </Link>
+                <Link
+                  to="/admin/location/timeline"
+                  className={`toolhub-side-link ${pathname === "/admin/location/timeline" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <Navigation className="h-4 w-4" />
+                  Timeline
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/"
+                  className={`toolhub-side-link ${pathname === "/" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <Home className="h-4 w-4" />
+                  Home
+                </Link>
+                <a href="/portfolio/" className="toolhub-side-link text-violet-200">
+                  <Globe2 className="h-4 w-4" />
+                  Portfolio
+                </a>
+                <div className="my-4 border-t border-white/[0.07]" />
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Tools
+                </p>
+                {visibleToolLinks.map(({ key, path, label, icon: Icon }) => (
                   <Link
                     key={key}
                     to={path}
-                    className={`toolhub-side-link ${
-                      pathname === path ? "toolhub-side-link-active" : ""
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {title}
-                  </Link>
-                ))}
-                {publishingLinks.map(({ to, label, icon: Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className={`toolhub-side-link ${pathname === to ? "toolhub-side-link-active" : ""}`}
+                    className={`toolhub-side-link ${pathname === path ? "toolhub-side-link-active" : ""}`}
                   >
                     <Icon className="h-4 w-4" />
                     {label}
                   </Link>
                 ))}
+                {isAdmin && (
+                  <>
+                    <div className="my-4 border-t border-white/[0.07]" />
+                    <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
+                      Server applications
+                    </p>
+                    {serverApps.map(({ key, path, title, icon: Icon }) => (
+                      <Link
+                        key={key}
+                        to={path}
+                        className={`toolhub-side-link ${
+                          pathname === path ? "toolhub-side-link-active" : ""
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {title}
+                      </Link>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </nav>
 
           <div className="mt-auto px-3 pb-4 pt-4">
-            {isAdmin && (
-              <div className="space-y-1">
-                {workspaceLinks.map(({ to, label, icon: Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className={`toolhub-side-link w-full ${pathname === to ? "toolhub-side-link-active" : ""}`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </Link>
-                ))}
-              </div>
-            )}
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-600 text-xs font-bold text-white">
                 {(user?.name || "A").slice(0, 1).toUpperCase()}
@@ -909,15 +842,15 @@ function Header() {
       {mobileMenuOpen && (
         <nav className="toolhub-mobile-menu fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/[0.07] bg-[#070b13]/[0.98] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl lg:hidden">
           <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-            Workspace
+            Tools
           </p>
           <div className="grid grid-cols-2 gap-1">
             <Link to="/" className="toolhub-mobile-link">
               <Home className="h-4 w-4 shrink-0" />
               Home
             </Link>
-            {visibleToolLinks.map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} className="toolhub-mobile-link min-w-0">
+            {visibleToolLinks.map(({ key, path, label, icon: Icon }) => (
+              <Link key={key} to={path} className="toolhub-mobile-link min-w-0">
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="truncate">{label}</span>
               </Link>
@@ -933,23 +866,10 @@ function Header() {
             <>
               <div className="my-3 border-t border-white/[0.07]" />
               <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
-                Admin workspace
-              </p>
-              <div className="grid grid-cols-2 gap-1">
-                {[...publishingLinks, ...workspaceLinks].map(
-                  ({ to, label, icon: Icon }) => (
-                    <Link key={to} to={to} className="toolhub-mobile-link min-w-0">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{label}</span>
-                    </Link>
-                  ),
-                )}
-              </div>
-              <p className="mt-3 px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Server applications
               </p>
               <div className="grid grid-cols-2 gap-1">
-                {adminTools.map(({ key, path, title, icon: Icon }) => (
+                {serverApps.map(({ key, path, title, icon: Icon }) => (
                   <Link key={key} to={path} className="toolhub-mobile-link min-w-0">
                     <Icon className="h-4 w-4 shrink-0" />
                     <span className="truncate">{title}</span>

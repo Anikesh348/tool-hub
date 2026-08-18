@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Download, Gauge, RefreshCw, Server, Upload } from "lucide-react";
 import { AdminSettingsService, FleetSpeedTestResult } from "../apis/admin/settings";
+import { formatIstDateTime } from "../utils/formatIst";
 
 const formatSpeed = (value?: number) => value === undefined ? "--" : value.toFixed(1);
 const TARGETS = [
@@ -86,7 +87,7 @@ const FleetSpeedTestPanel = ({ onAuditRefresh }: { onAuditRefresh: () => Promise
         })}
       </div>
 
-      {result?.completedAt && <p className="mt-3 text-xs text-slate-500">Last completed {new Date(result.completedAt).toLocaleString()} via {result.provider}; {result.mode} mode, {result.estimatedTotalMiB.toFixed(1)} MiB.</p>}
+      {result?.completedAt && <p className="mt-3 text-xs text-slate-500">Last completed {formatIstDateTime(result.completedAt)} via {result.provider}; {result.mode} mode, {result.estimatedTotalMiB.toFixed(1)} MiB.</p>}
     </section>
   );
 };

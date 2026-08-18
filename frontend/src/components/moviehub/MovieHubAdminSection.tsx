@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { MovieHubRequest } from "../../apis/moviehub/moviehub";
 import { Loader } from "../Loader";
 import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
@@ -6,26 +6,96 @@ import { MovieHubPagination, usePaginatedItems } from "./MovieHubPagination";
 type MovieHubAdminSectionProps = {
   adminRequestsLoading: boolean;
   approveLoading: boolean;
+  partialApproveLoading: boolean;
   deleteLoading: boolean;
   approvingRequestId: string | null;
+  partiallyApprovingRequestId: string | null;
   deletingRequestId: string | null;
   sortedAdminRequests: MovieHubRequest[];
   onRefresh: () => void;
   onApprove: (requestId: string) => void;
+  onPartialApprove: (requestId: string, seasons: number[]) => void;
   onDelete: (requestId: string) => void;
   formatDateTime: (value?: string) => string;
+};
+
+const SeasonApprovalPicker: React.FC<{
+  request: MovieHubRequest;
+  availableSeasons: number[];
+  isSubmitting: boolean;
+  disabled: boolean;
+  onPartialApprove: (requestId: string, seasons: number[]) => void;
+}> = ({ request, availableSeasons, isSubmitting, disabled, onPartialApprove }) => {
+  const [selectedSeasons, setSelectedSeasons] = useState<number[]>(availableSeasons);
+
+  const toggleSeason = (season: number) => {
+    setSelectedSeasons((current) =>
+      current.includes(season)
+        ? current.filter((value) => value !== season)
+        : [...current, season].sort((a, b) => a - b),
+    );
+  };
+
+  const allSelected = selectedSeasons.length === availableSeasons.length;
+
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5">
+        Select season(s) to approve:
+      </p>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {availableSeasons.map((season) => {
+          const checked = selectedSeasons.includes(season);
+          return (
+            <label
+              key={season}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border ${
+                checked
+                  ? "bg-blue-100 dark:bg-blue-900/30 border-blue-400 text-blue-700 dark:text-blue-300"
+                  : "bg-gray-100 dark:bg-gray-800 border-transparent text-gray-600 dark:text-gray-300"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={checked}
+                onChange={() => toggleSeason(season)}
+              />
+              S{season}
+            </label>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onPartialApprove(request.requestId, selectedSeasons)}
+          disabled={disabled || isSubmitting || selectedSeasons.length === 0}
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white disabled:opacity-60"
+        >
+          {isSubmitting
+            ? "Approving..."
+            : allSelected
+            ? "Approve All Seasons"
+            : `Approve Selected Season${selectedSeasons.length === 1 ? "" : "s"} (${selectedSeasons.length})`}
+        </button>
+      </div>
+    </div>
+  );
 };
 
 export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.memo(
   ({
     adminRequestsLoading,
     approveLoading,
+    partialApproveLoading,
     deleteLoading,
     approvingRequestId,
+    partiallyApprovingRequestId,
     deletingRequestId,
     sortedAdminRequests,
     onRefresh,
     onApprove,
+    onPartialApprove,
     onDelete,
     formatDateTime,
   }) => {
@@ -82,9 +152,21 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
             {paginatedItems.map((request) => {
               const isPending = request.status === "PENDING";
               const isApproved = request.status === "APPROVED";
-              const canDelete = isPending || isApproved;
+              const isPartiallyApproved = request.status === "PARTIALLY_APPROVED";
+              const canDelete = isPending || isApproved || isPartiallyApproved;
               const isApproving = approveLoading && approvingRequestId === request.requestId;
+              const isPartialApproving =
+                partialApproveLoading && partiallyApprovingRequestId === request.requestId;
               const isDeleting = deleteLoading && deletingRequestId === request.requestId;
+              const isMultiSeasonShow =
+                request.mediaType === "SHOWS" && (request.season?.length || 0) > 1;
+              const seasonsOpenForApproval = isPending
+                ? request.season || []
+                : request.pendingSeasons || [];
+              const showSeasonPicker =
+                isMultiSeasonShow &&
+                (isPending || isPartiallyApproved) &&
+                seasonsOpenForApproval.length > 0;
               return (
                 <div
                   key={request.requestId}
@@ -98,10 +180,12 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                           : request.status === "APPROVED"
                           ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                          : request.status === "PARTIALLY_APPROVED"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                           : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
                       }`}
                     >
-                      {request.status}
+                      {request.status.replace("_", " ")}
                     </span>
                   </div>
 
@@ -114,15 +198,25 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
                   </p>
                   {request.mediaType === "SHOWS" && request.season?.length ? (
                     <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                      Seasons: {request.season.join(", ")}
+                      Seasons requested: {request.season.join(", ")}
                     </p>
                   ) : null}
+                  {isPartiallyApproved && (
+                    <>
+                      <p className="mt-1 text-sm text-green-700 dark:text-green-300">
+                        Approved so far: {(request.approvedSeasons || []).join(", ") || "-"}
+                      </p>
+                      <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                        Still pending: {(request.pendingSeasons || []).join(", ") || "-"}
+                      </p>
+                    </>
+                  )}
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                     Requested: {formatDateTime(request.createdAt)}
                   </p>
-                  {request.status === "APPROVED" ? (
+                  {request.status === "APPROVED" || isPartiallyApproved ? (
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Approved: {formatDateTime(request.approvedAt)}
+                      Last approved: {formatDateTime(request.approvedAt)}
                     </p>
                   ) : null}
                   {request.status === "DOWNLOADED" ? (
@@ -131,7 +225,17 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
                     </p>
                   ) : null}
 
-                  {isPending && (
+                  {(isPending || isPartiallyApproved) && showSeasonPicker && (
+                    <SeasonApprovalPicker
+                      request={request}
+                      availableSeasons={seasonsOpenForApproval}
+                      isSubmitting={isPartialApproving}
+                      disabled={partialApproveLoading}
+                      onPartialApprove={onPartialApprove}
+                    />
+                  )}
+
+                  {isPending && !showSeasonPicker && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         onClick={() => onApprove(request.requestId)}
@@ -151,7 +255,7 @@ export const MovieHubAdminSection: React.FC<MovieHubAdminSectionProps> = React.m
                       )}
                     </div>
                   )}
-                  {!isPending && canDelete && (
+                  {canDelete && !(isPending && !showSeasonPicker) && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         onClick={() => onDelete(request.requestId)}

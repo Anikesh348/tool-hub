@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from pymongo import ASCENDING, DESCENDING
 
 from app.services.mongo import col, find_one
+from app.services.ntfy import send_ntfy_alert
 from app.utils.responses import now_iso
 
 
@@ -85,7 +86,20 @@ def create_notification(
         raise ValueError("title and message are required")
     col(NOTIFICATIONS_COLLECTION).insert_one(record)
     record.pop("_id", None)
+    _dispatch_admin_ntfy(record)
     return record
+
+
+def _dispatch_admin_ntfy(record: Dict[str, Any]) -> None:
+    """Best-effort ntfy push for admin-audience alerts, mirroring emit_notification's
+    non-fatal error handling so a delivery failure never breaks the caller's workflow."""
+    if record.get("audience") != "ADMIN":
+        return
+    try:
+        actions = (record.get("metadata") or {}).get("ntfyActions")
+        send_ntfy_alert(f"[{record['severity']}] {record['title']}\n{record['message']}", actions=actions, severity=record.get("severity"))
+    except Exception:
+        logger.exception("Unable to dispatch ntfy alert for notification %s", record.get("notificationId"))
 
 
 def emit_notification(**kwargs: Any) -> Optional[Dict[str, Any]]:

@@ -97,6 +97,16 @@ def cache_delete_pattern(pattern: str) -> int:
     return deleted
 
 
+def cache_count_pattern(pattern: str) -> int:
+    count = 0
+    try:
+        for _ in _redis().scan_iter(match=pattern, count=200):
+            count += 1
+    except Exception as exc:
+        logger.warning("Redis cache count failed for %s: %s", pattern, exc)
+    return count
+
+
 def cache_ping() -> bool:
     try:
         return bool(_redis().ping())

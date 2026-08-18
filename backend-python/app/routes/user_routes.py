@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -17,12 +18,14 @@ router = APIRouter()
 
 @router.post("/v2/register")
 async def register(request: Request):
-    return register_user(await request.json())
+    body = await request.json()
+    return await asyncio.to_thread(register_user, body)
 
 
 @router.post("/v2/login")
 async def login(request: Request, response: Response):
-    return login_user(await request.json(), request, response)
+    body = await request.json()
+    return await asyncio.to_thread(login_user, body, request, response)
 
 
 @router.post("/v2/token/refresh")

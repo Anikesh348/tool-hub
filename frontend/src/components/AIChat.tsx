@@ -1,14 +1,23 @@
 import React, { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { Bot, Menu, MessageSquarePlus, Send, Sparkles, X } from "lucide-react";
+import { Bot, Check, Copy, Menu, MessageSquarePlus, Send, Sparkles, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AIChat as AIChatType, AIChatSummary, AIMessage, AIService } from "../apis/admin/ai";
+import { IST_TIME_ZONE, isSameIstDay } from "../utils/formatIst";
 
 const POLL_INTERVAL_MS = 1000;
 const RESPONSE_TIMEOUT_MS = 330_000;
 
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+const formatTimestamp = (iso: string) => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const sameDay = isSameIstDay(date, new Date());
+  const time = `${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: IST_TIME_ZONE })} IST`;
+  return sameDay ? time : `${date.toLocaleDateString([], { month: "short", day: "numeric", timeZone: IST_TIME_ZONE })} · ${time}`;
+};
 
 const AIChat = () => {
   const [chats, setChats] = useState<AIChatSummary[]>([]);
@@ -19,7 +28,20 @@ const AIChat = () => {
   const [error, setError] = useState("");
   const [gatewayReady, setGatewayReady] = useState<boolean | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const copyResetRef = useRef<number>();
+
+  const copyMessage = async (message: AIMessage) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedId(message.id);
+      window.clearTimeout(copyResetRef.current);
+      copyResetRef.current = window.setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      /* clipboard permission denied — silently ignore */
+    }
+  };
 
   const loadChat = async (chatId: string) => {
     setError("");
@@ -207,19 +229,55 @@ const AIChat = () => {
                 <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Ask a general question, look up current public information, or inspect hp-codex safely. Changes remain blocked.</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {activeChat.messages.map((message) => (
-                  <article key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={message.role === "user" ? "max-w-[88%] rounded-2xl rounded-br-md bg-violet-500 px-4 py-3 text-sm leading-6 text-white" : "max-w-full rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-5 py-4 text-sm leading-7 text-slate-200"}>
-                      {message.role === "assistant" ? (
-                        <div className="ai-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
-                      ) : message.content}
-                      {message.status === "failed" && <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-rose-200">Not delivered</p>}
-                    </div>
-                  </article>
-                ))}
+              <div className="space-y-5">
+                {activeChat.messages.map((message) => {
+                  const isUser = message.role === "user";
+                  return (
+                    <article key={message.id} className={`group flex items-start gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}>
+                      {!isUser && (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300">
+                          <Bot className="h-4 w-4" />
+                        </span>
+                      )}
+                      <div className={`flex min-w-0 flex-col ${isUser ? "items-end" : "items-start"}`}>
+                        <div className={isUser ? "max-w-[88%] rounded-2xl rounded-br-md bg-violet-500 px-4 py-3 text-sm leading-6 text-white" : "max-w-full rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-5 py-4 text-sm leading-7 text-slate-200"}>
+                          {message.role === "assistant" ? (
+                            <div className="ai-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
+                          ) : message.content}
+                          {message.status === "failed" && <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-rose-200">Not delivered</p>}
+                        </div>
+                        <div className={`mt-1 flex items-center gap-2 px-1 text-[10px] text-slate-600 ${isUser ? "flex-row-reverse" : ""}`}>
+                          <span>{formatTimestamp(message.createdAt)}</span>
+                          {message.status !== "pending" && (
+                            <button
+                              onClick={() => copyMessage(message)}
+                              className="flex items-center gap-1 rounded-md p-1 opacity-0 transition hover:bg-white/5 hover:text-slate-300 group-hover:opacity-100 focus-visible:opacity-100"
+                              aria-label="Copy message"
+                            >
+                              {copiedId === message.id ? (
+                                <>
+                                  <Check className="h-3 w-3 text-emerald-400" />
+                                  <span className="text-emerald-400">Copied</span>
+                                </>
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
                 {sending && (
-                  <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-5 py-4 text-sm text-slate-500"><span className="animate-pulse">Codex is thinking...</span></div></div>
+                  <div className="flex items-start gap-2.5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300">
+                      <Bot className="h-4 w-4" />
+                    </span>
+                    <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-5 py-4 text-sm text-slate-500">
+                      <span className="animate-pulse">Codex is thinking...</span>
+                    </div>
+                  </div>
                 )}
                 <div ref={endRef} />
               </div>

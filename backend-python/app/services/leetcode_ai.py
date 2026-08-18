@@ -185,41 +185,76 @@ def _extract_collection_payload(text: str) -> Optional[Dict[str, Any]]:
     return data
 
 
-def _resolve_collection(payload: Dict[str, Any], owner_id: str) -> Dict[str, Any]:
+def _resolve_candidates(payload: Dict[str, Any], owner_id: str) -> Dict[str, Any]:
+    """Resolves proposed slugs against LeetCode's real GraphQL API and the
+    user's current tracker, WITHOUT writing anything to Mongo. Shared by the
+    chat bubble (which inserts immediately after this) and the "Create New
+    Question Set" wizard (which lets the user review this before inserting -
+    see `leetcode_set_wizard.py`)."""
     collection_title = str(payload.get("collectionTitle") or "AI Suggested Questions").strip()[:120]
     existing_urls = {
         doc["url"]
         for doc in col("leetcode").find({"userId": owner_id}, {"url": 1})
         if doc.get("url")
     }
-    now = now_iso()
-    docs: List[Dict[str, Any]] = []
+    resolved: List[Dict[str, Any]] = []
+    skipped_existing: List[str] = []
+    unresolved_count = 0
     for candidate in payload["questions"][:MAX_QUESTIONS_PER_COLLECTION]:
         slug = candidate.get("slug") if isinstance(candidate, dict) else None
         if not slug:
             continue
         meta = fetch_question_metadata(str(slug))
-        if not meta or meta["url"] in existing_urls:
+        if not meta:
+            unresolved_count += 1
+            continue
+        if meta["url"] in existing_urls:
+            skipped_existing.append(meta.get("title") or str(slug))
             continue
         existing_urls.add(meta["url"])
-        docs.append({
-            "questionId": str(uuid.uuid4()),
+        resolved.append({
             "url": meta["url"],
             "title": meta.get("title") or "",
             "difficulty": meta.get("difficulty") or "",
             "tags": meta.get("tags") or [],
             "acRate": meta.get("acRate"),
-            "collectionLabel": collection_title,
-            "userId": owner_id,
-            "status": "unsolved",
-            "createdAt": now,
-            "updatedAt": now,
-            "notes": "",
+            "reason": (candidate.get("reason") if isinstance(candidate, dict) else "") or "",
         })
-    if docs:
-        col("leetcode").insert_many(docs)
     return {
         "label": collection_title,
+        "resolved": resolved,
+        "skippedExisting": skipped_existing,
+        "unresolvedCount": unresolved_count,
+    }
+
+
+def _insert_resolved(label: str, resolved: List[Dict[str, Any]], owner_id: str) -> List[Dict[str, Any]]:
+    now = now_iso()
+    docs = [{
+        "questionId": str(uuid.uuid4()),
+        "url": item["url"],
+        "title": item["title"],
+        "difficulty": item["difficulty"],
+        "tags": item["tags"],
+        "acRate": item.get("acRate"),
+        "collectionLabel": label,
+        "userId": owner_id,
+        "status": "unsolved",
+        "bookmarked": False,
+        "createdAt": now,
+        "updatedAt": now,
+        "notes": "",
+    } for item in resolved]
+    if docs:
+        col("leetcode").insert_many(docs)
+    return docs
+
+
+def _resolve_collection(payload: Dict[str, Any], owner_id: str) -> Dict[str, Any]:
+    resolution = _resolve_candidates(payload, owner_id)
+    docs = _insert_resolved(resolution["label"], resolution["resolved"], owner_id)
+    return {
+        "label": resolution["label"],
         "count": len(docs),
         "questions": jsonable(docs),
     }

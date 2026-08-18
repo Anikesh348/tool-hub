@@ -1,10 +1,10 @@
 """Provider routing for the private AI gateways.
 
-Codex is the preferred provider. When Codex reports that its usage allowance is
-finished the router switches the whole application over to Claude and remembers
+Claude is the preferred provider. When Claude reports that its usage allowance is
+finished the router switches the whole application over to Codex and remembers
 that decision in Redis under a TTL (one day by default). The pin expires on its
-own, and it is cleared early when Claude runs out too, so the next request goes
-back to trying Codex first.
+own, and it is cleared early when Codex runs out too, so the next request goes
+back to trying Claude first.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from app.services.redis_cache import cache_add, cache_delete, cache_get, cache_t
 
 logger = logging.getLogger("uvicorn.error")
 
-PREFERRED_PROVIDER = CODEX_PROVIDER
-FALLBACK_PROVIDER = CLAUDE_PROVIDER
+PREFERRED_PROVIDER = CLAUDE_PROVIDER
+FALLBACK_PROVIDER = CODEX_PROVIDER
 ACTIVE_PROVIDER_KEY = "ai:active-provider"
 DEFAULT_ACTIVE_TTL_SECONDS = 86400
 

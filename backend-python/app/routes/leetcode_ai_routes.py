@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.middlewares.auth import admin_user
 from app.services.leetcode_ai import create_chat, get_chat, list_chats, send_message
+from app.services.leetcode_set_wizard import begin_generation, confirm_generation, get_generation
 from app.utils.responses import success
 
 router = APIRouter()
@@ -31,3 +32,22 @@ def leetcode_ai_send_message(
     user: Dict[str, str] = Depends(admin_user),
 ):
     return success(send_message(chat_id, user["userId"], body.get("content")))
+
+
+@router.post("/v2/leetcode/ai/sets/generate", status_code=202)
+def leetcode_begin_set_generation(body: Dict[str, Any], user: Dict[str, str] = Depends(admin_user)):
+    return success(begin_generation(user["userId"], body))
+
+
+@router.get("/v2/leetcode/ai/sets/generate/{job_id}")
+def leetcode_get_set_generation(job_id: str, user: Dict[str, str] = Depends(admin_user)):
+    return success(get_generation(job_id, user["userId"]))
+
+
+@router.post("/v2/leetcode/ai/sets/generate/{job_id}/confirm")
+def leetcode_confirm_set_generation(
+    job_id: str,
+    body: Dict[str, Any],
+    user: Dict[str, str] = Depends(admin_user),
+):
+    return success(confirm_generation(job_id, user["userId"], body))

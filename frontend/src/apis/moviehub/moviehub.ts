@@ -30,7 +30,9 @@ export interface MovieHubRequest {
   imdbId?: string;
   qualityProfileId: MovieHubQuality;
   season?: number[];
-  status: "PENDING" | "APPROVED" | "DOWNLOADED";
+  status: "PENDING" | "PARTIALLY_APPROVED" | "APPROVED" | "DOWNLOADED";
+  approvedSeasons?: number[];
+  pendingSeasons?: number[];
   createdAt?: string;
   updatedAt?: string;
   approvedAt?: string;
@@ -410,6 +412,20 @@ export const MovieHubService = {
           "Content-Type": "application/json",
           ...getBearerAuthHeader(),
         },
+      },
+    };
+  },
+
+  partialApproveRequest: (requestId: string, seasons: number[]) => {
+    return {
+      url: `${BASE_URL}/v2/admin/moviehub/requests/${requestId}/partial-approve`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ season: seasons }),
       },
     };
   },

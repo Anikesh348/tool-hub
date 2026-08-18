@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -100,7 +102,8 @@ def buzzwatch_person_credits(
 async def buzzwatch_request_title(request: Request, user: dict = Depends(current_user)):
     body = await request.json()
     try:
-        return success(request_buzzwatch_item(user, str(body.get("itemId") or "")))
+        result = await asyncio.to_thread(request_buzzwatch_item, user, str(body.get("itemId") or ""))
+        return success(result)
     except PermissionError as exc:
         return JSONResponse(status_code=403, content=error(str(exc)))
     except ValueError as exc:

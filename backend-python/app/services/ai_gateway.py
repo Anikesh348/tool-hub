@@ -16,8 +16,15 @@ import requests
 
 CODEX_PROVIDER = "codex"
 CLAUDE_PROVIDER = "claude"
+CODEX_OPERATOR_PROVIDER = "codex-operator"
+CLAUDE_OPERATOR_PROVIDER = "claude-operator"
 DEFAULT_PROVIDER = CODEX_PROVIDER
 SUPPORTED_PROVIDERS = (CODEX_PROVIDER, CLAUDE_PROVIDER)
+# Operator providers are intentionally excluded from SUPPORTED_PROVIDERS: they
+# use a separate, more privileged capability profile (see operator_gateway.py)
+# and must never show up alongside the ordinary chat providers in /ai/health
+# or the chat provider-router's fallback list.
+OPERATOR_PROVIDERS = (CODEX_OPERATOR_PROVIDER, CLAUDE_OPERATOR_PROVIDER)
 
 
 class AIGatewayError(RuntimeError):
@@ -63,6 +70,33 @@ def _endpoint(provider: str) -> GatewayEndpoint:
                 os.getenv(
                     "AI_CLAUDE_GATEWAY_SECRET_FILE",
                     "/run/secrets/ai_claude_gateway_client_secret",
+                )
+            ),
+        )
+    if provider == CODEX_OPERATOR_PROVIDER:
+        return GatewayEndpoint(
+            provider=CODEX_OPERATOR_PROVIDER,
+            url=os.getenv("AI_CODEX_OPERATOR_GATEWAY_URL", "").strip().rstrip("/"),
+            client_id=os.getenv("AI_OPERATOR_GATEWAY_CLIENT_ID", "").strip(),
+            secret_file=Path(
+                os.getenv(
+                    "AI_CODEX_OPERATOR_GATEWAY_SECRET_FILE",
+                    "/run/secrets/ai_codex_operator_secret",
+                )
+            ),
+        )
+    if provider == CLAUDE_OPERATOR_PROVIDER:
+        return GatewayEndpoint(
+            provider=CLAUDE_OPERATOR_PROVIDER,
+            url=os.getenv("AI_CLAUDE_OPERATOR_GATEWAY_URL", "").strip().rstrip("/"),
+            client_id=os.getenv(
+                "AI_CLAUDE_OPERATOR_GATEWAY_CLIENT_ID",
+                os.getenv("AI_OPERATOR_GATEWAY_CLIENT_ID", ""),
+            ).strip(),
+            secret_file=Path(
+                os.getenv(
+                    "AI_CLAUDE_OPERATOR_GATEWAY_SECRET_FILE",
+                    "/run/secrets/ai_claude_operator_secret",
                 )
             ),
         )

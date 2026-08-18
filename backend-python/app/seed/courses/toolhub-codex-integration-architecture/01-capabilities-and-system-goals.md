@@ -64,7 +64,7 @@ The implemented platform also provides:
 
 ## 1.5 Deliberate non-goals
 
-**Scope note:** everything below is a statement about *ToolHub's* two profiles, `knowledge-only` and `read-only`. It is not a claim about every AI capability running on this infrastructure — 7.6a documents a third, `operator`, profile that ToolHub's application contract never requests and cannot reach, used only by the separate ops-scheduler system. Keep the two apart: this section is “what can the browser, through ToolHub, ever cause,” not “what can this Codex/Claude deployment do anywhere.”
+**Scope note:** everything below is a statement about *ToolHub chat and Q&A* using `knowledge-only` and `read-only`. It is not a claim about every AI capability on this infrastructure. A third profile, `operator`, exists on a separate gateway/executor pair (7.6a). Chat routes still cannot request it. Confirmed ToolHub **smart scheduled jobs** can, via `operator_gateway.py` — see Lesson 9. Keep “what can a chat turn cause” apart from “what can a confirmed job cause.”
 
 Today ToolHub is not an autonomous operations agent. Through `knowledge-only` or `read-only`, it cannot restart a service, edit a file, install software, SSH to another host, approve a change or run an arbitrary diagnostic command. It does not stream tokens, accept image/file context, run several provider jobs concurrently, or expose either provider through public ingress. It also does not let the caller pick a provider or model per request — that choice is made for it by the router’s usage-exhaustion logic, not by request metadata, so an application cannot be tricked into calling a specific provider by claiming the other is down.
 
@@ -79,17 +79,19 @@ Those boundaries are valuable, and — as 7.6a shows — dropping them is not a 
 | “What is my CPU usage?” | General assistant, read-only | Report trusted host snapshots and name each host |
 | “Explain this UID paragraph” | Course, knowledge-only | Use highlighted passage and lesson context |
 | “What does this module say about NFS identity?” | Course, knowledge-only | Retrieve relevant parts of the open module |
-| “Restart Docker” | Read-only | Refuse the action and explain the boundary |
-| Codex reports its usage allowance is finished mid-conversation | Either capability | Router pins the app to Claude for up to a day; the same request is retried against Claude before the user sees an error |
+| “Restart Docker” from the assistant | Read-only | Refuse the action and explain the boundary |
+| “Propose a nightly price-check job” in Scheduler AI | Scheduler bubble, read-only | Draft a spec only; creating the job is a separate confirm |
+| A confirmed smart job’s cron fires | `operator` (operator gateways) | Unattended privileged run — not a chat profile |
+| Preferred provider reports usage exhausted mid-conversation | Either chat capability | Router pins the app to the fallback for up to a day and retries the same request |
 
 ## 1.7 Multi-provider failover
 
-Codex is still the preferred provider — it is tried first on every request. But Codex CLI usage is a finite daily/weekly/monthly allowance, and a management VM with a single 2 vCPU executor has no room to queue around an exhausted account. Rather than surface that as a user-facing outage, ToolHub’s provider router (`ai_provider_router.py`, backend-python) does the following:
+Claude is the preferred provider in live `ai_provider_router.py` — it is tried first on every `routed_gateway_request`. Codex is the fallback. (Earlier drafts of this course, and the 5 August 2026 failover rollout, had Codex first; the pin logic is the same, only `PREFERRED_PROVIDER` / `FALLBACK_PROVIDER` swapped.) Provider CLI usage is a finite allowance, and a management VM with a single 2 vCPU executor has no room to queue around an exhausted account. Rather than surface that as a user-facing outage, the router does the following:
 
-1. Try the currently active provider first (Codex, unless a pin says otherwise).
-2. If the gateway reports a usage-exhaustion error — a specific error code such as `provider_usage_exhausted`, or a message containing a marker like “usage limit”, “quota” or “credit balance” — treat it as exhausted, not as a generic failure, and retry the same request against Claude.
-3. If Claude answers, record a pin in Redis (`ai:active-provider`, default one-day TTL) so every ToolHub backend worker routes new requests straight to Claude without re-probing a dead Codex account on every call.
-4. If Claude is also exhausted, clear the pin and raise `429 provider_usage_exhausted` — the pin is not worth keeping when neither provider can serve, since the next request should try Codex fresh rather than wait out a TTL on a provider that already failed too.
+1. Try the currently active provider first (Claude, unless a Redis pin says otherwise).
+2. If the gateway reports a usage-exhaustion error — a specific error code such as `provider_usage_exhausted`, or a message containing a marker like “usage limit”, “quota” or “credit balance” — treat it as exhausted, not as a generic failure, and retry the same request against Codex.
+3. If Codex answers, record a pin in Redis (`ai:active-provider`, default one-day TTL) so every ToolHub backend worker routes new requests straight to Codex without re-probing a dead Claude account on every call.
+4. If Codex is also exhausted, clear the pin and raise `429 provider_usage_exhausted` — the pin is not worth keeping when neither provider can serve, since the next request should try Claude fresh rather than wait out a TTL on a provider that already failed too.
 
 Two failure classes are deliberately **not** treated as exhaustion: `gateway_busy` and `executor_busy`. Both gateway and executor allow only one run at a time (4.6), so ordinary concurrency contention must never accidentally pin the whole application onto the fallback provider — that would silently move all traffic to Claude just because two admins asked questions at the same moment.
 

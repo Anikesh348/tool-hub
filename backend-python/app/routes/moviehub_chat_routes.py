@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -1008,6 +1009,10 @@ def handle_yt_chat(context: Dict[str, Any], user_input: str, user: Dict[str, str
 
 async def moviehub_chat_response(request: Request, user: Dict[str, str], admin_route: bool = False):
     body = await request.json()
+    return await asyncio.to_thread(_moviehub_chat_response_sync, body, user, admin_route)
+
+
+def _moviehub_chat_response_sync(body: Dict[str, Any], user: Dict[str, str], admin_route: bool = False):
     conversation_id = body.get("conversationId")
     user_input = body.get("userInput")
     if not isinstance(conversation_id, str) or not conversation_id or not isinstance(user_input, str) or not user_input:

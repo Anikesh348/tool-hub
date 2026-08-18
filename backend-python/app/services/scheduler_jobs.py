@@ -2,7 +2,15 @@ from typing import Any, Dict
 
 from app.services.host_admin import host_admin_request
 
-VALID_SLUGS = {"connectivity-alert", "log-digest", "docker-update"}
+VALID_SLUGS = {
+    "connectivity-alert",
+    "docker-update",
+    "github-contribution-2",
+    "github-contribution-3",
+    "github-contribution-4",
+    "github-pr-publish",
+    "log-digest",
+}
 
 
 def _check_slug(slug: str) -> None:

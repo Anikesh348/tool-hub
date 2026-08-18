@@ -76,7 +76,7 @@ const parseArticleContent = (content: string): ArticleContentSegment[] => {
   return segments.length ? segments : [{ type: "markdown", content }];
 };
 
-function ImageCarousel({ slides, onExpand }: { slides: CarouselSlide[]; onExpand: (image: { src: string; alt: string }) => void }) {
+const ImageCarousel = React.memo(function ImageCarousel({ slides, onExpand }: { slides: CarouselSlide[]; onExpand: (image: { src: string; alt: string }) => void }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const activeImage = slides[activeIndex];
   const move = (direction: number) => {
@@ -96,7 +96,7 @@ function ImageCarousel({ slides, onExpand }: { slides: CarouselSlide[]; onExpand
           className="group relative flex h-full w-full cursor-zoom-in items-center justify-center p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400 sm:p-4"
           aria-label={`Expand ${activeImage.title}`}
         >
-          <img src={activeImage.src} alt={activeImage.alt} className="!m-0 max-h-[620px] w-full rounded-xl !border-0 !bg-transparent object-contain" />
+          <img src={activeImage.src} alt={activeImage.alt} loading="lazy" decoding="async" className="!m-0 max-h-[620px] w-full rounded-xl !border-0 !bg-transparent object-contain" />
           <span className="pointer-events-none absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/75 px-3 py-1.5 text-xs font-semibold text-white opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
             <Maximize2 className="h-3.5 w-3.5" /> Expand
           </span>
@@ -138,7 +138,7 @@ function ImageCarousel({ slides, onExpand }: { slides: CarouselSlide[]; onExpand
       </div>
     </section>
   );
-}
+});
 
 export default function BlogArticle() {
   const { slug = "" } = useParams();
@@ -295,6 +295,46 @@ export default function BlogArticle() {
     setTermSummaryError("");
   }, []);
 
+  const articleSegments = useMemo(() => parseArticleContent(post?.content || ""), [post?.content]);
+  const markdownComponents = useMemo<React.ComponentProps<typeof ReactMarkdown>["components"]>(() => ({
+    a: ({ href, children }) => {
+      if (href?.startsWith("#term:")) {
+        const termId = href.slice("#term:".length);
+        const term = React.Children.toArray(children).join("") || termId.replace(/-/g, " ");
+        return (
+          <button
+            type="button"
+            className="blog-term"
+            onClick={() => explainTerm(termId, term)}
+            aria-haspopup="dialog"
+            title={`Explain ${term} in this context`}
+          >
+            {children}<span aria-hidden="true">✦</span>
+          </button>
+        );
+      }
+      return <a href={href}>{children}</a>;
+    },
+    img: ({ src, alt }) => {
+      const imageSrc = typeof src === "string" ? src : "";
+      if (!imageSrc) return null;
+      const imageAlt = alt || "Article image";
+      return (
+        <button
+          type="button"
+          onClick={() => setExpandedImage({ src: imageSrc, alt: imageAlt })}
+          className="group relative my-8 block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-white/10 bg-[#090e18] text-left shadow-lg transition hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+          aria-label={`Expand image: ${imageAlt}`}
+        >
+          <img src={imageSrc} alt={imageAlt} loading="lazy" decoding="async" className="!m-0 w-full rounded-2xl !border-0 !bg-transparent" />
+          <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/70 px-3 py-1.5 text-xs font-semibold text-white opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
+            <Maximize2 className="h-3.5 w-3.5" /> Expand
+          </span>
+        </button>
+      );
+    },
+  }), [explainTerm]);
+
   const toggleLike = async () => {
     if (!post || reactionLoading) return;
     setReactionLoading(true);
@@ -439,46 +479,6 @@ export default function BlogArticle() {
 
   if (error) return <div className="blog-page min-h-screen w-full px-5 pt-32 text-center text-rose-300">{error}</div>;
   if (!post) return <div className="blog-page min-h-screen w-full px-5 pt-32 text-center text-slate-500">Loading article…</div>;
-
-  const articleSegments = parseArticleContent(post.content || "");
-  const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
-    a: ({ href, children }) => {
-      if (href?.startsWith("#term:")) {
-        const termId = href.slice("#term:".length);
-        const term = React.Children.toArray(children).join("") || termId.replace(/-/g, " ");
-        return (
-          <button
-            type="button"
-            className="blog-term"
-            onClick={() => explainTerm(termId, term)}
-            aria-haspopup="dialog"
-            title={`Explain ${term} in this context`}
-          >
-            {children}<span aria-hidden="true">✦</span>
-          </button>
-        );
-      }
-      return <a href={href}>{children}</a>;
-    },
-    img: ({ src, alt }) => {
-      const imageSrc = typeof src === "string" ? src : "";
-      if (!imageSrc) return null;
-      const imageAlt = alt || "Article image";
-      return (
-        <button
-          type="button"
-          onClick={() => setExpandedImage({ src: imageSrc, alt: imageAlt })}
-          className="group relative my-8 block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-white/10 bg-[#090e18] text-left shadow-lg transition hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
-          aria-label={`Expand image: ${imageAlt}`}
-        >
-          <img src={imageSrc} alt={imageAlt} loading="lazy" className="!m-0 w-full rounded-2xl !border-0 !bg-transparent" />
-          <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/70 px-3 py-1.5 text-xs font-semibold text-white opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
-            <Maximize2 className="h-3.5 w-3.5" /> Expand
-          </span>
-        </button>
-      );
-    },
-  };
 
   return (
     <div className="blog-page min-h-screen w-full pb-24 pt-24">

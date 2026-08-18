@@ -10,6 +10,7 @@ export interface CourseModuleSummary {
   title: string;
   duration: string;
   excerpt: string;
+  section: string;
   readingMinutes: number;
   completed: boolean;
   readingProgress: number;
@@ -47,6 +48,8 @@ export interface CourseQuestion {
 export interface CourseModule extends CourseModuleSummary {
   content: string;
   questions: CourseQuestion[];
+  javaCode?: string;
+  javaFileName?: string;
 }
 
 const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> => {

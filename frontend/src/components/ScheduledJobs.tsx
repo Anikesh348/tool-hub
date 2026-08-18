@@ -3,23 +3,30 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
-  Cpu,
   Loader2,
   Pause,
   Play,
   RefreshCw,
   Save,
+  Sparkles,
   Trash2,
   XCircle,
+  Cpu,
 } from "lucide-react";
 import {
+  deleteUserJob,
   fetchSchedulerJobs,
   fetchSchedulerRuns,
+  fetchUserJobs,
   setJobEnabled,
+  setUserJobEnabled,
   updateJobSchedule,
   type ScheduledJobRun,
   type SchedulerJob,
+  type UserScheduledJob,
 } from "../apis/admin/scheduler";
+import { formatIstDateTime } from "../utils/formatIst";
+import SchedulerAIBubble from "./SchedulerAIBubble";
 
 const STATUS_BADGE: Record<ScheduledJobRun["status"], string> = {
   success: "bg-emerald-400/10 text-emerald-300",
@@ -36,7 +43,7 @@ const jobLabel = (slug: string) =>
 const formatTime = (value: string | null) => {
   if (!value) return "—";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return Number.isNaN(parsed.getTime()) ? value : formatIstDateTime(parsed);
 };
 
 const formatDuration = (startedAt: string, finishedAt: string) => {
@@ -282,12 +289,145 @@ const JobDetail = ({
   );
 };
 
+const UserJobCard = ({
+  job,
+  onChanged,
+}: {
+  job: UserScheduledJob;
+  onChanged: () => void;
+}) => {
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  const toggle = async () => {
+    setBusy(true);
+    setActionError("");
+    try {
+      await setUserJobEnabled(job.id, !job.enabled);
+      onChanged();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not update job state");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Delete "${job.name}"? This can't be undone.`)) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      await deleteUserJob(job.id);
+      onChanged();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not delete job");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-white">{job.name}</span>
+            <span
+              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                job.kind === "smart" ? "bg-amber-400/10 text-amber-300" : "bg-blue-400/10 text-blue-300"
+              }`}
+            >
+              {job.kind}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+            {job.humanReadable || job.cron}
+          </p>
+          {job.lastRunAt && (
+            <p className="mt-1 text-[10px] text-slate-600">
+              Last run: {formatIstDateTime(new Date(job.lastRunAt))} ({job.lastRunStatus})
+            </p>
+          )}
+        </div>
+        {job.enabled ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
+        ) : (
+          <XCircle className="h-4 w-4 shrink-0 text-slate-500" />
+        )}
+      </div>
+      {actionError && <p className="mt-2 text-[11px] text-red-300">{actionError}</p>}
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-violet-400/50 hover:text-white disabled:opacity-50"
+        >
+          {job.enabled ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+          {job.enabled ? "Disable" : "Enable"}
+        </button>
+        <button
+          type="button"
+          onClick={remove}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/20 px-2 py-1 text-[11px] font-semibold text-red-300 transition hover:border-red-400/50 hover:text-red-200 disabled:opacity-50"
+        >
+          <Trash2 className="h-3 w-3" />
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const UserJobsPanel = ({
+  jobs,
+  loading,
+  error,
+  onChanged,
+}: {
+  jobs: UserScheduledJob[];
+  loading: boolean;
+  error: string;
+  onChanged: () => void;
+}) => (
+  <div className="mt-6 border-t border-white/[0.07] pt-4">
+    <div className="mb-3 flex items-center gap-1.5">
+      <Sparkles className="h-3.5 w-3.5 text-violet-300" />
+      <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+        My AI-created jobs
+      </h3>
+    </div>
+    {error && (
+      <div className="mb-3 rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-200">
+        {error}
+      </div>
+    )}
+    {loading && !jobs.length ? (
+      <p className="text-xs text-slate-500">Loading...</p>
+    ) : jobs.length === 0 ? (
+      <p className="text-[11px] text-slate-600">
+        None yet — use the assistant bubble to describe an automation.
+      </p>
+    ) : (
+      <div className="space-y-2">
+        {jobs.map((job) => (
+          <UserJobCard key={job.id} job={job} onChanged={onChanged} />
+        ))}
+      </div>
+    )}
+  </div>
+);
+
 const ScheduledJobs = () => {
   const [jobs, setJobs] = useState<SchedulerJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [userJobs, setUserJobs] = useState<UserScheduledJob[]>([]);
+  const [userJobsLoading, setUserJobsLoading] = useState(true);
+  const [userJobsError, setUserJobsError] = useState("");
 
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true);
@@ -304,11 +444,29 @@ const ScheduledJobs = () => {
     }
   }, []);
 
+  const loadUserJobs = useCallback(async () => {
+    try {
+      const result = await fetchUserJobs();
+      setUserJobs(result.jobs || []);
+      setUserJobsError("");
+    } catch (nextError) {
+      setUserJobsError(
+        nextError instanceof Error ? nextError.message : "AI-created jobs are unavailable",
+      );
+    } finally {
+      setUserJobsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-    const timer = window.setInterval(() => load(true), 30_000);
+    loadUserJobs();
+    const timer = window.setInterval(() => {
+      load(true);
+      loadUserJobs();
+    }, 30_000);
     return () => window.clearInterval(timer);
-  }, [load]);
+  }, [load, loadUserJobs]);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.slug === selectedSlug) || null,
@@ -372,6 +530,13 @@ const ScheduledJobs = () => {
             </button>
           ))}
         </div>
+
+        <UserJobsPanel
+          jobs={userJobs}
+          loading={userJobsLoading}
+          error={userJobsError}
+          onChanged={loadUserJobs}
+        />
       </div>
       {selectedJob ? (
         <JobDetail job={selectedJob} onChanged={() => load(true)} />
@@ -380,6 +545,7 @@ const ScheduledJobs = () => {
           Select a job to see its details.
         </div>
       )}
+      <SchedulerAIBubble onJobCreated={loadUserJobs} />
     </div>
   );
 };

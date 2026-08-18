@@ -14,8 +14,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.config import MEDIA_REQUESTS_COLLECTION
+from app.services.action_tokens import mint_action_token
 from app.services.mail import send_brevo_email
 from app.services.mongo import col, find_one, insert, update_one_or_404
+from app.services.notifications import emit_notification
 from app.utils.http import api_headers, base_url
 from app.utils.responses import now_iso
 
@@ -330,6 +332,47 @@ def delete_show_seasons(series_id: int, seasons: List[int], delete_files: bool) 
     }
 
 
+def remove_unstarted_download_from_arr(record: Dict[str, Any]) -> None:
+    """Best-effort cleanup for deleting an APPROVED/PARTIALLY_APPROVED request: remove
+    the corresponding Radarr/Sonarr entry if it hasn't downloaded anything yet, so the
+    request delete doesn't leave an orphaned monitored movie/series behind. Leaves the
+    Radarr/Sonarr entry alone if any file already exists, to avoid deleting media the
+    user actually has."""
+    media_type = parse_media_type(record.get("mediaType"))
+    if media_type == "MOVIES":
+        tmdb_id = parse_int(record.get("tmdbId"))
+        if not tmdb_id:
+            return
+        base = base_url("RADARR_API_URL")
+        key = os.getenv("RADARR_API_KEY") or ""
+        movies = get_arr_json("GET", f"{base}/movie", key, params={"tmdbId": tmdb_id})
+        movie = movies[0] if isinstance(movies, list) and movies else None
+        if not movie or movie.get("hasFile"):
+            return
+        movie_id = parse_int(movie.get("id"))
+        if not movie_id:
+            return
+        arr_get("DELETE", f"{base}/movie/{movie_id}", key, params={"deleteFiles": "true", "addImportExclusion": "false"})
+        return
+    if media_type == "SHOWS":
+        tvdb_id = parse_int(record.get("tvdbId"))
+        if not tvdb_id:
+            return
+        base = base_url("SONARR_API_URL")
+        key = os.getenv("SONARR_API_KEY") or ""
+        shows = get_arr_json("GET", f"{base}/series", key, params={"tvdbId": tvdb_id})
+        show = shows[0] if isinstance(shows, list) and shows else None
+        if not show:
+            return
+        episode_file_count = parse_int((show.get("statistics") or {}).get("episodeFileCount")) or 0
+        if episode_file_count > 0:
+            return
+        series_id = parse_int(show.get("id"))
+        if not series_id:
+            return
+        arr_get("DELETE", f"{base}/series/{series_id}", key, params={"deleteFiles": "true", "addImportListExclusion": "false"})
+
+
 def fetch_arr_available(media_type: str) -> List[Dict[str, Any]]:
     base = base_url("RADARR_API_URL") if media_type == "MOVIES" else base_url("SONARR_API_URL")
     key = os.getenv("RADARR_API_KEY") if media_type == "MOVIES" else os.getenv("SONARR_API_KEY")
@@ -409,7 +452,7 @@ def queue_media_download(request_record: Dict[str, Any]) -> None:
         payload = {
             "title": lookup.get("title"),
             "qualityProfileId": quality_profile_id(quality),
-            "rootFolderPath": "/tv",
+            "rootFolderPath": "/data/shows",
             "monitored": True,
             "addOptions": {
                 "monitor": "all",
@@ -697,6 +740,115 @@ def send_media_approval_email(record: Dict[str, Any]) -> bool:
     return True
 
 
+def build_media_partial_approval_email(record: Dict[str, Any], approved_now: List[int], pending_seasons: List[int], poster_url: str = "") -> str:
+    is_complete = not pending_seasons
+    heading = "All Requested Seasons Approved" if is_complete else "Seasons Partially Approved"
+    lead = (
+        "Every season you requested has now been approved and queued for download."
+        if is_complete
+        else "Some of the seasons you requested were approved and queued for download. The rest are still awaiting approval."
+    )
+    badge = "Approved" if is_complete else "Partially Approved"
+    safe_heading = escape(heading)
+    safe_lead = escape(lead)
+    safe_badge = escape(badge)
+    safe_title = escape(record.get("title") or "")
+    safe_type = escape(media_type_label(parse_media_type(record.get("mediaType"))))
+    safe_quality = escape(quality_label(record.get("qualityProfileId")))
+    safe_poster = escape(poster_url or "")
+    requested_seasons = sorted_unique_positive_numbers(record.get("season") or [])
+    poster_block = ""
+    if safe_poster:
+        poster_block = f"""
+                            <tr>
+                              <td style="padding: 24px 24px 8px 24px; text-align: center;">
+                                <img src="{safe_poster}" alt="{safe_title} poster" style="width: 180px; max-width: 100%; height: auto; border-radius: 12px; border: 1px solid rgba(255,255,255,0.22);" />
+                              </td>
+                            </tr>
+"""
+    pending_row = ""
+    if pending_seasons:
+        pending_row = f"""
+                            <tr>
+                              <td style="padding: 0 24px 12px 24px; font-size: 14px; color: #c3c7e5;">
+                                <strong style="color: #ffcc66;">Still Pending:</strong> {escape(format_seasons(pending_seasons))}
+                              </td>
+                            </tr>
+"""
+    return f"""
+<html>
+  <body style="margin:0; padding:0; background:#070d22; font-family: 'Segoe UI', Arial, sans-serif; color:#e8ecff;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#070d22; padding: 24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:640px; max-width:92%; border-radius:18px; overflow:hidden; border:1px solid #243050; background:linear-gradient(180deg, #0f1a3a 0%, #0a1126 100%);">
+            <tr><td style="padding: 20px 24px 8px 24px;"><span style="display:inline-block; padding:6px 12px; border-radius:999px; background:linear-gradient(90deg, #3674ff, #8a38ff); font-size:12px; font-weight:700; letter-spacing:0.3px;">{safe_badge}</span></td></tr>
+            <tr><td style="padding: 0 24px 6px 24px; font-size: 28px; line-height: 1.2; color: #ffffff; font-weight: 700;">{safe_heading}</td></tr>
+            <tr><td style="padding: 0 24px 8px 24px; font-size: 15px; line-height: 1.55; color: #c3c7e5;">{safe_lead}</td></tr>
+            {poster_block}
+            <tr><td style="padding: 8px 24px 12px 24px; font-size: 14px; color: #c3c7e5;"><strong style="color: #ffffff;">Title:</strong> {safe_title}</td></tr>
+            <tr><td style="padding: 0 24px 12px 24px; font-size: 14px; color: #c3c7e5;"><strong style="color: #ffffff;">Type:</strong> {safe_type}</td></tr>
+            <tr><td style="padding: 0 24px 12px 24px; font-size: 14px; color: #c3c7e5;"><strong style="color: #ffffff;">Quality:</strong> {safe_quality}</td></tr>
+            <tr><td style="padding: 0 24px 12px 24px; font-size: 14px; color: #c3c7e5;"><strong style="color: #ffffff;">Requested Seasons:</strong> {escape(format_seasons(requested_seasons))}</td></tr>
+            <tr><td style="padding: 0 24px 12px 24px; font-size: 14px; color: #c3c7e5;"><strong style="color: #7CFFB2;">Approved Now:</strong> {escape(format_seasons(approved_now))}</td></tr>
+            {pending_row}
+            <tr><td style="padding: 16px 24px 24px 24px; font-size: 12px; color: #9aa3c7;">Sent by ToolHub MovieHub Automation</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
+
+
+def send_media_partial_approval_email(record: Dict[str, Any], approved_now: List[int], pending_seasons: List[int]) -> bool:
+    email = (record.get("userEmail") or "").strip()
+    if not email:
+        raise RuntimeError("recipient email is missing for approval notification")
+    poster = resolve_poster_for_request(record)
+    html_body = build_media_partial_approval_email(record, approved_now, pending_seasons, poster)
+    subject = (
+        f"All seasons approved: {record.get('title')}"
+        if not pending_seasons
+        else f"Seasons partially approved: {record.get('title')}"
+    )
+    send_brevo_email(subject, email, html_body)
+    col(MEDIA_REQUESTS_COLLECTION).update_one({"requestId": record.get("requestId")}, {"$set": {"notificationSentAt": now_iso(), "updatedAt": now_iso()}})
+    return True
+
+
+def public_api_base_url() -> str:
+    return (os.getenv("PUBLIC_API_BASE_URL") or "https://hostingfrompurva.xyz/api").strip().rstrip("/")
+
+
+def notify_admin_new_media_request(record: Dict[str, Any]) -> None:
+    """Best-effort ADMIN alert (in-app + ntfy, via emit_notification) for any newly
+    submitted media request, regardless of whether it came from the manual request
+    form or the MovieHub chat bot."""
+    api_base = public_api_base_url()
+    approve_token = mint_action_token("moviehub-request-approve", record["requestId"])
+    reject_token = mint_action_token("moviehub-request-reject", record["requestId"])
+    emit_notification(
+        audience="ADMIN",
+        title="New MovieHub request",
+        message=f"{record.get('userName') or record.get('userEmail') or 'A user'} requested {record.get('title')}.",
+        severity="INFO",
+        category="media_request",
+        source="moviehub",
+        action_url="/moviehub/admin/approvals",
+        metadata={
+            "requestId": record["requestId"],
+            "mediaType": record.get("mediaType"),
+            "title": record.get("title"),
+            "ntfyActions": [
+                {"label": "Approve", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-approve?token={approve_token}"},
+                {"label": "Reject", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-reject?token={reject_token}"},
+            ],
+        },
+    )
+
+
 def db_user_for(user_id: str) -> Dict[str, Any]:
     return find_one("users", {"userId": user_id}) or {}
 
@@ -728,6 +880,7 @@ def create_request_from_automation(user_id: str, payload: Dict[str, Any]) -> Dic
     if conflict:
         raise RuntimeError(conflict)
     insert(MEDIA_REQUESTS_COLLECTION, record)
+    notify_admin_new_media_request(record)
     return record
 
 

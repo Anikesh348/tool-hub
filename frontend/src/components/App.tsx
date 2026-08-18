@@ -12,6 +12,10 @@ import FlightHistoryPage from "./FlightHistoryPage";
 import MovieHub from "./MovieHub";
 import BuzzWatch from "./BuzzWatch";
 import AdminToolFrame from "./AdminToolFrame";
+import ActivityTracker from "./ActivityTracker";
+import ActivityDashboard from "./ActivityDashboard";
+import LocationDashboard from "./LocationDashboard";
+import LocationTimeline from "./LocationTimeline";
 import { NotificationProvider } from "../context/NotificationContext";
 import { useAuth } from "../context/AuthContext";
 import { getAdminTool } from "../adminTools";
@@ -26,6 +30,7 @@ import AdminBlogEditor from "./blogs/AdminBlogEditor";
 import AdminBlogAnalytics from "./blogs/AdminBlogAnalytics";
 import AIChat from "./AIChat";
 import CourseIndex from "./courses/CourseIndex";
+import CourseDetail from "./courses/CourseDetail";
 import CourseReader from "./courses/CourseReader";
 import { locationPath, rememberAuthReturnPath } from "../utils/authRedirect";
 
@@ -51,6 +56,9 @@ const getPageTitle = (pathname: string) => {
   if (pathname === "/admin/blogs/analytics") return "Blog Analytics | ToolHub";
   if (pathname === "/admin/ai") return "AI Assistant | ToolHub";
   if (pathname === "/admin/scheduler") return "Scheduled Jobs | ToolHub";
+  if (pathname === "/admin/activity") return "Activity | ToolHub";
+  if (pathname === "/admin/location") return "Location | ToolHub";
+  if (pathname === "/admin/location/timeline") return "Movement Timeline | ToolHub";
   if (pathname.startsWith("/admin/courses")) return "My Courses | ToolHub";
   if (pathname.startsWith("/admin/tools/")) {
     const tool = getAdminTool(pathname.split("/").pop());
@@ -137,13 +145,14 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function App() {
   const { pathname } = useLocation();
   const isLanding = pathname === "/";
-  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/admin/scheduler" || pathname === "/settings" || pathname === "/remote";
+  const hasSidebar = isLanding || pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname.startsWith("/admin/courses") || pathname === "/admin/ai" || pathname === "/admin/scheduler" || pathname === "/admin/activity" || pathname.startsWith("/admin/location") || pathname === "/settings" || pathname === "/remote";
 
   return (
     <NotificationProvider>
       <div className="app-shell min-h-screen">
         <PageTitle />
         <AuthReturnTracker />
+        <ActivityTracker />
         <Header />
         <main
           className={`portal-main min-h-screen w-full ${hasSidebar ? "lg:pl-60" : ""}`}
@@ -233,8 +242,36 @@ function App() {
               }
             />
             <Route
+              path="/admin/activity"
+              element={
+                <AdminRoute>
+                  <ActivityDashboard />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/location"
+              element={
+                <AdminRoute>
+                  <LocationDashboard />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/location/timeline"
+              element={
+                <AdminRoute>
+                  <LocationTimeline />
+                </AdminRoute>
+              }
+            />
+            <Route
               path="/admin/courses"
               element={<AdminRoute><CourseIndex /></AdminRoute>}
+            />
+            <Route
+              path="/admin/courses/:courseId"
+              element={<AdminRoute><CourseDetail /></AdminRoute>}
             />
             <Route
               path="/admin/courses/:courseId/modules/:moduleSlug"

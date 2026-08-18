@@ -3,7 +3,6 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { getAdminTool } from "../adminTools";
 import { useAuth } from "../context/AuthContext";
-import FileManager from "./FileManager";
 import LogDigest from "./LogDigest";
 import SystemMetrics from "./SystemMetrics";
 import UptimeMonitor from "./UptimeMonitor";
@@ -65,7 +64,6 @@ export const AdminToolFrame = () => {
   const Icon = tool.icon;
   const isSystemMetrics = tool.key === "system-metrics";
   const isLogDigest = tool.key === "log-digest";
-  const isFileManager = tool.key === "filemanager";
   const isUptimeMonitor = tool.key === "uptime-monitor";
   const isDockerManager = tool.key === "docker-manager";
   const isMediaConsole = tool.key === "media-console";
@@ -186,8 +184,6 @@ export const AdminToolFrame = () => {
           <SystemMetrics key={frameKey} />
         ) : isLogDigest ? (
           <LogDigest key={frameKey} />
-        ) : isFileManager ? (
-          <FileManager key={frameKey} />
         ) : isUptimeMonitor ? (
           <UptimeMonitor key={frameKey} />
         ) : (
