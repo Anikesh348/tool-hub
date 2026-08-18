@@ -42,6 +42,7 @@ import { CinePilotChat } from "./CineBot";
 
 const DEFAULT_QUALITY: MovieHubQuality = "any";
 const MOVIEHUB_PORTAL_URL = "https://openmovies.hostingfrompurva.xyz";
+const MAX_SEASONS_PER_REQUEST = 2;
 
 const formatDateTime = (value?: string) => {
   if (!value) return "-";
@@ -143,6 +144,8 @@ export const MovieHub: React.FC = () => {
   const [deletingRequestId, setDeletingRequestId] = useState<string | null>(
     null,
   );
+  const [partiallyApprovingRequestId, setPartiallyApprovingRequestId] =
+    useState<string | null>(null);
   const [deletingAvailableMediaId, setDeletingAvailableMediaId] = useState<
     string | null
   >(null);
@@ -316,6 +319,11 @@ export const MovieHub: React.FC = () => {
     fetchData: fetchApproveRequest,
   } = useApiFetcher();
   const {
+    loading: partialApproveLoading,
+    data: partialApproveData,
+    fetchData: fetchPartialApproveRequest,
+  } = useApiFetcher();
+  const {
     loading: deleteLoading,
     data: deleteData,
     fetchData: fetchDeleteRequest,
@@ -360,6 +368,7 @@ export const MovieHub: React.FC = () => {
     createLoading ||
     requestsLoading ||
     approveLoading ||
+    partialApproveLoading ||
     deleteLoading ||
     deleteAvailableLoading ||
     pauseDownloadsLoading ||
@@ -1108,6 +1117,25 @@ export const MovieHub: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (!partialApproveData) return;
+    setPartiallyApprovingRequestId(null);
+    if (partialApproveData.status >= 200 && partialApproveData.status < 300) {
+      addNotification(
+        partialApproveData.body?.response?.message ||
+          "Selected seasons approved. Download queued and mail notification triggered.",
+        "success",
+      );
+      loadMyRequests();
+      loadAllRequests();
+      return;
+    }
+    addNotification(
+      partialApproveData.body?.error || "Failed to approve selected seasons",
+      "error",
+    );
+  }, [partialApproveData, addNotification, loadMyRequests, loadAllRequests]);
+
+  useEffect(() => {
     if (!deleteData) return;
     setDeletingRequestId(null);
     if (deleteData.status >= 200 && deleteData.status < 300) {
@@ -1225,15 +1253,28 @@ export const MovieHub: React.FC = () => {
     return `${result.mediaType}-${identity}-${result.title}-${result.year || "na"}`;
   }, []);
 
-  const toggleSeason = useCallback((resultKey: string, season: number) => {
-    setSeasonsByResult((prev) => {
-      const selected = prev[resultKey] || [];
-      const updated = selected.includes(season)
-        ? selected.filter((item) => item !== season)
-        : [...selected, season].sort((a, b) => a - b);
-      return { ...prev, [resultKey]: updated };
-    });
-  }, []);
+  const toggleSeason = useCallback(
+    (resultKey: string, season: number) => {
+      setSeasonsByResult((prev) => {
+        const selected = prev[resultKey] || [];
+        if (
+          !selected.includes(season) &&
+          selected.length >= MAX_SEASONS_PER_REQUEST
+        ) {
+          addNotification(
+            `You can request at most ${MAX_SEASONS_PER_REQUEST} seasons at once`,
+            "warning",
+          );
+          return prev;
+        }
+        const updated = selected.includes(season)
+          ? selected.filter((item) => item !== season)
+          : [...selected, season].sort((a, b) => a - b);
+        return { ...prev, [resultKey]: updated };
+      });
+    },
+    [addNotification],
+  );
 
   const handleCreateRequest = useCallback(
     (result: MovieHubSearchResult) => {
@@ -1274,6 +1315,18 @@ export const MovieHub: React.FC = () => {
       fetchApproveRequest(url, options);
     },
     [fetchApproveRequest],
+  );
+
+  const handlePartialApproveRequest = useCallback(
+    (requestId: string, seasons: number[]) => {
+      setPartiallyApprovingRequestId(requestId);
+      const { url, options } = MovieHubService.partialApproveRequest(
+        requestId,
+        seasons,
+      );
+      fetchPartialApproveRequest(url, options);
+    },
+    [fetchPartialApproveRequest],
   );
 
   const handleDeleteRequest = useCallback(
@@ -1852,12 +1905,15 @@ export const MovieHub: React.FC = () => {
                 <MovieHubAdminSection
                   adminRequestsLoading={adminRequestsLoading}
                   approveLoading={approveLoading}
+                  partialApproveLoading={partialApproveLoading}
                   deleteLoading={deleteLoading}
                   approvingRequestId={approvingRequestId}
+                  partiallyApprovingRequestId={partiallyApprovingRequestId}
                   deletingRequestId={deletingRequestId}
                   sortedAdminRequests={sortedAdminRequests}
                   onRefresh={loadAllRequests}
                   onApprove={handleApproveRequest}
+                  onPartialApprove={handlePartialApproveRequest}
                   onDelete={handleDeleteRequest}
                   formatDateTime={formatDateTime}
                 />

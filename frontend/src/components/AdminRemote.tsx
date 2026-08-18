@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Cast, Lightbulb, MonitorOff, RefreshCw, Radio, Tv } from "lucide-react";
-import { AdminRemoteService, Pi5RenderState, SmallLightsGuardState } from "../apis/admin/remote";
+import { AdminRemoteService, Pi5RenderState, SmallLightsGuardState, BigLightsGuardState } from "../apis/admin/remote";
 import { Loader } from "./Loader";
 
 const statusText = (state: Pi5RenderState | null) => {
@@ -14,21 +14,25 @@ const statusText = (state: Pi5RenderState | null) => {
 const AdminRemote = () => {
   const [state, setState] = useState<Pi5RenderState | null>(null);
   const [smallLightsGuard, setSmallLightsGuard] = useState<SmallLightsGuardState | null>(null);
+  const [bigLightsGuard, setBigLightsGuard] = useState<BigLightsGuardState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [smallLightsGuardBusy, setSmallLightsGuardBusy] = useState(false);
+  const [bigLightsGuardBusy, setBigLightsGuardBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
 
   const load = async () => {
     setError("");
     try {
-      const [nextState, nextSmallLightsGuard] = await Promise.all([
+      const [nextState, nextSmallLightsGuard, nextBigLightsGuard] = await Promise.all([
         AdminRemoteService.pi5RenderStatus(),
         AdminRemoteService.smallLightsGuard(),
+        AdminRemoteService.bigLightsGuard(),
       ]);
       setState(nextState);
       setSmallLightsGuard(nextSmallLightsGuard);
+      setBigLightsGuard(nextBigLightsGuard);
     } catch (err: any) {
       setError(err?.message || "Remote status is unavailable");
     } finally {
@@ -84,6 +88,22 @@ const AdminRemote = () => {
     }
   };
 
+  const toggleBigLightsGuard = async () => {
+    if (!bigLightsGuard) return;
+    setBigLightsGuardBusy(true);
+    setError("");
+    setFeedback("");
+    try {
+      const nextState = await AdminRemoteService.setBigLightsGuard(!bigLightsGuard.enabled);
+      setBigLightsGuard(nextState);
+      setFeedback(`Big Lights safeguard ${nextState.enabled ? "enabled" : "disabled"}`);
+    } catch (err: any) {
+      setError(err?.message || "Big Lights safeguard is unavailable");
+    } finally {
+      setBigLightsGuardBusy(false);
+    }
+  };
+
   if (loading) return <div className="portal-page flex min-h-screen items-center justify-center"><Loader /></div>;
 
   const paused = !!state?.paused;
@@ -98,8 +118,8 @@ const AdminRemote = () => {
             <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Remote</h1>
             <p className="mt-2 text-sm text-slate-400">Control the Pi5 render stream that feeds the monitor.</p>
           </div>
-          <button onClick={load} disabled={busy || smallLightsGuardBusy} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-slate-200 hover:border-cyan-300/50 disabled:opacity-50">
-            <RefreshCw className={`h-4 w-4 ${busy || smallLightsGuardBusy ? "animate-spin" : ""}`} />
+          <button onClick={load} disabled={busy || smallLightsGuardBusy || bigLightsGuardBusy} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-slate-200 hover:border-cyan-300/50 disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${busy || smallLightsGuardBusy || bigLightsGuardBusy ? "animate-spin" : ""}`} />
             Refresh
           </button>
         </header>
@@ -128,6 +148,31 @@ const AdminRemote = () => {
               className={`relative h-8 w-14 shrink-0 self-end rounded-full border transition disabled:cursor-wait disabled:opacity-60 sm:self-auto ${smallLightsGuard?.enabled ? "border-emerald-300/40 bg-emerald-300/30" : "border-amber-300/40 bg-amber-300/20"}`}
             >
               <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${smallLightsGuard?.enabled ? "left-7" : "left-1"}`} />
+            </button>
+          </div>
+        </section>
+
+        <section aria-labelledby="big-lights-guard-heading" className="rounded-lg border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+            <div className="flex gap-4">
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${bigLightsGuard?.enabled ? "bg-emerald-300/15 text-emerald-200" : "bg-amber-300/15 text-amber-200"}`}>
+                <Lightbulb className="h-6 w-6" />
+              </span>
+              <div>
+                <h2 id="big-lights-guard-heading" className="text-lg font-black text-white">Big Lights safeguard</h2>
+                <p className="mt-1 max-w-xl text-sm leading-6 text-slate-400">When enabled, Home Assistant promptly turns off only Big lights.</p>
+                <p className={`mt-2 text-xs font-bold ${bigLightsGuard?.enabled ? "text-emerald-300" : "text-slate-400"}`} aria-live="polite">Current state: {bigLightsGuard?.enabled ? "Enabled" : "Disabled"}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleBigLightsGuard}
+              disabled={!bigLightsGuard || bigLightsGuardBusy}
+              aria-pressed={bigLightsGuard?.enabled || false}
+              aria-label={`${bigLightsGuard?.enabled ? "Disable" : "Enable"} Big Lights safeguard`}
+              className={`relative h-8 w-14 shrink-0 self-end rounded-full border transition disabled:cursor-wait disabled:opacity-60 sm:self-auto ${bigLightsGuard?.enabled ? "border-emerald-300/40 bg-emerald-300/30" : "border-amber-300/40 bg-amber-300/20"}`}
+            >
+              <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${bigLightsGuard?.enabled ? "left-7" : "left-1"}`} />
             </button>
           </div>
         </section>

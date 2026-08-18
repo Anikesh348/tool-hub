@@ -31,6 +31,9 @@ from app.utils.responses import error, now_iso, success
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+MAX_SEASONS_PER_REQUEST = 2
+MAX_REQUESTS_PER_DAY = 3
+
 @router.get("/v2/moviehub/search")
 def moviehub_search(term: str, mediaType: str, _: Dict[str, str] = Depends(current_user)):
     mt = parse_media_type(mediaType)
@@ -59,6 +62,13 @@ async def moviehub_create_request(request: Request, user: Dict[str, str] = Depen
     seasons = sorted_unique_positive_numbers(body.get("season") or [])
     if mt == "SHOWS" and not seasons:
         return JSONResponse(status_code=400, content=error("season is required for mediaType SHOWS"))
+    if len(seasons) > MAX_SEASONS_PER_REQUEST:
+        return JSONResponse(status_code=400, content=error(f"at most {MAX_SEASONS_PER_REQUEST} seasons can be requested at once"))
+    if user.get("role") != "ADMIN":
+        window_start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
+        requests_today = len(find(MEDIA_REQUESTS_COLLECTION, {"userId": user["userId"], "createdAt": {"$gte": window_start}}))
+        if requests_today >= MAX_REQUESTS_PER_DAY:
+            return JSONResponse(status_code=429, content=error(f"daily limit of {MAX_REQUESTS_PER_DAY} media requests reached, try again tomorrow"))
     try:
         conflict = validate_availability_before_create(mt, title, seasons)
     except Exception as exc:
@@ -74,27 +84,7 @@ async def moviehub_create_request(request: Request, user: Dict[str, str] = Depen
         "status": "PENDING", "createdAt": now_iso(), "updatedAt": now_iso(),
     }
     insert(MEDIA_REQUESTS_COLLECTION, record)
-    api_base = public_api_base_url()
-    approve_token = mint_action_token("moviehub-request-approve", record["requestId"])
-    reject_token = mint_action_token("moviehub-request-reject", record["requestId"])
-    emit_notification(
-        audience="ADMIN",
-        title="New MovieHub request",
-        message=f"{record.get('userName') or record.get('userEmail') or 'A user'} requested {title}.",
-        severity="INFO",
-        category="media_request",
-        source="moviehub",
-        action_url="/moviehub/admin/approvals",
-        metadata={
-            "requestId": record["requestId"],
-            "mediaType": mt,
-            "title": title,
-            "ntfyActions": [
-                {"label": "Approve", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-approve?token={approve_token}"},
-                {"label": "Reject", "url": f"{api_base}/v2/moviehub/requests/{record['requestId']}/quick-reject?token={reject_token}"},
-            ],
-        },
-    )
+    notify_admin_new_media_request(record)
     return JSONResponse(status_code=201, content=success({"message": "request created", "requestId": record["requestId"], "status": "PENDING"}))
 
 
@@ -168,9 +158,87 @@ def _reject_media_request(request_id: str, actor_id: str):
     return success({"message": "request rejected", "requestId": request_id, "status": "REJECTED"})
 
 
+def _partial_approve_media_request(request_id: str, actor_id: str, seasons: List[int]):
+    record = find_one(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
+    if not record:
+        return JSONResponse(status_code=404, content=error("request not found"))
+    if record.get("status") not in {"PENDING", "PARTIALLY_APPROVED"}:
+        return JSONResponse(status_code=400, content=error("only pending or partially approved requests can be partially approved"))
+    if parse_media_type(record.get("mediaType")) != "SHOWS":
+        return JSONResponse(status_code=400, content=error("partial approval only applies to mediaType SHOWS"))
+    requested_seasons = sorted_unique_positive_numbers(record.get("season") or [])
+    already_approved = set(sorted_unique_positive_numbers(record.get("approvedSeasons") or []))
+    remaining = [season for season in requested_seasons if season not in already_approved]
+    selected = sorted_unique_positive_numbers(seasons)
+    if not selected:
+        return JSONResponse(status_code=400, content=error("select at least one season to approve"))
+    invalid = [season for season in selected if season not in remaining]
+    if invalid:
+        return JSONResponse(status_code=400, content=error("season(s) not available to approve: " + ", ".join(str(season) for season in invalid)))
+    try:
+        queue_media_download({**record, "season": selected})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=error(str(exc)))
+    now = now_iso()
+    approved_total = sorted(already_approved | set(selected))
+    pending_remaining = [season for season in requested_seasons if season not in approved_total]
+    new_status = "APPROVED" if not pending_remaining else "PARTIALLY_APPROVED"
+    update_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id}, {
+        "$set": {
+            "status": new_status,
+            "approvedSeasons": approved_total,
+            "pendingSeasons": pending_remaining,
+            "approvedBy": actor_id,
+            "approvedAt": now,
+            "updatedAt": now,
+        },
+        "$push": {"partialApprovals": {"seasons": selected, "approvedBy": actor_id, "approvedAt": now}},
+    })
+    record["status"] = new_status
+    record["approvedSeasons"] = approved_total
+    record["pendingSeasons"] = pending_remaining
+    record["approvedBy"] = actor_id
+    record["approvedAt"] = now
+    try:
+        send_media_partial_approval_email(record, selected, pending_remaining)
+        notification = "sent"
+    except Exception:
+        notification = "failed"
+    seasons_label = ", ".join(str(season) for season in selected)
+    message = f"Season(s) {seasons_label} of {record.get('title')} were approved and queued for download."
+    if pending_remaining:
+        message += f" Season(s) {', '.join(str(season) for season in pending_remaining)} are still pending."
+    emit_notification(
+        audience="USER",
+        target_user_id=record.get("userId"),
+        title="MovieHub request partially approved" if pending_remaining else "MovieHub request approved",
+        message=message,
+        severity="SUCCESS",
+        category="media_request",
+        source="moviehub",
+        action_url="/moviehub/downloads",
+        metadata={"requestId": request_id, "mediaType": record.get("mediaType"), "approvedSeasons": approved_total, "pendingSeasons": pending_remaining},
+    )
+    return success({
+        "message": "All seasons approved and queued for download" if not pending_remaining else "Selected seasons approved and queued for download",
+        "requestId": request_id,
+        "status": new_status,
+        "approvedSeasons": approved_total,
+        "pendingSeasons": pending_remaining,
+        "notification": notification,
+    })
+
+
 @router.post("/v2/admin/moviehub/requests/{request_id}/approve")
 def moviehub_approve_request(request_id: str, user: Dict[str, str] = Depends(admin_user)):
     return _approve_media_request(request_id, user["userId"])
+
+
+@router.post("/v2/admin/moviehub/requests/{request_id}/partial-approve")
+async def moviehub_partial_approve_request(request_id: str, request: Request, user: Dict[str, str] = Depends(admin_user)):
+    body = await request.json()
+    seasons = normalize_season_numbers(body.get("season") or body.get("seasons"))
+    return _partial_approve_media_request(request_id, user["userId"], seasons)
 
 
 @router.post("/v2/admin/moviehub/requests/{request_id}/reject")
@@ -200,8 +268,13 @@ def moviehub_delete_request(request_id: str, user: Dict[str, str] = Depends(curr
     is_admin = user.get("role") == "ADMIN"
     if record.get("status") == "PENDING" and not (is_admin or record.get("userId") == user["userId"]):
         return JSONResponse(status_code=403, content=error("you are not allowed to delete this request"))
-    if record.get("status") == "APPROVED" and not is_admin:
+    if record.get("status") in {"APPROVED", "PARTIALLY_APPROVED"} and not is_admin:
         return JSONResponse(status_code=403, content=error("only admins can delete approved requests"))
+    if record.get("status") in {"APPROVED", "PARTIALLY_APPROVED"}:
+        try:
+            remove_unstarted_download_from_arr(record)
+        except Exception:
+            logger.warning("Failed to remove Radarr/Sonarr entry for requestId=%s", request_id, exc_info=True)
     delete_one_or_404(MEDIA_REQUESTS_COLLECTION, {"requestId": request_id})
     return success({"message": "request deleted", "requestId": request_id})
 
@@ -371,7 +444,7 @@ def moviehub_downloads(scope: str = "mine", user: Dict[str, str] = Depends(curre
     try:
         queue_items = combined_queue_records()
         if not include_all:
-            user_requests = find(MEDIA_REQUESTS_COLLECTION, {"status": "APPROVED", "userId": user["userId"]})
+            user_requests = find(MEDIA_REQUESTS_COLLECTION, {"status": {"$in": ["APPROVED", "PARTIALLY_APPROVED"]}, "userId": user["userId"]})
             queue_items = [
                 item for item in queue_items
                 if any(queue_matches_request(item, request_record) for request_record in user_requests)
@@ -732,10 +805,6 @@ def moviehub_portal_url() -> str:
 
 def toolhub_moviehub_url() -> str:
     return (os.getenv("MOVIEHUB_PORTAL_URL") or "https://hostingfrompurva.xyz/moviehub").strip().rstrip("/")
-
-
-def public_api_base_url() -> str:
-    return (os.getenv("PUBLIC_API_BASE_URL") or "https://hostingfrompurva.xyz/api").strip().rstrip("/")
 
 
 def _confirm_quick_action(action_label: str, category: str, result: Any) -> Any:

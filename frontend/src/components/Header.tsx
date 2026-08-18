@@ -14,11 +14,13 @@ import {
   Gauge,
   Globe2,
   Home,
+  LayoutDashboard,
   LibraryBig,
   LogOut,
   Menu,
   MessageCircle,
   MonitorOff,
+  Navigation,
   Plane,
   Play,
   Plus,
@@ -51,6 +53,40 @@ type SearchEntry = {
   parent?: string;
   kind: "tool" | "feature";
 };
+
+// Auto-generated from the same registries that drive the sidebar/landing
+// grid (TOOLS, adminTools, serverAppLinks), so a tool added to any of those
+// is guaranteed to be searchable even before anyone hand-writes a richer
+// `searchableTools` entry for it with curated keywords/deep links below.
+const REGISTRY_SEARCH_ENTRIES: SearchEntry[] = [
+  ...TOOLS.map((tool) => ({
+    to: tool.path,
+    label: tool.label,
+    description: tool.description,
+    icon: tool.icon,
+    adminOnly: tool.adminOnly,
+    keywords: [tool.label.toLowerCase(), tool.key, "tool"],
+    kind: "tool" as const,
+  })),
+  ...adminTools.map((tool) => ({
+    to: tool.path,
+    label: tool.title,
+    description: tool.description,
+    icon: tool.icon,
+    adminOnly: true,
+    keywords: [tool.title.toLowerCase(), tool.key, "admin", "server"],
+    kind: "tool" as const,
+  })),
+  ...serverAppLinks.map((link) => ({
+    to: link.path,
+    label: link.title,
+    description: `Open ${link.title}`,
+    icon: link.icon,
+    adminOnly: true,
+    keywords: [link.title.toLowerCase(), link.key, "admin", "server"],
+    kind: "tool" as const,
+  })),
+];
 
 const searchableTools: SearchEntry[] = [
   {
@@ -328,7 +364,8 @@ function Header() {
   const searchResultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const isLanding = pathname === "/";
-  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/admin/scheduler" || pathname === "/settings" || pathname === "/remote";
+  const isLocationSection = pathname.startsWith("/admin/location");
+  const isAdminToolPage = pathname.startsWith("/admin/tools/") || pathname.startsWith("/admin/blogs") || pathname === "/admin/scheduler" || pathname === "/admin/activity" || isLocationSection || pathname === "/settings" || pathname === "/remote";
   const showSidebar = isLanding || isAdminToolPage;
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const showSignIn = !isAuthenticated && !isAuthPage;
@@ -336,25 +373,12 @@ function Header() {
   const visibleToolLinks = TOOLS.filter(
     ({ adminOnly }) => !adminOnly || isAdmin
   );
+  const curatedPaths = new Set(searchableTools.map((entry) => entry.to));
+  const uncuratedRegistryEntries = REGISTRY_SEARCH_ENTRIES.filter((entry) => !curatedPaths.has(entry.to));
   const availableSearchTools: SearchEntry[] = [
     ...searchableTools.filter(({ adminOnly }) => !adminOnly || isAdmin),
+    ...uncuratedRegistryEntries.filter(({ adminOnly }) => !adminOnly || isAdmin),
     ...(isAdmin ? movieHubAdminFeatures : []),
-    ...(isAdmin
-      ? adminTools.map(({ path, title, description, icon }) => ({
-          to: path,
-          label: title,
-          description,
-          icon,
-          adminOnly: true as const,
-          keywords: [
-            title.toLowerCase(),
-            description.toLowerCase(),
-            "admin",
-            "server",
-          ],
-          kind: "tool" as const,
-        }))
-      : []),
     ...(isAdmin ? jellyfinFeatures : []),
   ];
   const normalizedQuery = quickSearch.trim().toLowerCase();
@@ -527,49 +551,73 @@ function Header() {
           </Link>
 
           <nav className="px-3 pt-2">
-            <Link
-              to="/"
-              className={`toolhub-side-link ${pathname === "/" ? "toolhub-side-link-active" : ""}`}
-            >
-              <Home className="h-4 w-4" />
-              Home
-            </Link>
-            <a href="/portfolio/" className="toolhub-side-link text-violet-200">
-              <Globe2 className="h-4 w-4" />
-              Portfolio
-            </a>
-            <div className="my-4 border-t border-white/[0.07]" />
-            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Tools
-            </p>
-            {visibleToolLinks.map(({ key, path, label, icon: Icon }) => (
-              <Link
-                key={key}
-                to={path}
-                className={`toolhub-side-link ${pathname === path ? "toolhub-side-link-active" : ""}`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            ))}
-            {isAdmin && (
+            {isLocationSection ? (
               <>
-                <div className="my-4 border-t border-white/[0.07]" />
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
-                  Server applications
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Location
                 </p>
-                {serverApps.map(({ key, path, title, icon: Icon }) => (
+                <Link
+                  to="/admin/location"
+                  className={`toolhub-side-link ${pathname === "/admin/location" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  Overview
+                </Link>
+                <Link
+                  to="/admin/location/timeline"
+                  className={`toolhub-side-link ${pathname === "/admin/location/timeline" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <Navigation className="h-4 w-4" />
+                  Timeline
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/"
+                  className={`toolhub-side-link ${pathname === "/" ? "toolhub-side-link-active" : ""}`}
+                >
+                  <Home className="h-4 w-4" />
+                  Home
+                </Link>
+                <a href="/portfolio/" className="toolhub-side-link text-violet-200">
+                  <Globe2 className="h-4 w-4" />
+                  Portfolio
+                </a>
+                <div className="my-4 border-t border-white/[0.07]" />
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Tools
+                </p>
+                {visibleToolLinks.map(({ key, path, label, icon: Icon }) => (
                   <Link
                     key={key}
                     to={path}
-                    className={`toolhub-side-link ${
-                      pathname === path ? "toolhub-side-link-active" : ""
-                    }`}
+                    className={`toolhub-side-link ${pathname === path ? "toolhub-side-link-active" : ""}`}
                   >
                     <Icon className="h-4 w-4" />
-                    {title}
+                    {label}
                   </Link>
                 ))}
+                {isAdmin && (
+                  <>
+                    <div className="my-4 border-t border-white/[0.07]" />
+                    <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-300/70">
+                      Server applications
+                    </p>
+                    {serverApps.map(({ key, path, title, icon: Icon }) => (
+                      <Link
+                        key={key}
+                        to={path}
+                        className={`toolhub-side-link ${
+                          pathname === path ? "toolhub-side-link-active" : ""
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {title}
+                      </Link>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </nav>

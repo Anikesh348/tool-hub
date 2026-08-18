@@ -24,7 +24,7 @@ I did not want one giant “[agent mode](#term:ai-agent)” with access to every
 - **Tool Builder** turns a prompt into a planned, tested and deployed application.
 - **Operator** works on existing projects and explicitly allowed paths.
 
-![Three Agent Console modes feeding different workflows, with Tool Builder moving through planning, implementation, validation and a running container](/api/v2/blog-assets/6a7723316be80cb7842e06d9)
+![Three Agent Console modes feeding different workflows, with Tool Builder moving through planning, implementation, validation and a running container](/blogs/article-4/agent-console-three-modes-v1.svg)
 
 *The three modes share one interface, but Tool Builder is the only path that automatically aims for a running application.*
 
@@ -32,23 +32,23 @@ The interface keeps those boundaries visible instead of hiding them behind one p
 
 <!-- carousel:start -->
 
-![AI ToolHub chat workspace showing the General, Tool Builder and Operator mode selector](/api/v2/blog-assets/6a774d602c0df9470dcf94f1 "Choose the working mode")
+![AI ToolHub chat workspace showing the General, Tool Builder and Operator mode selector](/blogs/article-4/agent-console-modes-signed-in-v1.png "Choose the working mode")
 
 *The same composer starts three different workflows; the selected mode decides what kind of work the agent may attempt.*
 
-![AI ToolHub Tool Builder Studio showing sample tool prompts and a structured intake form](/api/v2/blog-assets/6a77515d5cc82fecde67903d "Start with Tool Builder Studio")
+![AI ToolHub Tool Builder Studio showing sample tool prompts and a structured intake form](/blogs/article-4/ai-toolhub-tool-builder-studio-v1.png "Start with Tool Builder Studio")
 
 *Sample prompts and the structured intake form turn a rough idea into a clearer brief before the build begins.*
 
-![AI ToolHub generated-tools runtime console showing running and failed tools with lifecycle controls](/api/v2/blog-assets/6a774d612c0df9470dcf94fa "Inspect generated tools")
+![AI ToolHub generated-tools runtime console showing running and failed tools with lifecycle controls](/blogs/article-4/ai-toolhub-generated-tools-v1.png "Inspect generated tools")
 
 *The runtime console keeps generated tools, ports, status, logs and rebuild controls in one reviewable place.*
 
-![AI ToolHub account view showing a verified Git connection](/api/v2/blog-assets/6a774d612c0df9470dcf94ff "Verify Git integration")
+![AI ToolHub account view showing a verified Git connection](/blogs/article-4/ai-toolhub-account-git-connected-v1.png "Verify Git integration")
 
 *Git access is connected and verified separately; the temporary device code and account-usage details are excluded from this screenshot.*
 
-![AI ToolHub account view showing the Codex CLI device authorization flow with the one-time code blurred](/api/v2/blog-assets/6a77515e5cc82fecde679046 "Authorize Codex CLI")
+![AI ToolHub account view showing the Codex CLI device authorization flow with the one-time code blurred](/blogs/article-4/ai-toolhub-codex-authorization-blurred-v1.png "Authorize Codex CLI")
 
 *Agent Console exposes the Codex device authorization flow in the web interface; the one-time code is blurred here.*
 
@@ -94,11 +94,11 @@ It groups containers by Compose project and puts state, resource use, ports and 
 
 <!-- carousel:start -->
 
-![Signed-in Docker Control dashboard showing container state and bounded lifecycle actions](/api/v2/blog-assets/6a7736c556ddec232d84b794 "Docker Control")
+![Signed-in Docker Control dashboard showing container state and bounded lifecycle actions](/blogs/article-4/docker-control-signed-in-v1.jpg "Docker Control")
 
 *Container state and deliberate lifecycle controls.*
 
-![Signed-in File Manager showing the configured root, folders and file actions](/api/v2/blog-assets/6a7736c556ddec232d84b796 "File Manager")
+![Signed-in File Manager showing the configured root, folders and file actions](/blogs/article-4/file-manager-signed-in-v1.png "File Manager")
 
 *Only the configured root is visible to the browser.*
 

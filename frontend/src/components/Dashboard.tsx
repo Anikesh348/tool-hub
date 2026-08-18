@@ -33,12 +33,6 @@ interface Product {
   productId: string;
 }
 
-interface PriceHistoryEntry {
-  productPrice: string;
-  captureTime?: string;
-  createdAt?: string;
-}
-
 interface ProductMetrics {
   currentPrice: number;
   previousPrice: number | null;
@@ -63,26 +57,6 @@ const relativeTime = (value: string | null): string => {
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
   return new Date(value).toLocaleDateString();
 };
-
-const parseHistoryPrice = (entry: PriceHistoryEntry): number =>
-  parseFloat(String(entry.productPrice ?? "").replace(/[^0-9.]/g, ""));
-
-function buildMetrics(entries: PriceHistoryEntry[]): ProductMetrics | null {
-  const sorted = entries
-    .map((entry) => ({ price: parseHistoryPrice(entry), time: entry.captureTime ?? entry.createdAt ?? "" }))
-    .filter((entry) => !Number.isNaN(entry.price))
-    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-  if (sorted.length === 0) return null;
-  const last = sorted[sorted.length - 1];
-  const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
-  return {
-    currentPrice: last.price,
-    previousPrice: prev ? prev.price : null,
-    peakPrice: Math.max(...sorted.map((entry) => entry.price)),
-    lastCheckedIso: last.time || null,
-    sparkline: sorted.slice(-20).map((entry) => entry.price),
-  };
-}
 
 function Sparkline({ points, trendingUp }: { points: number[]; trendingUp: boolean }) {
   if (points.length < 2) {
@@ -142,22 +116,10 @@ const Dashboard: React.FC = () => {
     const requestId = ++metricsRequestId.current;
     setMetricsLoading(true);
     const uniqueProductIds = Array.from(new Set(products.map((product) => product.productId)));
-    Promise.all(
-      uniqueProductIds.map(async (productId) => {
-        const { url, options } = ProductService.getPriceHistory(productId);
-        const response = await requestJson<PriceHistoryEntry[] | { response?: PriceHistoryEntry[] }>(url, options);
-        const entries = Array.isArray(response.body)
-          ? response.body
-          : Array.isArray((response.body as { response?: PriceHistoryEntry[] })?.response)
-          ? (response.body as { response?: PriceHistoryEntry[] }).response!
-          : [];
-        return [productId, buildMetrics(entries)] as const;
-      })
-    ).then((pairs) => {
+    const { url, options } = ProductService.getPriceSummaries(uniqueProductIds);
+    requestJson<Record<string, ProductMetrics>>(url, options).then((response) => {
       if (metricsRequestId.current !== requestId) return;
-      const next: Record<string, ProductMetrics> = {};
-      for (const [productId, metric] of pairs) if (metric) next[productId] = metric;
-      setMetrics(next);
+      setMetrics(response.status === 200 && response.body ? response.body : {});
       setMetricsLoading(false);
     });
   }, [products]);
@@ -450,45 +412,41 @@ const Dashboard: React.FC = () => {
                     </a>
 
                     <div className="mt-auto space-y-2 border-t border-slate-100 pt-3 dark:border-white/5">
-                      {metricsLoading && !metric ? (
-                        <div className="h-14" />
-                      ) : (
-                        <>
-                          <div className="flex items-baseline justify-between">
-                            <div>
-                              <p className="text-[11px] font-medium text-slate-400">Current Price</p>
-                              <p className="text-lg font-bold">{metric ? formatINR(metric.currentPrice) : "—"}</p>
-                            </div>
-                            {percentChange !== null && (
-                              <span className={`flex items-center gap-0.5 text-xs font-semibold ${percentChange > 0 ? "text-red-500" : "text-emerald-500"}`}>
-                                {percentChange > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                                {Math.abs(percentChange).toFixed(0)}%
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Target Price: {Number.isNaN(target) ? "—" : formatINR(target)}
+                      <div className="flex items-baseline justify-between">
+                        <div>
+                          <p className="text-[11px] font-medium text-slate-400">Current Price</p>
+                          <p className="text-lg font-bold">
+                            {metric ? formatINR(metric.currentPrice) : metricsLoading ? "…" : "—"}
                           </p>
-                          {metric && !Number.isNaN(target) && (
-                            <p className={`flex items-center gap-1.5 text-xs font-medium ${reached ? "text-emerald-500" : "text-amber-500"}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${reached ? "bg-emerald-500" : "bg-amber-500"}`} />
-                              {reached ? "Target reached! 🎉" : `${formatINR(Math.abs(gap ?? 0))} above target`}
-                            </p>
-                          )}
-                          {metric && <Sparkline points={metric.sparkline} trendingUp={(percentChange ?? 0) > 0} />}
-                          <div className="flex items-center justify-between pt-1">
-                            <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                              <Clock3 className="h-3 w-3" /> Last checked: {relativeTime(metric?.lastCheckedIso ?? null)}
-                            </span>
-                            <button
-                              onClick={() => setShowChartFor(product)}
-                              className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-violet-400 hover:text-violet-600 dark:border-white/10 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:text-violet-300"
-                            >
-                              View history
-                            </button>
-                          </div>
-                        </>
+                        </div>
+                        {percentChange !== null && (
+                          <span className={`flex items-center gap-0.5 text-xs font-semibold ${percentChange > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                            {percentChange > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                            {Math.abs(percentChange).toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Target Price: {Number.isNaN(target) ? "—" : formatINR(target)}
+                      </p>
+                      {metric && !Number.isNaN(target) && (
+                        <p className={`flex items-center gap-1.5 text-xs font-medium ${reached ? "text-emerald-500" : "text-amber-500"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${reached ? "bg-emerald-500" : "bg-amber-500"}`} />
+                          {reached ? "Target reached! 🎉" : `${formatINR(Math.abs(gap ?? 0))} above target`}
+                        </p>
                       )}
+                      {metric && <Sparkline points={metric.sparkline} trendingUp={(percentChange ?? 0) > 0} />}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                          <Clock3 className="h-3 w-3" /> Last checked: {relativeTime(metric?.lastCheckedIso ?? null)}
+                        </span>
+                        <button
+                          onClick={() => setShowChartFor(product)}
+                          className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-violet-400 hover:text-violet-600 dark:border-white/10 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:text-violet-300"
+                        >
+                          View history
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

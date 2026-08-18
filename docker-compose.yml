@@ -38,6 +38,14 @@ services:
       AI_CLAUDE_GATEWAY_URL: http://100.77.18.27:8767
       AI_CLAUDE_GATEWAY_SECRET_FILE: /run/secrets/ai_claude_gateway_client_secret
       AI_PROVIDER_ACTIVE_TTL_SECONDS: "86400"
+      # Operator gateway pair - same private endpoints opsched's scheduled ops
+      # jobs already use (see /etc/opsched/opsched.env on this host), reused
+      # here for "smart" user-created scheduled jobs (app/services/operator_gateway.py).
+      AI_OPERATOR_GATEWAY_CLIENT_ID: scheduler
+      AI_CODEX_OPERATOR_GATEWAY_URL: http://100.77.18.27:8770
+      AI_CODEX_OPERATOR_GATEWAY_SECRET_FILE: /run/secrets/ai_codex_operator_secret
+      AI_CLAUDE_OPERATOR_GATEWAY_URL: http://100.77.18.27:8772
+      AI_CLAUDE_OPERATOR_GATEWAY_SECRET_FILE: /run/secrets/ai_claude_operator_secret
     depends_on:
       toolhub-auth:
         condition: service_healthy
@@ -54,6 +62,8 @@ services:
       - /srv/toolhub/log-digest:/data/log-digest:ro
       - /etc/codex-gateway/toolhub-admin.secret:/run/secrets/ai_gateway_client_secret:ro
       - /etc/claude-gateway/toolhub-admin.secret:/run/secrets/ai_claude_gateway_client_secret:ro
+      - /etc/opsched/codex-operator.secret:/run/secrets/ai_codex_operator_secret:ro
+      - /etc/opsched/claude-operator.secret:/run/secrets/ai_claude_operator_secret:ro
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]

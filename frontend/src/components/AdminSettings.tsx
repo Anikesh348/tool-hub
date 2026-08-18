@@ -16,6 +16,7 @@ import {
 import { AdminAuditItem, AdminSettingsService, AdminStatus } from "../apis/admin/settings";
 import { Loader } from "./Loader";
 import FleetSpeedTestPanel from "./FleetSpeedTestPanel";
+import { formatIstDateTime } from "../utils/formatIst";
 
 type ActionName = "cache" | "refresh" | "toolhub" | "reboot";
 
@@ -169,7 +170,7 @@ const AdminSettings = () => {
         <section>
           <div className="flex items-center gap-2"><History className="h-4 w-4 text-slate-400" /><h2 className="text-base font-black text-white">Recent admin actions</h2></div>
           <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
-            {audit.length ? audit.map((item) => <div key={item._id} className="grid gap-1 border-b border-white/[0.07] px-4 py-3 text-xs last:border-b-0 sm:grid-cols-[1fr_140px_180px]"><span className="font-bold text-slate-200">{item.action.replaceAll("_", " ")}</span><span className="font-semibold text-slate-400">{item.status}</span><span className="text-slate-500">{new Date(item.createdAt).toLocaleString()}</span></div>) : <p className="p-4 text-sm text-slate-500">No administrative actions recorded yet.</p>}
+            {audit.length ? audit.map((item) => <div key={item._id} className="grid gap-1 border-b border-white/[0.07] px-4 py-3 text-xs last:border-b-0 sm:grid-cols-[1fr_140px_200px]"><span className="font-bold text-slate-200">{item.action.replaceAll("_", " ")}</span><span className="font-semibold text-slate-400">{item.status}</span><span className="text-slate-500">{formatIstDateTime(item.createdAt)}</span></div>) : <p className="p-4 text-sm text-slate-500">No administrative actions recorded yet.</p>}
           </div>
         </section>
       </div>

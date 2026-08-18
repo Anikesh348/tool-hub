@@ -17,6 +17,10 @@ export interface SmallLightsGuardState {
   enabled: boolean;
 }
 
+export interface BigLightsGuardState {
+  enabled: boolean;
+}
+
 const requestJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const send = () => fetch(url, {
     ...(options || {}),
@@ -34,6 +38,11 @@ export const AdminRemoteService = {
   smallLightsGuard: () => requestJson<SmallLightsGuardState>(`${BASE_URL}/v2/admin/home/small-lights-guard`),
   setSmallLightsGuard: (enabled: boolean) => requestJson<SmallLightsGuardState>(
     `${BASE_URL}/v2/admin/home/small-lights-guard/${enabled ? "on" : "off"}`,
+    { method: "POST" },
+  ),
+  bigLightsGuard: () => requestJson<BigLightsGuardState>(`${BASE_URL}/v2/admin/home/big-lights-guard`),
+  setBigLightsGuard: (enabled: boolean) => requestJson<BigLightsGuardState>(
+    `${BASE_URL}/v2/admin/home/big-lights-guard/${enabled ? "on" : "off"}`,
     { method: "POST" },
   ),
   pi5RenderStatus: () => requestJson<Pi5RenderState>(`${BASE_URL}/v2/admin/remote/pi5-render`),

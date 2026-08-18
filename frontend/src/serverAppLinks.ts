@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   CalendarClock,
+  MapPin,
   MonitorOff,
   Settings,
   SquarePen,
@@ -48,6 +49,13 @@ export const serverAppLinks: ServerAppLink[] = [
     title: "Activity",
     icon: Activity,
     tone: "violet",
+  },
+  {
+    key: "location",
+    path: "/admin/location",
+    title: "Location",
+    icon: MapPin,
+    tone: "blue",
   },
   {
     key: "settings",

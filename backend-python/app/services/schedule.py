@@ -114,6 +114,7 @@ class ToolHubScheduler:
         from app.routes.moviehub_routes import moviehub_reconcile
         from app.services.activity import run_activity_rollup
         from app.services.buzzwatch import refresh_buzzwatch_items, warm_buzzwatch_year_cache
+        from app.services.location import run_location_rollup
         from app.services.yt_download import check_downloads, start_download
 
         self._jobs = [
@@ -156,6 +157,11 @@ class ToolHubScheduler:
                 "activity-rollup",
                 _interval_seconds("ACTIVITY_ROLLUP_INTERVAL_SECONDS", 10 * 60),
                 run_activity_rollup,
+            ),
+            FixedIntervalJob(
+                "location-rollup",
+                _interval_seconds("LOCATION_ROLLUP_INTERVAL_SECONDS", 5 * 60),
+                run_location_rollup,
             ),
         ]
         for job in self._jobs:

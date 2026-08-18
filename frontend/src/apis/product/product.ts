@@ -63,4 +63,18 @@ export const ProductService = {
       },
     };
   },
+
+  getPriceSummaries: (productIds: string[]) => {
+    return {
+      url: `${BASE_URL}/v2/price-summary`,
+      options: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getBearerAuthHeader(),
+        },
+        body: JSON.stringify({ productIds }),
+      },
+    };
+  },
 };

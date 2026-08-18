@@ -42,6 +42,34 @@ export interface ScheduleUpdateResult {
   preview: string;
 }
 
+export interface UserScheduledJob {
+  id: string;
+  name: string;
+  description: string;
+  kind: "script" | "smart";
+  cron: string;
+  humanReadable: string;
+  scriptAction: string | null;
+  scriptParams: Record<string, string> | null;
+  prompt: string | null;
+  enabled: boolean;
+  historyKey: string;
+  lastRunAt: string | null;
+  lastRunStatus: "success" | "warning" | "failure" | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserJobSpec {
+  name: string;
+  description?: string;
+  kind: "script" | "smart";
+  schedule: { cron: string; humanReadable?: string };
+  scriptAction?: string | null;
+  scriptParams?: Record<string, string> | null;
+  prompt?: string | null;
+}
+
 const request = async (path: string, options?: RequestInit) => {
   const send = () =>
     fetch(`${BASE_URL}${path}`, {
@@ -77,4 +105,28 @@ export const updateJobSchedule = (
 export const setJobEnabled = (slug: string, enabled: boolean): Promise<{ slug: string; enabled: boolean }> =>
   request(`/v2/admin/scheduler/jobs/${encodeURIComponent(slug)}/${enabled ? "enable" : "disable"}`, {
     method: "POST",
+  });
+
+export const fetchUserJobs = (): Promise<{ jobs: UserScheduledJob[] }> =>
+  request("/v2/admin/scheduler/user-jobs");
+
+export const createUserJob = (
+  spec: UserJobSpec,
+  sourceChatId?: string,
+  sourceMessageId?: string,
+): Promise<UserScheduledJob> =>
+  request("/v2/admin/scheduler/user-jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...spec, sourceChatId, sourceMessageId }),
+  });
+
+export const setUserJobEnabled = (jobId: string, enabled: boolean): Promise<UserScheduledJob> =>
+  request(`/v2/admin/scheduler/user-jobs/${encodeURIComponent(jobId)}/${enabled ? "enable" : "disable"}`, {
+    method: "POST",
+  });
+
+export const deleteUserJob = (jobId: string): Promise<{ deleted: boolean }> =>
+  request(`/v2/admin/scheduler/user-jobs/${encodeURIComponent(jobId)}`, {
+    method: "DELETE",
   });

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="820" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Console modes and Tool Builder workflow</title>
+  <desc id="desc">A request enters Agent Console and branches to General, Tool Builder, or Operator. Tool Builder continues through plan, build, validate, and a running container.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#172033"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020617" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#8b9bb4"/>
+    </marker>
+    <style>
+      .label { font: 700 26px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .small { font: 500 19px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #aebbd0; }
+      .step { font: 700 21px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #dce7f8; }
+    </style>
+  </defs>
+  <rect width="1440" height="820" rx="36" fill="url(#background)"/>
+
+  <rect x="500" y="70" width="440" height="110" rx="28" fill="#202c45" stroke="#60759a" stroke-width="2" filter="url(#shadow)"/>
+  <text x="720" y="118" text-anchor="middle" class="label">One request</text>
+  <text x="720" y="151" text-anchor="middle" class="small">Choose the permission and workflow</text>
+
+  <path d="M720 180 V235 M720 235 H265 V285 M720 235 V285 M720 235 H1175 V285" fill="none" stroke="#8b9bb4" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <rect x="95" y="290" width="340" height="150" rx="28" fill="#172c3b" stroke="#2d8b81" stroke-width="3" filter="url(#shadow)"/>
+  <text x="265" y="352" text-anchor="middle" class="label">General</text>
+  <text x="265" y="389" text-anchor="middle" class="small">Chat and coding help</text>
+
+  <rect x="550" y="290" width="340" height="150" rx="28" fill="#372b17" stroke="#c9963d" stroke-width="3" filter="url(#shadow)"/>
+  <text x="720" y="352" text-anchor="middle" class="label">Tool Builder</text>
+  <text x="720" y="389" text-anchor="middle" class="small">Create a small application</text>
+
+  <rect x="1005" y="290" width="340" height="150" rx="28" fill="#311f36" stroke="#9d62ae" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1175" y="352" text-anchor="middle" class="label">Operator</text>
+  <text x="1175" y="389" text-anchor="middle" class="small">Allowed host paths only</text>
+
+  <path d="M720 440 V525" fill="none" stroke="#c9963d" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="120" y="540" width="245" height="105" rx="24" fill="#202c45" stroke="#60759a" stroke-width="2"/>
+    <rect x="438" y="540" width="245" height="105" rx="24" fill="#202c45" stroke="#60759a" stroke-width="2"/>
+    <rect x="756" y="540" width="245" height="105" rx="24" fill="#202c45" stroke="#60759a" stroke-width="2"/>
+    <rect x="1074" y="540" width="245" height="105" rx="24" fill="#20332c" stroke="#48a77c" stroke-width="3"/>
+  </g>
+  <text x="242" y="600" text-anchor="middle" class="step">Plan</text>
+  <text x="560" y="600" text-anchor="middle" class="step">Build</text>
+  <text x="878" y="600" text-anchor="middle" class="step">Validate</text>
+  <text x="1196" y="590" text-anchor="middle" class="step">Running</text>
+  <text x="1196" y="620" text-anchor="middle" class="small">container</text>
+  <path d="M365 592 H425 M683 592 H743 M1001 592 H1061" fill="none" stroke="#8b9bb4" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <text x="720" y="738" text-anchor="middle" class="small">Artifacts and logs stay visible at every Tool Builder stage</text>
+</svg>

@@ -257,7 +257,7 @@ export default function CourseReader() {
         <div className="relative h-full">
         <aside className={`h-full shrink-0 overflow-hidden transition-[width] duration-300 ${navCollapsed ? "w-0" : "w-64"}`}>
           <div className="h-full w-64 overflow-y-auto border-r border-slate-200 px-4 py-6 dark:border-white/10">
-            <Link to="/admin/courses" className="mb-6 flex items-center gap-2 text-sm text-slate-500 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300"><ArrowLeft className="h-4 w-4" /> All courses</Link>
+            <Link to={`/admin/courses/${course.id}`} className="mb-6 flex items-center gap-2 text-sm text-slate-500 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300"><ArrowLeft className="h-4 w-4" /> Course overview</Link>
             <nav className="space-y-2">
               {groupBySection(course.modules).map((group) => {
                 const isExpanded = !group.section || expandedSections.has(group.section);
@@ -300,7 +300,7 @@ export default function CourseReader() {
           <div className="mx-auto max-w-3xl">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
-                <Link to="/admin/courses" className="flex items-center gap-2 text-sm text-slate-500 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300 lg:hidden"><ArrowLeft className="h-4 w-4" /> Course</Link>
+                <Link to={`/admin/courses/${course.id}`} className="flex items-center gap-2 text-sm text-slate-500 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300 lg:hidden"><ArrowLeft className="h-4 w-4" /> Course</Link>
                 <button onClick={() => setNavCollapsed((current) => !current)} title={navCollapsed ? "Show module list" : "Hide module list"} className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white lg:block">{navCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}</button>
               </div>
               <button onClick={() => setPanelOpen(true)} className="ml-auto flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100 dark:border-violet-400/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"><Sparkles className="h-4 w-4" /> AI questions {module.questions.length ? `(${module.questions.length})` : ""}</button>

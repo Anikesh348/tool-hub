@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.middlewares.moviehub_access import moviehub_access_middleware
 from app.middlewares.metrics import metrics_middleware, metrics_response
-from app.routes import activity_routes, admin_home_routes, admin_remote_routes, admin_routes, admin_settings_routes, ai_routes, blog_routes, buzzwatch_routes, course_routes, flight_routes, health_routes, leetcode_ai_routes, leetcode_routes, moviehub_chat_routes, moviehub_routes, notification_routes, product_routes, scheduler_routes, speedtest_routes, user_routes, yt_download_routes
+from app.routes import activity_routes, admin_home_routes, alexa_routes, admin_remote_routes, admin_routes, admin_settings_routes, ai_routes, blog_routes, buzzwatch_routes, course_routes, flight_routes, health_routes, leetcode_ai_routes, leetcode_routes, location_routes, moviehub_chat_routes, moviehub_routes, notification_routes, product_routes, scheduler_ai_routes, scheduler_routes, speedtest_routes, user_routes, yt_download_routes
 from app.services.blogs import ensure_blog_indexes_and_seed
 from app.services.blog_announcements import ensure_blog_announcement_indexes
 from app.services.ai_chats import ensure_ai_indexes
@@ -15,8 +15,12 @@ from app.services.leetcode_ai import ensure_leetcode_ai_indexes
 from app.services.leetcode_set_wizard import ensure_leetcode_set_wizard_indexes
 from app.services.notifications import ensure_notification_indexes
 from app.services.activity import ensure_activity_indexes
+from app.services.products import ensure_product_indexes
+from app.services.location import ensure_location_indexes
+from app.services.scheduler_ai import ensure_scheduler_ai_indexes
 from app.services.scheduler_history import ensure_scheduler_history_indexes
 from app.services.schedule import price_check_scheduler
+from app.services.user_scheduler import ensure_user_scheduler_indexes, user_job_scheduler
 from app.utils.responses import error
 
 
@@ -31,11 +35,17 @@ async def lifespan(_: FastAPI):
     ensure_notification_indexes()
     ensure_scheduler_history_indexes()
     ensure_activity_indexes()
+    ensure_location_indexes()
+    ensure_scheduler_ai_indexes()
+    ensure_user_scheduler_indexes()
+    ensure_product_indexes()
     price_check_scheduler.start()
+    user_job_scheduler.start()
     try:
         yield
     finally:
         await price_check_scheduler.stop()
+        await user_job_scheduler.stop()
 
 
 def create_app() -> FastAPI:
@@ -60,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(admin_routes.router)
     app.include_router(admin_home_routes.router)
+    app.include_router(alexa_routes.router)
     app.include_router(admin_remote_routes.router)
     app.include_router(admin_settings_routes.router)
     app.include_router(ai_routes.router)
@@ -75,7 +86,9 @@ def create_app() -> FastAPI:
     app.include_router(yt_download_routes.router)
     app.include_router(notification_routes.router)
     app.include_router(scheduler_routes.router)
+    app.include_router(scheduler_ai_routes.router)
     app.include_router(activity_routes.router)
+    app.include_router(location_routes.router)
     app.include_router(moviehub_routes.router)
     app.include_router(moviehub_chat_routes.router)
     return app

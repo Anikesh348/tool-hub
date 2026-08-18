@@ -97,7 +97,7 @@ def _dispatch_admin_ntfy(record: Dict[str, Any]) -> None:
         return
     try:
         actions = (record.get("metadata") or {}).get("ntfyActions")
-        send_ntfy_alert(f"[{record['severity']}] {record['title']}\n{record['message']}", actions=actions)
+        send_ntfy_alert(f"[{record['severity']}] {record['title']}\n{record['message']}", actions=actions, severity=record.get("severity"))
     except Exception:
         logger.exception("Unable to dispatch ntfy alert for notification %s", record.get("notificationId"))
 

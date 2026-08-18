@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AIChat as AIChatType, AIChatSummary, AIMessage, AIService } from "../apis/admin/ai";
+import { IST_TIME_ZONE, isSameIstDay } from "../utils/formatIst";
 
 const POLL_INTERVAL_MS = 1000;
 const RESPONSE_TIMEOUT_MS = 330_000;
@@ -13,9 +14,9 @@ const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeou
 const formatTimestamp = (iso: string) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const sameDay = date.toDateString() === new Date().toDateString();
-  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return sameDay ? time : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} · ${time}`;
+  const sameDay = isSameIstDay(date, new Date());
+  const time = `${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: IST_TIME_ZONE })} IST`;
+  return sameDay ? time : `${date.toLocaleDateString([], { month: "short", day: "numeric", timeZone: IST_TIME_ZONE })} · ${time}`;
 };
 
 const AIChat = () => {

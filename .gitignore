@@ -38,3 +38,17 @@ frontend/nginx.conf
 scripts
 # Suffixed env backups (e.g. .env.dev.pre-powercut-...) also hold live secrets
 .env.*
+
+# Editor/backup artifacts left by AI coding tools in this repo
+*.bak-*
+.codex-backups/
+/backups/
+__pycache__/
+*.pyc
+
+# Pre-change snapshots and macOS AppleDouble files
+*.pre-*
+._*
+
+# Local analysis tool output
+/graphify-out/

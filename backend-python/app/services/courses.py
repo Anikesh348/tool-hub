@@ -154,6 +154,72 @@ INTEGRATION_MODULE_SEEDS = (
         "section": "Operations & Case Study",
         "file": "08-leetcode-ai-a-second-application.md",
     },
+    {
+        "slug": "current-application-inventory",
+        "position": 9,
+        "title": "Current application inventory — who calls the gateway, and how",
+        "duration": "45–60 minutes",
+        "excerpt": "Every live ToolHub AI caller as of August 2026: profiles, routes, metadata.application, Scheduler AI vs operator jobs, and Claude-first routing.",
+        "section": "Operations & Case Study",
+        "file": "09-current-application-inventory.md",
+    },
+)
+
+HOMELAB_HDD_BACKUP_MODULE_SEEDS = (
+    {
+        "slug": "failure-domains-and-goals",
+        "position": 1,
+        "title": "Failure domains and what this backup is for",
+        "duration": "30–40 minutes",
+        "excerpt": "Which disk dying this job can survive, which disasters it cannot, and why media is deliberately excluded.",
+        "section": "Architecture",
+        "file": "01-failure-domains-and-goals.md",
+    },
+    {
+        "slug": "live-paths-vs-recovery-points",
+        "position": 2,
+        "title": "Live paths versus recovery points",
+        "duration": "30–40 minutes",
+        "excerpt": "Telling /srv/data/photos, /srv/data/documents, and their dated recovery-point copies apart, and what 'latest' really means.",
+        "section": "Architecture",
+        "file": "02-live-paths-vs-recovery-points.md",
+    },
+    {
+        "slug": "nightly-job-systemd-rsync-hardlinks",
+        "position": 3,
+        "title": "The nightly job: systemd, rsync, hardlinks",
+        "duration": "45–60 minutes",
+        "excerpt": "Timer/service settings, the flock shared with the verifier, --link-dest hardlink savings, and resuming an interrupted run.",
+        "section": "Mechanics",
+        "file": "03-nightly-job-systemd-rsync-hardlinks.md",
+    },
+    {
+        "slug": "application-consistent-databases",
+        "position": 4,
+        "title": "Application-consistent databases",
+        "duration": "40–50 minutes",
+        "excerpt": "Why rsync alone corrupts live databases, and how pg_dump, SQLite's online backup API, and Redis BGSAVE avoid it.",
+        "section": "Mechanics",
+        "file": "04-application-consistent-databases.md",
+    },
+    {
+        "slug": "safety-gates-immich-pause-verify",
+        "position": 5,
+        "title": "Safety gates, the Immich pause, and the verify timer",
+        "duration": "40–50 minutes",
+        "excerpt": "The six preflight checks that make the job refuse to run, the two-pass Immich strategy, and what the monthly verifier actually checks.",
+        "section": "Operations",
+        "file": "05-safety-gates-immich-pause-verify.md",
+    },
+    {
+        "slug": "retention-prune-restore-discipline",
+        "position": 6,
+        "title": "Retention, prune, and restore discipline",
+        "duration": "30–40 minutes",
+        "excerpt": "The overlapping daily/weekly/monthly retention windows, the safety checks around deletion, and the correct restore order.",
+        "section": "Operations",
+        "file": "06-retention-prune-restore-discipline.md",
+    },
 )
 
 HLD_INTERVIEW_MODULE_SEEDS = (
@@ -699,6 +765,34 @@ LLD_PRACTICE_MODULE_SEEDS = (
     {"slug": "design-a-task-scheduler", "position": 18, "title": "Design a Task Scheduler", "duration": "35–45 minutes", "excerpt": "Command-based tasks, a single priority-plus-time ordering, flag-based cancellation, and a non-busy-waiting worker pool.", "section": "Larger Systems & Marketplaces", "file": "18-design-a-task-scheduler.md", "codeFile": "TaskSchedulerSystem.java"},
 )
 
+GENAI_FOUNDATIONS_MODULE_SEEDS = (
+    {"slug": "ai-before-generative-ai", "position": 1, "title": "AI Before Generative AI", "duration": "30–40 minutes", "excerpt": "Symbolic AI, classical machine learning, and pre-transformer deep learning — what \"AI\" meant before ChatGPT, and why each era hit a wall.", "section": "Where Generative AI Came From", "file": "01-ai-before-generative-ai.md"},
+    {"slug": "what-generative-ai-actually-is", "position": 2, "title": "What Generative AI Actually Is", "duration": "25–35 minutes", "excerpt": "Discriminative vs. generative models, next-token prediction, and why generation is older than ChatGPT but only recently got good.", "section": "Where Generative AI Came From", "file": "02-what-generative-ai-actually-is.md"},
+    {"slug": "neural-networks-tokens-and-embeddings", "position": 3, "title": "Neural Networks, Tokens and Embeddings", "duration": "35–45 minutes", "excerpt": "What a neural network actually computes, how text becomes tokens, and how embeddings turn tokens into meaning-bearing vectors.", "section": "How It Works Under the Hood", "file": "03-neural-networks-tokens-and-embeddings.md"},
+    {"slug": "the-transformer-and-attention", "position": 4, "title": "The Transformer and Attention", "duration": "40–50 minutes", "excerpt": "Self-attention, Query/Key/Value, multi-head attention, and why this architecture made today's scale of LLMs possible.", "section": "How It Works Under the Hood", "file": "04-the-transformer-and-attention.md"},
+    {"slug": "how-llms-are-trained", "position": 5, "title": "How LLMs Are Trained", "duration": "35–45 minutes", "excerpt": "Pretraining, supervised fine-tuning, and RLHF — the three-stage pipeline that turns a raw next-token predictor into an assistant.", "section": "How It Works Under the Hood", "file": "05-how-llms-are-trained.md"},
+    {"slug": "how-chatgpt-works-end-to-end", "position": 6, "title": "How ChatGPT Works End to End", "duration": "35–45 minutes", "excerpt": "One message traced from system/user/assistant roles through the decoding loop, temperature and sampling, to what the product layer adds on top.", "section": "Putting It Together", "file": "06-how-chatgpt-works-end-to-end.md"},
+    {"slug": "modern-model-concepts", "position": 7, "title": "Modern Model Concepts", "duration": "40–50 minutes", "excerpt": "Context windows, prompting vs. fine-tuning vs. RAG, quantization, Mixture of Experts, hallucination, multimodality, and reasoning models — a working glossary.", "section": "Putting It Together", "file": "07-modern-model-concepts.md"},
+)
+
+AGENTIC_AI_LANGCHAIN_RAG_MODULE_SEEDS = (
+    {"slug": "from-generative-ai-to-agentic-ai", "position": 1, "title": "From Generative AI to Agentic AI", "duration": "30–40 minutes", "excerpt": "Tool calling as the actual mechanism, the ReAct loop, and why non-determinism becomes a systems problem once a model's output can drive real actions.", "section": "From Chat to Action", "file": "01-from-generative-ai-to-agentic-ai.md"},
+    {"slug": "langchain-fundamentals", "position": 2, "title": "LangChain Fundamentals", "duration": "35–45 minutes", "excerpt": "Chains, prompt templates, tools, memory, and document loaders — what LangChain standardizes, and the honest critiques of when it's overhead.", "section": "Agent Frameworks", "file": "02-langchain-fundamentals.md"},
+    {"slug": "langgraph-graph-based-agent-orchestration", "position": 3, "title": "LangGraph — Graph-Based Agent Orchestration", "duration": "40–50 minutes", "excerpt": "State, nodes and conditional edges, cycles for looping agents, checkpointing, and human-in-the-loop interrupts.", "section": "Agent Frameworks", "file": "03-langgraph-graph-based-agent-orchestration.md"},
+    {"slug": "rag-pipelines-deep-dive", "position": 4, "title": "RAG Pipelines Deep Dive", "duration": "45–60 minutes", "excerpt": "Chunking, embedding, retrieval, reranking and grounded generation — every stage of a real RAG pipeline, and what actually goes wrong at each one.", "section": "Retrieval", "file": "04-rag-pipelines-deep-dive.md"},
+    {"slug": "what-powers-codex-and-claude-code", "position": 5, "title": "What Powers Codex and Claude Code", "duration": "45–60 minutes", "excerpt": "The tool set, permission and sandboxing layers, and context-management tricks that turn an LLM into a full coding agent.", "section": "Coding Agents", "file": "05-what-powers-codex-and-claude-code.md"},
+    {"slug": "modern-agentic-patterns-mcp-guardrails-evals", "position": 6, "title": "Modern Agentic Patterns: MCP, Guardrails and Evals", "duration": "45–60 minutes", "excerpt": "The Model Context Protocol, multi-agent design trade-offs, layered guardrails, prompt injection, and how evals measure whether any of it works.", "section": "Production Readiness", "file": "06-modern-agentic-patterns-mcp-guardrails-evals.md"},
+)
+
+AI_IN_PRODUCTION_MODULE_SEEDS = (
+    {"slug": "why-production-ai-is-different", "position": 1, "title": "Why Production AI Is Different", "duration": "30–40 minutes", "excerpt": "Latency, cost, reliability and guardrails at scale, the sync-vs-async fork, and a five-question framework for reading every case study in this course.", "section": "Production Constraints", "file": "01-why-production-ai-is-different.md"},
+    {"slug": "case-study-food-delivery-ai-assistant", "position": 2, "title": "Case Study: A Food-Delivery AI Assistant", "duration": "40–50 minutes", "excerpt": "A Zomato/Swiggy-style assistant: intent routing, why order status must never be answered by the model directly, and domain-specific guardrails.", "section": "Company Case Studies", "file": "02-case-study-food-delivery-ai-assistant.md"},
+    {"slug": "case-study-ecommerce-shopping-assistant", "position": 3, "title": "Case Study: An E-commerce Shopping Assistant", "duration": "40–50 minutes", "excerpt": "An Amazon Rufus-style assistant: RAG fused with structured search, personalization as a second retrieval axis, and guardrails for an adversarial marketplace corpus.", "section": "Company Case Studies", "file": "03-case-study-ecommerce-shopping-assistant.md"},
+    {"slug": "case-study-coding-copilots-and-productivity-ai", "position": 4, "title": "Case Study: Coding Copilots and Productivity AI", "duration": "40–50 minutes", "excerpt": "Inline suggestion vs. agentic execution, context assembly as the real product, verification loops, and a consolidated six-point guardrail checklist.", "section": "Company Case Studies", "file": "04-case-study-coding-copilots-and-productivity-ai.md"},
+    {"slug": "toolhub-ai-integrations-high-level-design", "position": 5, "title": "ToolHub's AI Integrations — High-Level Design", "duration": "45–60 minutes", "excerpt": "The shared gateway/executor/router platform behind all four ToolHub AI features, capability profiles as a real structural boundary, and the Caddy-edge timeout story that forced background+poll everywhere.", "section": "ToolHub Deep Dive", "file": "05-toolhub-ai-integrations-high-level-design.md"},
+    {"slug": "toolhub-ai-low-level-design", "position": 6, "title": "ToolHub AI Low-Level Design: Assistant, Courses, LeetCode and MovieHub", "duration": "50–65 minutes", "excerpt": "A code-level comparison of all four ToolHub AI features — why each chose a different dispatch mechanism, retrieval approach, and guardrail depth for its own traffic profile.", "section": "ToolHub Deep Dive", "file": "06-toolhub-ai-low-level-design.md"},
+)
+
 COURSE_SEEDS = (
     {
         "id": "linux-homelab-foundations",
@@ -714,9 +808,9 @@ COURSE_SEEDS = (
         "id": "toolhub-codex-integration-architecture",
         "title": "ToolHub–Codex Integration Architecture",
         "subtitle": "A complete HLD and LLD review of ToolHub's reusable private AI platform.",
-        "description": "Understand every layer from the ToolHub course and chat interfaces through MongoDB, the signed provider-neutral gateway, the private hp-codex executor, and the Codex CLI runtime — then see the platform reused end-to-end by a second application, LeetCode AI.",
+        "description": "Understand every layer from the ToolHub UIs through MongoDB, the signed provider-neutral gateway, and the Codex/Claude executors — then see every live application that reuses that platform: assistant, courses, LeetCode, MovieHub, Scheduler AI, and confirmed operator jobs.",
         "level": "Intermediate",
-        "estimatedHours": "9–11 hours",
+        "estimatedHours": "10–13 hours",
         "source": "Verified production implementation and deployment documentation",
         "modules": INTEGRATION_MODULE_SEEDS,
     },
@@ -759,6 +853,46 @@ COURSE_SEEDS = (
         "estimatedHours": "9–11 hours",
         "source": "Original lessons and Java implementations written for this course.",
         "modules": LLD_PRACTICE_MODULE_SEEDS,
+    },
+    {
+        "id": "genai-foundations",
+        "title": "Generative AI Foundations — From Rules to ChatGPT",
+        "subtitle": "A beginner-friendly, no-hand-waving explanation of how modern AI actually works.",
+        "description": "Seven modules tracing AI's history from symbolic expert systems through classical machine learning and deep learning to generative models: what \"generative\" precisely means, tokens and embeddings, the transformer and self-attention, the pretraining/SFT/RLHF pipeline, exactly how a ChatGPT-style reply is produced end to end, and a working glossary of modern concepts — context windows, quantization, hallucination, multimodality, and reasoning models.",
+        "level": "Beginner",
+        "estimatedHours": "4–6 hours",
+        "source": "Original lessons written for this course.",
+        "modules": GENAI_FOUNDATIONS_MODULE_SEEDS,
+    },
+    {
+        "id": "agentic-ai-langchain-rag",
+        "title": "Agentic AI, LangChain, LangGraph and RAG",
+        "subtitle": "How chat models become autonomous agents, and the frameworks and pipelines that make it practical.",
+        "description": "Six modules covering the jump from generative AI to agentic AI through tool calling and the ReAct loop, LangChain's core abstractions, LangGraph's graph-based orchestration for looping and human-in-the-loop agents, a full RAG pipeline deep dive, what actually powers coding agents like Codex and Claude Code, and modern production patterns — the Model Context Protocol, multi-agent design, layered guardrails, prompt injection, and evals.",
+        "level": "Intermediate",
+        "estimatedHours": "5–7 hours",
+        "source": "Original lessons written for this course.",
+        "modules": AGENTIC_AI_LANGCHAIN_RAG_MODULE_SEEDS,
+    },
+    {
+        "id": "ai-in-production-case-studies",
+        "title": "AI in Production: Company Case Studies & ToolHub's AI Architecture",
+        "subtitle": "How real companies design, guardrail, and scale AI features — including a full HLD/LLD tour of ToolHub's own AI platform.",
+        "description": "Six modules on what changes when AI moves from a demo to a production feature: latency, cost, reliability and guardrails at scale; system-design case studies in the style of a food-delivery assistant (Zomato/Swiggy), an e-commerce shopping assistant (Amazon Rufus), and coding copilots/productivity AI; then a two-part deep dive into ToolHub's own AI integrations — the shared gateway/router platform behind them (HLD) and a code-level comparison of how the AI Assistant, Course Q&A, LeetCode AI, and MovieHub chat each use it differently (LLD).",
+        "level": "Advanced",
+        "estimatedHours": "5–7 hours",
+        "source": "Original lessons written for this course, grounded in verified ToolHub production code for the ToolHub modules.",
+        "modules": AI_IN_PRODUCTION_MODULE_SEEDS,
+    },
+    {
+        "id": "homelab-hdd-backup-architecture",
+        "title": "Homelab HDD Backup Architecture",
+        "subtitle": "How the Pi SSD's photos and documents become versioned, application-consistent recovery points on the Seagate HDD.",
+        "description": "Six modules walking through a real production backup job on ubuntu-purva: which failure domains it does and does not cover, the difference between live NFS paths and dated recovery points, how systemd, rsync and --link-dest hardlinks turn a full-looking nightly copy into a few gigabytes of new data, why PostgreSQL/SQLite/Redis each need their own consistency-aware export instead of a raw file copy, the preflight safety gates and two-pass Immich pause that make the job refuse to run unsafely, and the overlapping daily/weekly/monthly retention policy with correct restore discipline.",
+        "level": "Intermediate",
+        "estimatedHours": "3.5–4.5 hours",
+        "source": "Original lessons written for this course, grounded in the verified production backup scripts and systemd units running on ubuntu-purva.",
+        "modules": HOMELAB_HDD_BACKUP_MODULE_SEEDS,
     },
 )
 
